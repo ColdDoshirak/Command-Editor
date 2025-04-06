@@ -5,7 +5,7 @@ import pygame
 import time
 from twitchio.ext import commands
 import threading
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 from config_manager import ConfigManager
 
 class TwitchBot(commands.Bot):

@@ -1,7 +1,7 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                             QLineEdit, QPushButton, QTextEdit, QGroupBox,
                             QMessageBox, QDialog)
-from PyQt6.QtCore import pyqtSignal, QObject, Qt
+from PyQt5.QtCore import pyqtSignal, QObject, Qt
 import threading
 import json
 import os
@@ -111,7 +111,7 @@ class TwitchTab(QWidget):
     def show_auth_dialog(self):
         """Show Twitch authentication dialog"""
         dialog = TwitchAuthDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        if dialog.exec_() == QDialog.Accepted:
             # The credentials are already saved by the dialog
             # No need to update anything here
             pass
@@ -252,4 +252,4 @@ class TwitchTab(QWidget):
 
     def open_token_generator(self):
         """Открывает сайт Twitch Token Generator в браузере"""
-        webbrowser.open("https://twitchtokengenerator.com/") 
+        webbrowser.open("https://twitchtokengenerator.com/")

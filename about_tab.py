@@ -1,7 +1,7 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTextBrowser, 
-                           QTabWidget, QScrollArea, QGroupBox)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap, QIcon
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTextBrowser, 
+                          QTabWidget, QScrollArea, QGroupBox)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QPixmap, QIcon
 import datetime
 
 class AboutTab(QWidget):
@@ -36,7 +36,7 @@ class AboutTab(QWidget):
         
         # Header
         header = QLabel("About Developer")
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -77,7 +77,7 @@ class AboutTab(QWidget):
         
         # Header
         header = QLabel("Instructions")
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -123,7 +123,6 @@ class AboutTab(QWidget):
 
         <h3>What about english tutorial?</h3>
         <p>Use google translate, i'm too lazy to make buttons for that. Or check readme.md in repository.</p>
-
         """
         
         instructions_text.setHtml(instructions_html)
@@ -139,7 +138,7 @@ class AboutTab(QWidget):
         
         # Header
         header = QLabel("Version Information")
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -157,7 +156,7 @@ class AboutTab(QWidget):
         <p><b>Application:</b> Twitch Bot Command Editor</p>
         <p><b>Version:</b> 1.0.0</p>
         <p><b>Release Date:</b> 2023-11-15</p>
-        <p><b>Framework:</b> PyQt6</p>
+        <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
         
         <p>Дата последнего обновления: {current_date}. Прикол, тут дата сегодняшняя, чтоб свежо было</p>

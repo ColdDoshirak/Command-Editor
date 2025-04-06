@@ -1,8 +1,8 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QLineEdit, QPushButton, QMessageBox)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtCore import QUrl
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtCore import QUrl
 import json
 import os
 from config_manager import ConfigManager
@@ -107,4 +107,4 @@ class TwitchAuthDialog(QDialog):
     def accept(self):
         """Handle dialog acceptance"""
         # This method is overridden to prevent automatic saving
-        super().accept() 
+        super().accept()

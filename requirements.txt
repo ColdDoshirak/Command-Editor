@@ -1,4 +1,4 @@
-PyQt6>=6.0.0
+PyQt5>=5.15.0
 pygame>=2.0.0
 twitchio>=2.0.0
 asyncio>=3.4.3

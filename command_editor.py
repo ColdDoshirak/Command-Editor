@@ -1,12 +1,12 @@
 import json
 import os
 import configparser
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
                            QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
                            QFileDialog, QMessageBox, QSlider, QGroupBox, QTabWidget,
                            QDialog, QHeaderView)
-from PyQt6.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer
 import pygame
 from twitch_bot import TwitchBot
 from twitch_auth import TwitchAuthDialog
@@ -44,10 +44,10 @@ class CommandEditor(QMainWindow):
             "Cooldown", "UserCooldown", "Cost", "Count", "Usage",
             "Enabled", "SoundFile", "FKSoundFile", "Volume"
         ])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.itemChanged.connect(self.table_item_changed)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.itemSelectionChanged.connect(self.on_command_selected)
         main_layout.addWidget(self.table)
         
@@ -148,7 +148,7 @@ class CommandEditor(QMainWindow):
         # Add volume control
         volume_layout = QHBoxLayout()
         volume_label = QLabel("Volume:")
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
         self.volume_slider.valueChanged.connect(self.update_volume)
@@ -220,7 +220,7 @@ class CommandEditor(QMainWindow):
         
     def show_auth_dialog(self):
         dialog = TwitchAuthDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        if dialog.exec_() == QDialog.Accepted:
             QMessageBox.information(self, "Success", "Twitch credentials saved successfully!")
             
     def load_commands(self):
@@ -387,7 +387,7 @@ class CommandEditor(QMainWindow):
             self,
             "Select Sounds Directory",
             "",
-            QFileDialog.Option.ShowDirsOnly
+            QFileDialog.ShowDirsOnly
         )
         
         if not sound_dir:
@@ -797,7 +797,7 @@ class CommandEditor(QMainWindow):
                     self.twitch_tab.bot.update_commands(self.commands)
                     
     def on_enabled_changed(self, state):
-        self.update_command_field(state == Qt.CheckState.Checked, 10)  # Corrected column index
+        self.update_command_field(state == Qt.Checked, 10)  # Corrected column index
         
     def on_permission_changed(self, text):
         self.update_command_field(text, 1)  # Corrected column index
@@ -925,4 +925,4 @@ if __name__ == "__main__":
     app = QApplication([])
     window = CommandEditor()
     window.show()
-    app.exec()
+    app.exec_()  # Note: в PyQt5 используется exec_() вместо exec()
