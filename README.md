@@ -1,4 +1,6 @@
 # Command-Editor
+Use Py3.8 branch for Windows 7
+
 Streamlabs Chatbot Commands feature replacement for those who use Windows 7 (or Linux)
 
 One of my friends is still using windows 7 and his Streamlabs Chatbot stopped connecting to Twitch, so I made this app.
