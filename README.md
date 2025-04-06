@@ -20,6 +20,7 @@ Known issues:
 - Every textbox change doesn't change the table (only volume works)
 - Adding/Removing Commands while bot is connected to channel will crash software
 - Commands without "!" will not work.
+- On first twitch setup bot thinks that there's no config for twitch, after restart it will work (because config is created and saved)
 - This code is trash
 - There's no support for custom response commands, that include usage of Twitch API
 
