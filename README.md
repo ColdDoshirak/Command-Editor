@@ -19,6 +19,7 @@ Features:
 Known issues:
 - Every textbox change doesn't change the table (only volume works)
 - Adding/Removing Commands while bot is connected to channel will crash software
+- Commands without "!" will not work.
 - This code is trash
 - There's no support for custom response commands, that include usage of Twitch API
 
