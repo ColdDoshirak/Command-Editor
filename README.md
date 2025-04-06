@@ -1,5 +1,6 @@
 # Command-Editor
 Streamlabs Chatbot Commands feature replacement for those who use Windows 7 (or Linux)
+
 One of my friends is still using windows 7 and his Streamlabs Chatbot stopped connecting to Twitch, so I made this app.
 
 This was coded using AI as experiment, most of the features might not work or do unexpected stuff
