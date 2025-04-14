@@ -16,7 +16,9 @@ class TwitchBot(commands.Bot):
         self.volume = 1.0
         self.is_running = False
         self.connected_channel = None
-        
+        self.allow_interruption = True  # Default to allow interruption
+        self.show_interruption_message = True  # Default to show message
+            
         # Структуры данных для отслеживания cooldown
         self.last_command_usage = {}  # Для глобального кулдауна: {command: timestamp}
         self.user_command_usage = {}  # Для пользовательского кулдауна: {command: {user_id: timestamp}}
@@ -89,10 +91,10 @@ class TwitchBot(commands.Bot):
                 cmd_name = cmd["Command"].lower()
                 
                 if command == cmd_name and cmd["Enabled"]:
-                    # Проверка глобального кулдауна
+                    # Check for global cooldown
                     current_time = time.time()
                     cooldown_minutes = int(cmd.get("Cooldown", 0))
-                    cooldown_seconds = cooldown_minutes * 60  # Преобразуем минуты в секунды
+                    cooldown_seconds = cooldown_minutes * 60  # Convert minutes to seconds
                     
                     if cooldown_minutes > 0 and cmd_name in self.last_command_usage:
                         last_usage = self.last_command_usage[cmd_name]
@@ -103,25 +105,25 @@ class TwitchBot(commands.Bot):
                             remaining_minutes = remaining_seconds // 60
                             remaining_seconds_mod = remaining_seconds % 60
                             
-                            # Формируем строку для отображения (минуты и секунды)
+                            # Format remaining time
                             if remaining_minutes > 0:
                                 time_str = f"{remaining_minutes} min. {remaining_seconds_mod} sec."
                             else:
                                 time_str = f"{remaining_seconds_mod} sec."
                                 
-                            # Отправляем сообщение о кулдауне
+                            # Send cooldown message
                             await message.channel.send(f"Command {cmd_name} in cooldown. Try in {time_str}")
                             
-                            # Записываем в UI
+                            # Log to UI
                             if self.message_callback:
                                 self.message_callback(f"Cooldown: {cmd_name} ({time_str} remaining)")
                                 
-                            return  # Прерываем обработку команды
+                            return  # Stop processing the command
                     
-                    # Проверка пользовательского кулдауна
+                    # Check user cooldown
                     user_id = str(message.author.id)
                     user_cooldown_minutes = int(cmd.get("UserCooldown", 0))
-                    user_cooldown_seconds = user_cooldown_minutes * 60  # Преобразуем минуты в секунды
+                    user_cooldown_seconds = user_cooldown_minutes * 60  # Convert minutes to seconds
                     
                     if user_cooldown_minutes > 0:
                         if cmd_name in self.user_command_usage and user_id in self.user_command_usage[cmd_name]:
@@ -133,47 +135,49 @@ class TwitchBot(commands.Bot):
                                 user_remaining_minutes = user_remaining_seconds // 60
                                 user_remaining_seconds_mod = user_remaining_seconds % 60
                                 
-                                # Формируем строку для отображения (минуты и секунды)
+                                # Format remaining time
                                 if user_remaining_minutes > 0:
                                     user_time_str = f"{user_remaining_minutes} min. {user_remaining_seconds_mod} sec."
                                 else:
                                     user_time_str = f"{user_remaining_seconds_mod} sec."
                                 
-                                # Отправляем личное сообщение о кулдауне
+                                # Send user cooldown message
                                 await message.channel.send(f"@{message.author.name}, you can use {cmd_name} after {user_time_str}")
                                 
-                                # Записываем в UI
+                                # Log to UI
                                 if self.message_callback:
                                     self.message_callback(f"User Cooldown: {message.author.name} for {cmd_name} ({user_time_str} remaining)")
                                     
-                                return  # Прерываем обработку команды
+                                return  # Stop processing the command
                     
-                    # Если прошли все проверки, обновляем время использования
-                    self.last_command_usage[cmd_name] = current_time
-                    
-                    if cmd_name not in self.user_command_usage:
-                        self.user_command_usage[cmd_name] = {}
-                    self.user_command_usage[cmd_name][user_id] = current_time
-                    
-                    # Play sound if file exists
+                    # Check if sound can be played
                     if cmd.get("SoundFile") and os.path.exists(cmd["SoundFile"]):
-                        try:
-                            # Get volume from command settings
-                            volume = float(cmd.get("Volume", 100)) / 100.0
-                            self.play_sound(cmd["SoundFile"], volume * 100)
-                        except Exception as e:
-                            error_msg = f'Error playing sound: {str(e)}'
-                            print(error_msg)
+                        # Check if sound is already playing and whether interruption is allowed
+                        should_play_sound = True
+                        if pygame.mixer.get_busy() and not self.allow_interruption:
+                            # Only send message if show_interruption_message is enabled
+                            if self.show_interruption_message:
+                                await message.channel.send(f"Command is currently playing. Please wait.")
+                            
                             if self.message_callback:
-                                self.message_callback(error_msg)
+                                self.message_callback(f"Blocked sound interruption: {cmd_name} (interruption not allowed)")
+                            should_play_sound = False
+                        
+                        if should_play_sound:
+                            try:
+                                # Get volume from command settings
+                                volume = float(cmd.get("Volume", 100)) / 100.0
+                                self.play_sound(cmd["SoundFile"], volume * 100)
+                            except Exception as e:
+                                error_msg = f'Error playing sound: {str(e)}'
+                                print(error_msg)
+                                if self.message_callback:
+                                    self.message_callback(error_msg)
                             
                     # Send response if exists
                     if cmd.get("Response"):
                         try:
-                            # Используем только один метод отправки сообщений
                             await message.channel.send(cmd["Response"])
-                            
-                            # Логируем в UI
                             if self.message_callback:
                                 self.message_callback(f'{self.nick}: {cmd["Response"]}')
                         except Exception as e:
@@ -182,9 +186,9 @@ class TwitchBot(commands.Bot):
                             if self.message_callback:
                                 self.message_callback(error_msg)
                             
-                    # Увеличиваем счетчик использования команды
+                    # Update command usage
                     cmd["Count"] = cmd.get("Count", 0) + 1
-                    
+                    self.last_command_usage[cmd_name] = current_time
                     break
             
     def play_sound(self, sound_file, volume=100):
@@ -198,14 +202,22 @@ class TwitchBot(commands.Bot):
             if self.message_callback:
                 self.message_callback(f"Playing sound: {sound_file} at volume {volume}%")
             
-            # Stop any currently playing sounds
-            pygame.mixer.stop()
+            # Check if sound is already playing
+            if pygame.mixer.get_busy():
+                if not self.allow_interruption:
+                    # If interruption is not allowed and a sound is playing, don't play anything
+                    if self.message_callback:
+                        self.message_callback("Sound interruption blocked - a sound is already playing")
+                    return
+                else:
+                    # If interruption is allowed, stop current sound
+                    pygame.mixer.stop()
             
             # Load and play the sound with specified volume
             sound = pygame.mixer.Sound(sound_file)
             sound.set_volume(volume / 100.0)  # Convert percentage to 0-1 range
             sound.play()
-            
+        
         except Exception as e:
             error_msg = f"Error playing sound: {str(e)}"
             print(error_msg)
@@ -271,10 +283,32 @@ class TwitchBot(commands.Bot):
             
     def stop(self):
         """Stop the bot"""
-        if not hasattr(self, 'loop'):
-            # Если бот не был инициализирован правильно, нечего останавливать
-            return
-            
-        if self.is_running:
-            self.loop.stop()
-            self.is_running = False
+        try:
+            if not hasattr(self, 'loop'):
+                # Если бот не был инициализирован правильно, нечего останавливать
+                return
+                
+            if self.is_running:
+                print("Stopping Twitch bot...")
+                self.is_running = False  # Set this first to prevent race conditions
+                
+                # Cancel all running tasks
+                for task in asyncio.all_tasks(self.loop):
+                    task.cancel()
+                    
+                # Stop the loop
+                self.loop.stop()
+                
+                print("Twitch bot stopped.")
+        except Exception as e:
+            print(f"Error stopping Twitch bot: {e}")
+
+    def set_interruption(self, allow_interruption):
+        """Set whether sounds can interrupt each other"""
+        self.allow_interruption = allow_interruption
+        print(f"Sound interruption set to: {allow_interruption}")
+
+    def set_show_interruption_message(self, show_message):
+        """Set whether to show message when sound interruption is blocked"""
+        self.show_interruption_message = show_message
+        print(f"Show interruption message set to: {show_message}")

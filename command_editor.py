@@ -15,6 +15,7 @@ from config_manager import ConfigManager
 from about_tab import AboutTab
 from pathlib import Path
 import threading
+import time
 
 class CommandEditor(QMainWindow):
     def __init__(self):
@@ -27,6 +28,9 @@ class CommandEditor(QMainWindow):
         
         # Initialize config manager
         self.config_manager = ConfigManager()
+        
+        # Initialize volume from config BEFORE creating the volume slider
+        self.volume = self.config_manager.get_volume()
         
         # Create tab widget as the main container
         self.tab_widget = QTabWidget()
@@ -139,22 +143,52 @@ class CommandEditor(QMainWindow):
         self.fk_sound_file_btn.clicked.connect(lambda: self.browse_file(self.fk_sound_file_edit))
         
         right_column.addWidget(QLabel("Sound File:"))
-        right_column.addWidget(self.sound_file_edit)
-        right_column.addWidget(self.sound_file_btn)
+        sound_file_layout = QHBoxLayout()
+        sound_file_layout.addWidget(self.sound_file_edit)
+        sound_file_layout.addWidget(self.sound_file_btn)
+        right_column.addLayout(sound_file_layout)
+        
+        # Add Play/Stop button for sound
+        self.play_sound_btn = QPushButton("Play Sound")
+        self.play_sound_btn.clicked.connect(self.play_or_stop_sound)
+        sound_file_layout.addWidget(self.play_sound_btn)
+        
         right_column.addWidget(QLabel("FK Sound File:"))
         right_column.addWidget(self.fk_sound_file_edit)
         right_column.addWidget(self.fk_sound_file_btn)
         
-        # Add volume control
+        # Add volume control layout with value display
         volume_layout = QHBoxLayout()
         volume_label = QLabel("Volume:")
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
         self.volume_slider.valueChanged.connect(self.update_volume)
+
+        # Add label to display the current volume value
+        self.volume_value_label = QLabel("50%")  # Default value
+        self.volume_value_label.setMinimumWidth(40)  # Set minimum width to prevent layout shifts
+
         volume_layout.addWidget(volume_label)
         volume_layout.addWidget(self.volume_slider)
+        volume_layout.addWidget(self.volume_value_label)
         right_column.addLayout(volume_layout)
+
+        # Set initial volume value
+        self.volume_slider.setValue(int(self.volume * 100))
+        self.volume_value_label.setText(f"{int(self.volume * 100)}%")
+        
+        # Add sound interruption toggle
+        self.allow_interruption_check = QCheckBox("Allow sounds to interrupt each other")
+        self.allow_interruption_check.setToolTip("When enabled, new commands will interrupt currently playing sounds")
+        self.allow_interruption_check.stateChanged.connect(self.on_interruption_toggle)
+        right_column.addWidget(self.allow_interruption_check)
+
+        # Add show message toggle
+        self.show_interruption_message_check = QCheckBox("Show message when sound is blocked")
+        self.show_interruption_message_check.setToolTip("When enabled, a message will be sent in chat when a command's sound is blocked")
+        self.show_interruption_message_check.stateChanged.connect(self.on_show_message_toggle)
+        right_column.addWidget(self.show_interruption_message_check)
         
         # Add auto-save controls
         auto_save_group = QGroupBox("Auto-Save")
@@ -194,6 +228,14 @@ class CommandEditor(QMainWindow):
         # Load saved commands and configuration
         self.load_saved_data()
         
+        # Set sound interruption setting from config
+        self.allow_sound_interruption = self.config_manager.get_sound_interruption()
+        self.allow_interruption_check.setChecked(self.allow_sound_interruption)
+
+        # Set show interruption message setting from config
+        self.show_interruption_message = self.config_manager.get_interruption_message()
+        self.show_interruption_message_check.setChecked(self.show_interruption_message)
+        
         # Set up auto-save timer
         self.auto_save_timer = QTimer()
         self.auto_save_timer.timeout.connect(self.auto_save)
@@ -217,6 +259,10 @@ class CommandEditor(QMainWindow):
         self.auto_save_interval = auto_save['interval']
         self.auto_save_checkbox.setChecked(self.auto_save_enabled)
         self.auto_save_interval_input.setValue(self.auto_save_interval)
+        
+        # Set sound interruption setting from config
+        self.allow_sound_interruption = self.config_manager.get_sound_interruption()
+        self.allow_interruption_check.setChecked(self.allow_sound_interruption)
         
     def show_auth_dialog(self):
         dialog = TwitchAuthDialog(self)
@@ -361,24 +407,19 @@ class CommandEditor(QMainWindow):
             self.config.write(f)
             
     def update_volume(self, value):
-        """Update volume for the selected command"""
+        """Update volume setting"""
+        self.volume = value / 100  # Convert to 0-1 range
+        
+        # Update the volume display label
+        self.volume_value_label.setText(f"{value}%")
+        
+        # Update the selected command's volume if any
         selected_items = self.table.selectedItems()
         if selected_items:
             row = selected_items[0].row()
             if row < len(self.commands):
-                # Update command data
                 self.commands[row]["Volume"] = value
-                
-                # Update volume in table
-                volume_item = QTableWidgetItem(str(value))
-                self.table.setItem(row, 13, volume_item)
-                
-                # Save changes
-                self.save_commands()
-                
-                # Update volume in Twitch bot if it exists
-                if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-                    self.twitch_tab.bot.update_commands(self.commands)
+                self.table.item(row, 13).setText(str(value))
                     
     def auto_assign_sounds(self):
         """Auto-assign sound files to commands based on filename matching"""
@@ -452,22 +493,96 @@ class CommandEditor(QMainWindow):
         else:
             QMessageBox.information(self, "Info", "No new sound files to assign.")
 
+    def play_or_stop_sound(self):
+        """Play or stop the sound file of the selected command"""
+        if pygame.mixer.get_busy():
+            # If a sound is playing, stop it
+            pygame.mixer.stop()
+            self.play_sound_btn.setText("Play Sound")
+            return
+            
+        # Get the selected command's sound file
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "No command selected.")
+            return
+            
+        row = selected_items[0].row()
+        if row < len(self.commands):
+            sound_file = self.commands[row]["SoundFile"]
+            
+            if not sound_file or not os.path.exists(sound_file):
+                QMessageBox.warning(self, "Warning", f"Sound file not found: {sound_file}")
+                return
+                
+            try:
+                # Get volume from command
+                volume = float(self.commands[row].get("Volume", 100)) / 100.0
+                
+                # Play the sound
+                sound = pygame.mixer.Sound(sound_file)
+                sound.set_volume(volume)
+                sound.play()
+                
+                # Change button text
+                self.play_sound_btn.setText("Stop Sound")
+                
+                # Create a timer to check when sound ends to reset button text
+                def check_sound():
+                    while pygame.mixer.get_busy():
+                        time.sleep(0.1)
+                    # Reset button text when sound ends
+                    if self.play_sound_btn.text() == "Stop Sound":
+                        self.play_sound_btn.setText("Play Sound")
+                
+                # Start timer in a separate thread
+                sound_timer = threading.Thread(target=check_sound)
+                sound_timer.daemon = True
+                sound_timer.start()
+                
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to play sound: {str(e)}")
+        else:
+            QMessageBox.warning(self, "Warning", "Invalid command selection.")
+
     def closeEvent(self, event):
-        # Save current commands before closing
-        if self.commands:
-            self.config_manager.save_commands(self.commands)
+        try:
+            # First, stop any playing sounds
+            if pygame.mixer.get_busy():
+                pygame.mixer.stop()
             
-        # Save volume setting
-        self.config_manager.set_volume(self.volume)
-        
-        # Save auto-save settings
-        self.config_manager.set_auto_save(
-            self.auto_save_enabled,
-            self.auto_save_interval
-        )
-        
-        event.accept()
+            # Disconnect any running Twitch bot
+            if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
+                print("Disconnecting Twitch bot before closing...")
+                self.twitch_tab.disconnect()
+                # Give it a moment to disconnect cleanly
+                time.sleep(0.2)
+
+            # Save current commands before closing
+            if self.commands:
+                print("Saving commands before closing...")
+                self.config_manager.save_commands(self.commands)
             
+            # Save volume setting
+            self.config_manager.set_volume(self.volume)
+            
+            # Save interruption settings
+            self.config_manager.set_sound_interruption(self.allow_sound_interruption)
+            self.config_manager.set_interruption_message(self.show_interruption_message)
+            
+            # Save auto-save settings
+            self.config_manager.set_auto_save(
+                self.auto_save_enabled,
+                self.auto_save_interval
+            )
+            
+            print("Application shutdown complete.")
+            event.accept()
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
+            # Let the application close even if there was an error
+            event.accept()
+
     def load_file(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", "ABCOMG Files (*.abcomg)")
         if file_name:
@@ -681,6 +796,9 @@ class CommandEditor(QMainWindow):
             # Save volume setting
             self.config_manager.set_volume(self.volume)
             
+            # Save interruption setting
+            self.config_manager.set_sound_interruption(self.allow_sound_interruption)
+            
             # Save auto-save settings
             self.config_manager.set_auto_save(
                 self.auto_save_enabled,
@@ -745,10 +863,14 @@ class CommandEditor(QMainWindow):
             self.fk_sound_file_edit.setText(str(command.get("FKSoundFile", "")))
             
             # Update volume slider without triggering valueChanged signal
+            volume_value = command.get("Volume", 100)
             self.volume_slider.blockSignals(True)
-            self.volume_slider.setValue(command.get("Volume", 100))
+            self.volume_slider.setValue(volume_value)
             self.volume_slider.blockSignals(False)
             
+            # Also update the volume label text to match the current command's volume
+            self.volume_value_label.setText(f"{volume_value}%")
+
     def update_command_field(self, value, column):
         """Update a specific field in the table and command data"""
         selected_items = self.table.selectedItems()
@@ -920,6 +1042,28 @@ class CommandEditor(QMainWindow):
         self.remove_btn.setEnabled(enabled)
         # Also disable the table if editing is disabled
         self.table.setEnabled(enabled)
+
+    def on_interruption_toggle(self, state):
+        """Handle interruption toggle change"""
+        self.allow_sound_interruption = (state == Qt.Checked)
+        self.config_manager.set_sound_interruption(self.allow_sound_interruption)
+        
+        # Update the setting in Twitch bot if it exists
+        if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
+            # Use the setter method instead of direct attribute access
+            self.twitch_tab.bot.set_interruption(self.allow_sound_interruption)
+            # Log the change in the Twitch chat display
+            self.twitch_tab.add_to_chat(f"Sound interruption setting changed: {'Enabled' if self.allow_sound_interruption else 'Disabled'}")
+
+    def on_show_message_toggle(self, state):
+        """Handle show message toggle change"""
+        self.show_interruption_message = (state == Qt.Checked)
+        self.config_manager.set_interruption_message(self.show_interruption_message)
+        
+        # Update the setting in Twitch bot if it exists
+        if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
+            self.twitch_tab.bot.set_show_interruption_message(self.show_interruption_message)
+            self.twitch_tab.add_to_chat(f"Interruption message: {'Enabled' if self.show_interruption_message else 'Disabled'}")
 
 if __name__ == "__main__":
     app = QApplication([])

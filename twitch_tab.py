@@ -151,9 +151,23 @@ class TwitchTab(QWidget):
                 self.bot_thread.daemon = True
                 self.bot_thread.start()
                 
-                # Update button states
-                self.connect_btn.setEnabled(False)
-                self.disconnect_btn.setEnabled(True)
+                # After initializing the bot:
+                if self.bot:
+                    # If parent has the setting, pass it to the bot
+                    if hasattr(self.parent(), 'allow_sound_interruption'):
+                        self.bot.allow_interruption = self.parent().allow_sound_interruption
+
+                    # Pass sound interruption setting from parent if it exists
+                    if self.parent() and hasattr(self.parent(), 'allow_sound_interruption'):
+                        self.bot.set_interruption(self.parent().allow_sound_interruption)
+                        # Add to chat log for visibility
+                        self.add_to_chat(f"Sound interruption: {'Enabled' if self.parent().allow_sound_interruption else 'Disabled'}")
+
+                    # Pass show interruption message setting from parent if it exists
+                    if self.parent() and hasattr(self.parent(), 'show_interruption_message'):
+                        self.bot.set_show_interruption_message(self.parent().show_interruption_message)
+                        self.add_to_chat(f"Interruption message: {'Enabled' if self.parent().show_interruption_message else 'Disabled'}")
+                        
                 self.add_to_chat(f"Connected to {channel}")
                 
                 # Disable command editing in command editor
@@ -168,6 +182,8 @@ class TwitchTab(QWidget):
         if self.bot:
             try:
                 self.bot.stop()
+                # Wait a moment to ensure the bot is fully stopped
+                time.sleep(0.2)
                 self.bot = None
                 self.connect_btn.setEnabled(True)
                 self.disconnect_btn.setEnabled(False)
@@ -206,6 +222,15 @@ class TwitchTab(QWidget):
                         return
                         
                     self.bot.custom_commands = commands
+                    if self.parent() and hasattr(self.parent(), 'allow_sound_interruption'):
+                        self.bot.set_interruption(self.parent().allow_sound_interruption)
+                        self.add_to_chat(f"Sound interruption setting restored: {'Enabled' if self.parent().allow_sound_interruption else 'Disabled'}")
+                    
+                    # Also pass show message setting
+                    if self.parent() and hasattr(self.parent(), 'show_interruption_message'):
+                        self.bot.set_show_interruption_message(self.parent().show_interruption_message)
+                        self.add_to_chat(f"Interruption message setting restored: {'Enabled' if self.parent().show_interruption_message else 'Disabled'}")
+                    
                     # Start bot in a separate thread
                     self.bot_thread = threading.Thread(target=self.bot.run)
                     self.bot_thread.daemon = True
