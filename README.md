@@ -4,6 +4,8 @@ One of my friends is still using windows 7 and his Streamlabs Chatbot stopped co
 
 This was coded using AI as experiment, most of the features might not work or do unexpected stuff
 
+I guess it's main branch now.
+
 Features:
 - StreamLabs Chatbot Command Backup compatible (but will not work for streamlabs import)
 - Auto-assign sound files from folder with same name as commands
@@ -12,6 +14,8 @@ Features:
 - Add/Remove commands
 - Twitch chat for commands
 - Auto-save each 300s and on exit.
+- Play/Stop Sound for testing volume
+- Sound interruption toggle for twitch chat
 
 Known issues:
 - Every textbox change doesn't change the table (only volume works)
