@@ -5,8 +5,9 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
                            QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
                            QFileDialog, QMessageBox, QSlider, QGroupBox, QTabWidget,
-                           QDialog, QHeaderView)
+                           QDialog, QHeaderView, QMenu, QScrollArea)
 from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPixmap, QFont  # Add QPixmap here
 import pygame
 from twitch_bot import TwitchBot
 from twitch_auth import TwitchAuthDialog
@@ -26,6 +27,9 @@ class CommandEditor(QMainWindow):
         # Initialize commands list
         self.commands = []
         
+        # Add an attribute to track original command order
+        self.original_commands = []
+        
         # Initialize config manager
         self.config_manager = ConfigManager()
         
@@ -40,6 +44,27 @@ class CommandEditor(QMainWindow):
         main_tab = QWidget()
         main_layout = QVBoxLayout()
         
+        # Search functionality
+        search_layout = QHBoxLayout()
+        search_label = QLabel("Search:")
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Type to search commands...")
+        self.search_input.textChanged.connect(self.filter_commands)
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(self.search_input)
+        main_layout.addLayout(search_layout)
+        
+        # Sorting reset functionality
+        sort_reset_layout = QHBoxLayout()
+        sort_reset_label = QLabel("Sorting:")
+        self.reset_sort_btn = QPushButton("Reset Sort")
+        self.reset_sort_btn.clicked.connect(self.reset_sorting)
+        self.reset_sort_btn.setToolTip("Reset table to original order")
+        sort_reset_layout.addWidget(sort_reset_label)
+        sort_reset_layout.addWidget(self.reset_sort_btn)
+        sort_reset_layout.addStretch()  # Push button to the left
+        main_layout.addLayout(sort_reset_layout)
+        
         # Create table
         self.table = QTableWidget()
         self.table.setColumnCount(14)
@@ -53,6 +78,17 @@ class CommandEditor(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.itemSelectionChanged.connect(self.on_command_selected)
+        
+        # Enable sorting
+        self.table.setSortingEnabled(True)
+        # Make sure the sorting works with the default horizontal header
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        self.table.horizontalHeader().sortIndicatorChanged.connect(self.on_table_sort)
+        
+        # Add context menu for table header
+        self.table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.horizontalHeader().customContextMenuRequested.connect(self.show_header_menu)
+        
         main_layout.addWidget(self.table)
         
         # Create buttons layout
@@ -313,6 +349,79 @@ class CommandEditor(QMainWindow):
 
         self.table.blockSignals(False)  # Разблокируем сигналы
         
+    def populate_table(self):
+        """Populate the table with commands"""
+        self.table.setRowCount(len(self.commands))
+        
+        for row, cmd in enumerate(self.commands):
+            # Command column (0)
+            self.table.setItem(row, 0, QTableWidgetItem(cmd["Command"]))
+            
+            # Permission column (1)
+            self.table.setItem(row, 1, QTableWidgetItem(cmd["Permission"]))
+            
+            # Info column (2)
+            self.table.setItem(row, 2, QTableWidgetItem(cmd.get("Info", "")))
+            
+            # Group column (3)
+            self.table.setItem(row, 3, QTableWidgetItem(cmd.get("Group", "GENERAL")))
+            
+            # Response column (4)
+            self.table.setItem(row, 4, QTableWidgetItem(cmd["Response"]))
+            
+            # Cooldown column (5)
+            self.table.setItem(row, 5, QTableWidgetItem(str(cmd.get("Cooldown", 0))))
+            
+            # UserCooldown column (6)
+            self.table.setItem(row, 6, QTableWidgetItem(str(cmd.get("UserCooldown", 0))))
+            
+            # Cost column (7)
+            self.table.setItem(row, 7, QTableWidgetItem(str(cmd.get("Cost", 0))))
+            
+            # Count column (8)
+            self.table.setItem(row, 8, QTableWidgetItem(str(cmd.get("Count", 0))))
+            
+            # Usage column (9)
+            self.table.setItem(row, 9, QTableWidgetItem(cmd.get("Usage", "SC")))
+            
+            # Enabled column (10)
+            enabled = "✓" if cmd["Enabled"] else "✗"
+            self.table.setItem(row, 10, QTableWidgetItem(enabled))
+            
+            # SoundFile column (11)
+            self.table.setItem(row, 11, QTableWidgetItem(cmd["SoundFile"]))
+            
+            # FKSoundFile column (12)
+            self.table.setItem(row, 12, QTableWidgetItem(str(cmd.get("FKSoundFile", ""))))
+            
+            # Volume column (13)
+            self.table.setItem(row, 13, QTableWidgetItem(str(cmd.get("Volume", 100))))
+            
+    def refresh_table(self):
+        """Refresh the table with current commands"""
+        # Remember search filter
+        search_text = self.search_input.text()
+        
+        # Remember sorting indicator
+        sort_column = self.table.horizontalHeader().sortIndicatorSection()
+        sort_order = self.table.horizontalHeader().sortIndicatorOrder()
+        
+        # Block signals to prevent unintended changes
+        self.table.blockSignals(True)
+        
+        # Clear and repopulate the table
+        self.table.setRowCount(0)
+        self.populate_table()
+        
+        # Restore sorting indicator
+        self.table.horizontalHeader().setSortIndicator(sort_column, sort_order)
+        
+        # Reapply search filter
+        self.filter_commands()
+        
+        # Unblock signals
+        self.table.blockSignals(False)
+        
     def update_details(self, current_row, current_col, previous_row, previous_col):
         if current_row >= 0 and current_row < len(self.commands):
             cmd = self.commands[current_row]
@@ -558,6 +667,47 @@ class CommandEditor(QMainWindow):
                 # Give it a moment to disconnect cleanly
                 time.sleep(0.2)
 
+            # Restore original command order before saving
+            if self.commands and self.original_commands:
+                print("Restoring original command order before saving...")
+                
+                # Create a mapping of commands by their identifiers
+                command_map = {}
+                for cmd in self.commands:
+                    # Use command name as the key
+                    key = cmd["Command"]
+                    command_map[key] = cmd
+                
+                # Rebuild commands list in original order but with current data
+                ordered_commands = []
+                for orig_cmd in self.original_commands:
+                    key = orig_cmd["Command"]
+                    if key in command_map:
+                        # Use current data for this command
+                        ordered_commands.append(command_map[key])
+                    else:
+                        # If command name changed, try to find by other properties
+                        found = False
+                        for current_cmd in self.commands:
+                            if (current_cmd not in ordered_commands and
+                                current_cmd.get("SoundFile") == orig_cmd.get("SoundFile") and
+                                current_cmd.get("Response") == orig_cmd.get("Response")):
+                                ordered_commands.append(current_cmd)
+                                found = True
+                                break
+                        
+                        # If no match found, keep the original
+                        if not found:
+                            ordered_commands.append(orig_cmd)
+                
+                # Add any commands that weren't in the original list
+                for cmd in self.commands:
+                    if cmd not in ordered_commands:
+                        ordered_commands.append(cmd)
+                
+                # Update commands to ordered list before saving
+                self.commands = ordered_commands
+
             # Save current commands before closing
             if self.commands:
                 print("Saving commands before closing...")
@@ -638,12 +788,13 @@ class CommandEditor(QMainWindow):
                 
     def add_command(self):
         """Add a new command"""
+        # Create a new command
         new_command = {
-            "Command": "!new_command",
-            "SoundFile": "",
-            "Enabled": True,
+            "Command": "!new",
             "Permission": "Everyone",
             "Response": "",
+            "SoundFile": "",
+            "Enabled": True,
             "Info": "",
             "Group": "GENERAL",
             "Cooldown": 0,
@@ -651,48 +802,42 @@ class CommandEditor(QMainWindow):
             "Cost": 0,
             "Count": 0,
             "Usage": "SC",
-            "FKSoundFile": "",
             "Volume": 100
         }
         
-        # Add to commands list
+        # Add to both current commands and original commands list
         self.commands.append(new_command)
+        self.original_commands.append(new_command.copy())
         
-        # Add new row to table
-        row = self.table.rowCount()
-        self.table.insertRow(row)
+        self.refresh_table()
         
-        # Set items for new row
-        self.table.setItem(row, 0, QTableWidgetItem(new_command["Command"]))
-        self.table.setItem(row, 1, QTableWidgetItem(new_command["Permission"]))
-        self.table.setItem(row, 2, QTableWidgetItem(new_command["Info"]))
-        self.table.setItem(row, 3, QTableWidgetItem(new_command["Group"]))
-        self.table.setItem(row, 4, QTableWidgetItem(new_command["Response"]))
-        self.table.setItem(row, 5, QTableWidgetItem(str(new_command["Cooldown"])))
-        self.table.setItem(row, 6, QTableWidgetItem(str(new_command["UserCooldown"])))
-        self.table.setItem(row, 7, QTableWidgetItem(str(new_command["Cost"])))
-        self.table.setItem(row, 8, QTableWidgetItem(str(new_command["Count"])))
-        self.table.setItem(row, 9, QTableWidgetItem(new_command["Usage"]))
-        self.table.setItem(row, 10, QTableWidgetItem("✓"))  # Enabled column
-        self.table.setItem(row, 11, QTableWidgetItem(new_command["SoundFile"]))
-        self.table.setItem(row, 12, QTableWidgetItem(new_command["FKSoundFile"]))
-        self.table.setItem(row, 13, QTableWidgetItem(str(new_command["Volume"])))
+        # Select the new command
+        self.table.selectRow(self.table.rowCount() - 1)
         
-        # Save only the new command
-        self.save_commands()
-        
+        # Update Twitch bot if running
+        self.update_commands()
+
     def delete_command(self):
         current_row = self.table.currentRow()
         if current_row >= 0 and current_row < len(self.commands):
+            # Get the command being deleted
+            cmd_to_delete = self.commands[current_row]
+            
             # Remove from commands list
             self.commands.pop(current_row)
+            
+            # Remove from original commands list (find by Command name)
+            for i, cmd in enumerate(self.original_commands):
+                if cmd["Command"] == cmd_to_delete["Command"]:
+                    self.original_commands.pop(i)
+                    break
             
             # Remove row from table
             self.table.removeRow(current_row)
             
             # Save changes
             self.save_commands()
-            
+
     def browse_file(self, line_edit):
         file_name, _ = QFileDialog.getOpenFileName(self, "Select Sound File", "", "Sound Files (*.mp3 *.wav *.ogg)")
         if file_name:
@@ -736,8 +881,8 @@ class CommandEditor(QMainWindow):
                 QMessageBox.warning(self, "Error", f"Error stopping bot: {str(e)}")
                 
     def update_commands(self):
-        # Update commands in both main tab and Twitch tab
-        self.commands = self.get_commands_from_ui()
+        """Update commands in Twitch tab"""
+        # No need to get commands from UI since self.commands is already updated
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
             self.twitch_tab.bot.update_commands(self.commands)
 
@@ -775,6 +920,9 @@ class CommandEditor(QMainWindow):
                     self.config_manager.save_commands(self.commands)
             except Exception as e:
                 print(f"Error loading last used file: {e}")
+                
+        # Store the original order of commands
+        self.original_commands = self.commands.copy()
                 
         # Update the table with loaded commands
         self.update_table()
@@ -1064,6 +1212,169 @@ class CommandEditor(QMainWindow):
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
             self.twitch_tab.bot.set_show_interruption_message(self.show_interruption_message)
             self.twitch_tab.add_to_chat(f"Interruption message: {'Enabled' if self.show_interruption_message else 'Disabled'}")
+
+    def filter_commands(self):
+        """Filter displayed commands based on search text"""
+        search_text = self.search_input.text().lower()
+        
+        # Show all commands if search is empty
+        if not search_text:
+            for row in range(self.table.rowCount()):
+                self.table.setRowHidden(row, False)
+            return
+                
+        # Hide rows that don't match the search
+        for row in range(self.table.rowCount()):
+            match_found = False
+            
+            # Search through all columns
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item and search_text in item.text().lower():
+                    match_found = True
+                    break
+                    
+            # Hide/show the row based on match
+            self.table.setRowHidden(row, not match_found)
+
+    def on_table_sort(self, logical_index, order):
+        """Handle sorting of the table by a column"""
+        # Remember the selected command before sorting
+        selected_command = None
+        selected_items = self.table.selectedItems()
+        if selected_items:
+            row = selected_items[0].row()
+            if row < len(self.commands):
+                selected_command = self.commands[row]["Command"]
+        
+        # Store current column sorting state
+        self.table.horizontalHeader().setSortIndicator(logical_index, order)
+        
+        # Block signals to prevent unintended changes during sorting
+        self.table.blockSignals(True)
+        
+        # Get all commands as a list for sorting
+        commands_to_sort = self.commands.copy()
+        
+        # Determine sort key based on column index
+        column_keys = [
+            "Command", "Permission", "Info", "Group", "Response",
+            "Cooldown", "UserCooldown", "Cost", "Count", "Usage",
+            "Enabled", "SoundFile", "FKSoundFile", "Volume"
+        ]
+        
+        sort_key = column_keys[logical_index]
+        
+        # Handle special case for numeric columns
+        numeric_columns = ["Cooldown", "UserCooldown", "Cost", "Count", "Volume"]
+        
+        if sort_key in numeric_columns:
+            # For numeric columns, convert to int for sorting
+            commands_to_sort.sort(
+                key=lambda x: int(x.get(sort_key, 0)) if x.get(sort_key, 0) != '' else 0, 
+                reverse=(order == Qt.DescendingOrder)
+            )
+        elif sort_key == "Enabled":
+            # For boolean columns
+            commands_to_sort.sort(
+                key=lambda x: bool(x.get(sort_key, False)), 
+                reverse=(order == Qt.DescendingOrder)
+            )
+        else:
+            # For text columns
+            commands_to_sort.sort(
+                key=lambda x: str(x.get(sort_key, "")).lower(), 
+                reverse=(order == Qt.DescendingOrder)
+            )
+        
+        # Update commands list and refresh the table
+        self.commands = commands_to_sort
+        self.refresh_table()
+        
+        # Restore selection if possible
+        if selected_command:
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 0)  # Command column
+                if item and item.text() == selected_command:
+                    self.table.selectRow(row)
+                    break
+        
+        # Unblock signals after sorting is complete
+        self.table.blockSignals(False)
+
+    def reset_sorting(self):
+        """Reset sorting to original order"""
+        # Remember the selected command before resetting
+        selected_command = None
+        selected_items = self.table.selectedItems()
+        if selected_items:
+            row = selected_items[0].row()
+            if row < len(self.commands):
+                selected_command = self.commands[row]["Command"]
+        
+        # Create a mapping of commands by their original position
+        command_map = {}
+        for cmd in self.commands:
+            # Create a key based on command name or position in original list
+            key = cmd["Command"]
+            command_map[key] = cmd
+        
+        # Rebuild commands list in original order but with current data
+        sorted_commands = []
+        for orig_cmd in self.original_commands:
+            key = orig_cmd["Command"]
+            if key in command_map:
+                # Use current data for this command
+                sorted_commands.append(command_map[key])
+            else:
+                # If the command name changed, try to find it by other properties
+                found = False
+                for current_cmd in self.commands:
+                    # Check if this might be the same command with a changed name
+                    if (current_cmd not in sorted_commands and
+                        current_cmd.get("SoundFile") == orig_cmd.get("SoundFile") and
+                        current_cmd.get("Response") == orig_cmd.get("Response")):
+                        sorted_commands.append(current_cmd)
+                        found = True
+                        break
+                
+                # If we couldn't find a match, use the original
+                if not found:
+                    sorted_commands.append(orig_cmd)
+        
+        # Add any new commands that weren't in the original list
+        for cmd in self.commands:
+            if cmd not in sorted_commands:
+                sorted_commands.append(cmd)
+        
+        # Update commands list
+        self.commands = sorted_commands
+        
+        # Reset sort indicator
+        self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)
+        
+        # Refresh the table
+        self.refresh_table()
+        
+        # Restore selection if possible
+        if selected_command:
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 0)  # Command column
+                if item and item.text() == selected_command:
+                    self.table.selectRow(row)
+                    break
+                    
+        # Inform the user
+        self.statusBar().showMessage("Sorting reset to original order", 3000)
+
+    def show_header_menu(self, position):
+        """Show context menu for table header"""
+        menu = QMenu(self)
+        reset_action = menu.addAction("Reset Sorting")
+        action = menu.exec_(self.table.horizontalHeader().mapToGlobal(position))
+        
+        if action == reset_action:
+            self.reset_sorting()
 
 if __name__ == "__main__":
     app = QApplication([])
