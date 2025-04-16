@@ -14,6 +14,7 @@ from twitch_auth import TwitchAuthDialog
 from twitch_tab import TwitchTab
 from config_manager import ConfigManager
 from about_tab import AboutTab
+from history_manager import HistoryManager
 from pathlib import Path
 import threading
 import time
@@ -54,17 +55,6 @@ class CommandEditor(QMainWindow):
         search_layout.addWidget(self.search_input)
         main_layout.addLayout(search_layout)
         
-        # Sorting reset functionality
-        sort_reset_layout = QHBoxLayout()
-        sort_reset_label = QLabel("Sorting:")
-        self.reset_sort_btn = QPushButton("Reset Sort")
-        self.reset_sort_btn.clicked.connect(self.reset_sorting)
-        self.reset_sort_btn.setToolTip("Reset table to original order")
-        sort_reset_layout.addWidget(sort_reset_label)
-        sort_reset_layout.addWidget(self.reset_sort_btn)
-        sort_reset_layout.addStretch()  # Push button to the left
-        main_layout.addLayout(sort_reset_layout)
-        
         # Create table
         self.table = QTableWidget()
         self.table.setColumnCount(14)
@@ -79,15 +69,8 @@ class CommandEditor(QMainWindow):
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.itemSelectionChanged.connect(self.on_command_selected)
         
-        # Enable sorting
-        self.table.setSortingEnabled(True)
-        # Make sure the sorting works with the default horizontal header
-        self.table.horizontalHeader().setSortIndicatorShown(True)
-        self.table.horizontalHeader().sortIndicatorChanged.connect(self.on_table_sort)
-        
-        # Add context menu for table header
-        self.table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
-        self.table.horizontalHeader().customContextMenuRequested.connect(self.show_header_menu)
+        # Disable sorting
+        self.table.setSortingEnabled(False)
         
         main_layout.addWidget(self.table)
         
@@ -300,6 +283,13 @@ class CommandEditor(QMainWindow):
         self.allow_sound_interruption = self.config_manager.get_sound_interruption()
         self.allow_interruption_check.setChecked(self.allow_sound_interruption)
         
+        # Initialize history manager
+        self.history_manager = HistoryManager(max_backups=self.config_manager.get_max_backups())
+
+        # Add history tab
+        self.history_tab = self.create_history_tab()
+        self.tab_widget.addTab(self.history_tab, "History")
+            
     def show_auth_dialog(self):
         dialog = TwitchAuthDialog(self)
         if dialog.exec_() == QDialog.Accepted:
@@ -402,19 +392,12 @@ class CommandEditor(QMainWindow):
         # Remember search filter
         search_text = self.search_input.text()
         
-        # Remember sorting indicator
-        sort_column = self.table.horizontalHeader().sortIndicatorSection()
-        sort_order = self.table.horizontalHeader().sortIndicatorOrder()
-        
         # Block signals to prevent unintended changes
         self.table.blockSignals(True)
         
         # Clear and repopulate the table
         self.table.setRowCount(0)
         self.populate_table()
-        
-        # Restore sorting indicator
-        self.table.horizontalHeader().setSortIndicator(sort_column, sort_order)
         
         # Reapply search filter
         self.filter_commands()
@@ -667,42 +650,44 @@ class CommandEditor(QMainWindow):
                 # Give it a moment to disconnect cleanly
                 time.sleep(0.2)
 
-            # Restore original command order before saving
+            # Deduplicate commands before saving
             if self.commands and self.original_commands:
-                print("Restoring original command order before saving...")
+                print("Deduplicating and reordering commands before saving...")
                 
-                # Create a mapping of commands by their identifiers
+                # Create a mapping of commands by their command names
                 command_map = {}
                 for cmd in self.commands:
                     # Use command name as the key
                     key = cmd["Command"]
                     command_map[key] = cmd
                 
-                # Rebuild commands list in original order but with current data
+                # Track processed commands to prevent duplicates
+                processed_commands = set()
                 ordered_commands = []
+                
+                # First pass: add commands that match by name from original order
                 for orig_cmd in self.original_commands:
                     key = orig_cmd["Command"]
                     if key in command_map:
                         # Use current data for this command
                         ordered_commands.append(command_map[key])
+                        processed_commands.add(key)
                     else:
                         # If command name changed, try to find by other properties
                         found = False
-                        for current_cmd in self.commands:
-                            if (current_cmd not in ordered_commands and
+                        for cmd_name, current_cmd in command_map.items():
+                            if cmd_name not in processed_commands and (
                                 current_cmd.get("SoundFile") == orig_cmd.get("SoundFile") and
-                                current_cmd.get("Response") == orig_cmd.get("Response")):
+                                current_cmd.get("Response") == orig_cmd.get("Response")
+                            ):
                                 ordered_commands.append(current_cmd)
+                                processed_commands.add(cmd_name)
                                 found = True
                                 break
-                        
-                        # If no match found, keep the original
-                        if not found:
-                            ordered_commands.append(orig_cmd)
                 
-                # Add any commands that weren't in the original list
-                for cmd in self.commands:
-                    if cmd not in ordered_commands:
+                # Add any commands that weren't in the original list but exist now
+                for cmd_name, cmd in command_map.items():
+                    if cmd_name not in processed_commands:
                         ordered_commands.append(cmd)
                 
                 # Update commands to ordered list before saving
@@ -712,6 +697,10 @@ class CommandEditor(QMainWindow):
             if self.commands:
                 print("Saving commands before closing...")
                 self.config_manager.save_commands(self.commands)
+                
+                # Always create a backup when closing
+                print("Creating backup before closing...")
+                self.history_manager.save_backup(self.commands)
             
             # Save volume setting
             self.config_manager.set_volume(self.volume)
@@ -725,6 +714,10 @@ class CommandEditor(QMainWindow):
                 self.auto_save_enabled,
                 self.auto_save_interval
             )
+            
+            # Save backup settings
+            if hasattr(self, 'history_manager'):
+                self.config_manager.set_max_backups(self.history_manager.max_backups)
             
             print("Application shutdown complete.")
             event.accept()
@@ -780,9 +773,15 @@ class CommandEditor(QMainWindow):
             QMessageBox.warning(self, "Error", "No commands to save!")
             return
             
-        # Save to the separate commands file
+        # Save to the commands file
         if self.config_manager.save_commands(self.commands):
-            QMessageBox.information(self, "Success", "Commands saved successfully!")
+            # Always create a backup when manually saving
+            if self.history_manager.save_backup(self.commands):
+                # Refresh the backup list
+                self.refresh_backup_list()
+                QMessageBox.information(self, "Success", "Commands saved and backup created successfully!")
+            else:
+                QMessageBox.information(self, "Success", "Commands saved successfully, but backup creation failed.")
         else:
             QMessageBox.warning(self, "Error", "Failed to save commands!")
                 
@@ -938,8 +937,26 @@ class CommandEditor(QMainWindow):
         try:
             # Save commands
             if self.commands:
+                # Check for significant changes before saving
+                existing_commands = []
+                if os.path.exists('commands.json'):
+                    try:
+                        with open('commands.json', 'r', encoding='utf-8') as f:
+                            existing_commands = json.load(f)
+                    except:
+                        pass
+                        
+                # Save the commands
                 self.config_manager.save_commands(self.commands)
                 print("Auto-saved commands")
+                
+                # Create backup if significant changes detected
+                if self._has_significant_changes(existing_commands, self.commands):
+                    self.history_manager.save_backup(self.commands)
+                    # Refresh the backup list if the history tab is currently visible
+                    if self.tab_widget.currentWidget() == self.history_tab:
+                        self.refresh_backup_list()
+                    print("Auto-saved backup created")
             
             # Save volume setting
             self.config_manager.set_volume(self.volume)
@@ -1184,6 +1201,43 @@ class CommandEditor(QMainWindow):
         except Exception as e:
             print(f"Error saving commands: {e}")
 
+    def _has_significant_changes(self, old_commands, new_commands):
+        """Determine if changes are significant enough to warrant a backup
+        
+        Returns:
+            bool: True if significant changes detected, False otherwise
+        """
+        # If no previous commands, this is significant
+        if not old_commands:
+            return True
+            
+        # If command count changed by more than 1, it's significant
+        if abs(len(old_commands) - len(new_commands)) > 1:
+            return True
+        
+        # Check for changes in command names, sound files, or responses
+        old_map = {cmd["Command"]: cmd for cmd in old_commands}
+        new_map = {cmd["Command"]: cmd for cmd in new_commands}
+        
+        # If any commands were added or removed
+        if set(old_map.keys()) != set(new_map.keys()):
+            return True
+        
+        # Check for significant changes in existing commands
+        for cmd_name, new_cmd in new_map.items():
+            if cmd_name in old_map:
+                old_cmd = old_map[cmd_name]
+                
+                # Check if sound file changed
+                if old_cmd.get("SoundFile", "") != new_cmd.get("SoundFile", ""):
+                    return True
+                    
+                # Check if response changed
+                if old_cmd.get("Response", "") != new_cmd.get("Response", ""):
+                    return True
+        
+        return False
+
     def set_editing_enabled(self, enabled):
         """Enable or disable command editing buttons"""
         self.add_btn.setEnabled(enabled)
@@ -1235,146 +1289,195 @@ class CommandEditor(QMainWindow):
                     break
                     
             # Hide/show the row based on match
-            self.table.setRowHidden(row, not match_found)
+            self.table.setRowHidden(row, not match_found)  # Fixed: not_match_found -> not match_found
 
-    def on_table_sort(self, logical_index, order):
-        """Handle sorting of the table by a column"""
-        # Remember the selected command before sorting
-        selected_command = None
-        selected_items = self.table.selectedItems()
-        if selected_items:
-            row = selected_items[0].row()
-            if row < len(self.commands):
-                selected_command = self.commands[row]["Command"]
+    def create_history_tab(self):
+        """Create the History tab for command backups"""
+        tab = QWidget()
+        layout = QVBoxLayout()
         
-        # Store current column sorting state
-        self.table.horizontalHeader().setSortIndicator(logical_index, order)
+        # Header
+        header_layout = QHBoxLayout()
+        header_label = QLabel("Command History")
+        font = QFont()
+        font.setPointSize(14)
+        font.setBold(True)
+        header_label.setFont(font)
         
-        # Block signals to prevent unintended changes during sorting
-        self.table.blockSignals(True)
+        # Create backup button
+        create_backup_btn = QPushButton("Create Backup Now")
+        create_backup_btn.clicked.connect(self.create_backup)
         
-        # Get all commands as a list for sorting
-        commands_to_sort = self.commands.copy()
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+        header_layout.addWidget(create_backup_btn)
+        layout.addLayout(header_layout)
         
-        # Determine sort key based on column index
-        column_keys = [
-            "Command", "Permission", "Info", "Group", "Response",
-            "Cooldown", "UserCooldown", "Cost", "Count", "Usage",
-            "Enabled", "SoundFile", "FKSoundFile", "Volume"
-        ]
+        # Description
+        description = QLabel("The system automatically saves backups when you make significant changes. You can restore previous versions from here.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
         
-        sort_key = column_keys[logical_index]
+        # Create table for backups
+        self.backup_table = QTableWidget()
+        self.backup_table.setColumnCount(4)
+        self.backup_table.setHorizontalHeaderLabels(["Date & Time", "Size (KB)", "Actions", ""])
+        self.backup_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.backup_table.setSelectionBehavior(QTableWidget.SelectRows)
         
-        # Handle special case for numeric columns
-        numeric_columns = ["Cooldown", "UserCooldown", "Cost", "Count", "Volume"]
+        # Load backup list
+        self.refresh_backup_list()
         
-        if sort_key in numeric_columns:
-            # For numeric columns, convert to int for sorting
-            commands_to_sort.sort(
-                key=lambda x: int(x.get(sort_key, 0)) if x.get(sort_key, 0) != '' else 0, 
-                reverse=(order == Qt.DescendingOrder)
-            )
-        elif sort_key == "Enabled":
-            # For boolean columns
-            commands_to_sort.sort(
-                key=lambda x: bool(x.get(sort_key, False)), 
-                reverse=(order == Qt.DescendingOrder)
-            )
+        layout.addWidget(self.backup_table)
+        
+        # Auto-backup settings
+        backup_settings = QGroupBox("Backup Settings")
+        backup_settings_layout = QHBoxLayout()
+        
+        # Max backups setting
+        max_backups_label = QLabel("Maximum number of backups:")
+        self.max_backups_spin = QSpinBox()
+        self.max_backups_spin.setMinimum(1)
+        self.max_backups_spin.setMaximum(100)
+        self.max_backups_spin.setValue(self.history_manager.max_backups)
+        self.max_backups_spin.valueChanged.connect(self.update_max_backups)
+        
+        backup_settings_layout.addWidget(max_backups_label)
+        backup_settings_layout.addWidget(self.max_backups_spin)
+        backup_settings_layout.addStretch()
+        
+        backup_settings.setLayout(backup_settings_layout)
+        layout.addWidget(backup_settings)
+        
+        tab.setLayout(layout)
+        return tab
+
+    def refresh_backup_list(self):
+        """Refresh the list of backups in the table"""
+        self.backup_table.setRowCount(0)
+        
+        backups = self.history_manager.get_backups()
+        
+        for i, backup in enumerate(backups):
+            self.backup_table.insertRow(i)
+            
+            # Date & Time
+            self.backup_table.setItem(i, 0, QTableWidgetItem(backup["readable_time"]))
+            
+            # Size
+            self.backup_table.setItem(i, 1, QTableWidgetItem(f"{backup['size']} KB"))
+            
+            # Restore button
+            restore_btn = QPushButton("Restore")
+            restore_btn.clicked.connect(lambda checked, path=backup["path"]: self.restore_backup(path))
+            
+            # View button
+            view_btn = QPushButton("View")
+            view_btn.clicked.connect(lambda checked, path=backup["path"]: self.view_backup(path))
+            
+            # Add buttons to table
+            self.backup_table.setCellWidget(i, 2, restore_btn)
+            self.backup_table.setCellWidget(i, 3, view_btn)
+
+    def create_backup(self):
+        """Create a backup of current commands"""
+        if not self.commands:
+            QMessageBox.warning(self, "Warning", "No commands to backup.")
+            return
+            
+        if self.history_manager.save_backup(self.commands):
+            self.refresh_backup_list()
+            QMessageBox.information(self, "Success", "Backup created successfully!")
         else:
-            # For text columns
-            commands_to_sort.sort(
-                key=lambda x: str(x.get(sort_key, "")).lower(), 
-                reverse=(order == Qt.DescendingOrder)
-            )
+            QMessageBox.warning(self, "Error", "Failed to create backup.")
+            
+    def restore_backup(self, backup_path):
+        """Restore commands from a backup file"""
+        if not backup_path:
+            return
+            
+        reply = QMessageBox.question(
+            self,
+            "Confirm Restore",
+            "Restoring will replace your current commands. Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
         
-        # Update commands list and refresh the table
-        self.commands = commands_to_sort
-        self.refresh_table()
-        
-        # Restore selection if possible
-        if selected_command:
-            for row in range(self.table.rowCount()):
-                item = self.table.item(row, 0)  # Command column
-                if item and item.text() == selected_command:
-                    self.table.selectRow(row)
-                    break
-        
-        # Unblock signals after sorting is complete
-        self.table.blockSignals(False)
-
-    def reset_sorting(self):
-        """Reset sorting to original order"""
-        # Remember the selected command before resetting
-        selected_command = None
-        selected_items = self.table.selectedItems()
-        if selected_items:
-            row = selected_items[0].row()
-            if row < len(self.commands):
-                selected_command = self.commands[row]["Command"]
-        
-        # Create a mapping of commands by their original position
-        command_map = {}
-        for cmd in self.commands:
-            # Create a key based on command name or position in original list
-            key = cmd["Command"]
-            command_map[key] = cmd
-        
-        # Rebuild commands list in original order but with current data
-        sorted_commands = []
-        for orig_cmd in self.original_commands:
-            key = orig_cmd["Command"]
-            if key in command_map:
-                # Use current data for this command
-                sorted_commands.append(command_map[key])
-            else:
-                # If the command name changed, try to find it by other properties
-                found = False
-                for current_cmd in self.commands:
-                    # Check if this might be the same command with a changed name
-                    if (current_cmd not in sorted_commands and
-                        current_cmd.get("SoundFile") == orig_cmd.get("SoundFile") and
-                        current_cmd.get("Response") == orig_cmd.get("Response")):
-                        sorted_commands.append(current_cmd)
-                        found = True
-                        break
+        if reply == QMessageBox.Yes:
+            commands = self.history_manager.restore_backup(backup_path)
+            
+            if commands:
+                # Update commands
+                self.commands = commands
                 
-                # If we couldn't find a match, use the original
-                if not found:
-                    sorted_commands.append(orig_cmd)
-        
-        # Add any new commands that weren't in the original list
-        for cmd in self.commands:
-            if cmd not in sorted_commands:
-                sorted_commands.append(cmd)
-        
-        # Update commands list
-        self.commands = sorted_commands
-        
-        # Reset sort indicator
-        self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)
-        
-        # Refresh the table
-        self.refresh_table()
-        
-        # Restore selection if possible
-        if selected_command:
-            for row in range(self.table.rowCount()):
-                item = self.table.item(row, 0)  # Command column
-                if item and item.text() == selected_command:
-                    self.table.selectRow(row)
-                    break
-                    
-        # Inform the user
-        self.statusBar().showMessage("Sorting reset to original order", 3000)
+                # Also update original_commands for sorting reset
+                self.original_commands = self.commands.copy()
+                
+                # Refresh the table
+                self.refresh_table()
+                
+                # Update Twitch bot if running
+                self.update_commands()
+                
+                QMessageBox.information(self, "Success", "Commands restored successfully!")
+            else:
+                QMessageBox.warning(self, "Error", "Failed to restore backup.")
 
-    def show_header_menu(self, position):
-        """Show context menu for table header"""
-        menu = QMenu(self)
-        reset_action = menu.addAction("Reset Sorting")
-        action = menu.exec_(self.table.horizontalHeader().mapToGlobal(position))
-        
-        if action == reset_action:
-            self.reset_sorting()
+    def view_backup(self, backup_path):
+        """View contents of a backup file"""
+        if not backup_path:
+            return
+            
+        try:
+            with open(backup_path, 'r', encoding='utf-8') as f:
+                commands = json.load(f)
+                
+            # Create a dialog to show the backup contents
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Backup Contents")
+            dialog.setMinimumSize(800, 600)
+            
+            dialog_layout = QVBoxLayout()
+            
+            # Create a table to show commands
+            backup_view = QTableWidget()
+            backup_view.setColumnCount(7)  # Increased to 7 columns to include Cooldown
+            backup_view.setHorizontalHeaderLabels([
+                "Command", "Sound File", "Response", "Group", 
+                "Enabled", "Volume", "Cooldown"  # Added Cooldown column
+            ])
+            backup_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            
+            # Populate table
+            backup_view.setRowCount(len(commands))
+            for i, cmd in enumerate(commands):
+                backup_view.setItem(i, 0, QTableWidgetItem(cmd["Command"]))
+                backup_view.setItem(i, 1, QTableWidgetItem(cmd["SoundFile"]))
+                backup_view.setItem(i, 2, QTableWidgetItem(cmd["Response"]))
+                backup_view.setItem(i, 3, QTableWidgetItem(cmd.get("Group", "")))
+                backup_view.setItem(i, 4, QTableWidgetItem("✓" if cmd["Enabled"] else "✗"))
+                backup_view.setItem(i, 5, QTableWidgetItem(str(cmd.get("Volume", 100))))
+                backup_view.setItem(i, 6, QTableWidgetItem(str(cmd.get("Cooldown", 0))))  # Added Cooldown value
+                
+            dialog_layout.addWidget(backup_view)
+            
+            # Add close button
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.close)
+            dialog_layout.addWidget(close_btn)
+            
+            dialog.setLayout(dialog_layout)
+            dialog.exec_()
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to view backup: {str(e)}")
+
+    def update_max_backups(self, value):
+        """Update the maximum number of backups to keep"""
+        self.history_manager.max_backups = value
+        # Save this setting to config file
+        self.config_manager.set_max_backups(value)
 
 if __name__ == "__main__":
     app = QApplication([])

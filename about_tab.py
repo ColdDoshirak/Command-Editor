@@ -223,8 +223,7 @@ class AboutTab(QWidget):
             <li><b>Allow sounds to interrupt each other</b> - Позволяет перебивать другие звуки или запретить это делать. Да начнётся спам.</li>
             <li><b>Show message when sound blocked</b> - Отображает предупреждение о том, что звук ещё играет. Ну чтоб спамеры поняли, что это не баг, а фича.</li>
             <li><b>NEW Search</b> - Да где же эта команда. Нашёл. Всего-то нужно в строку ввести название команды</li>
-            <li><b>NEW Сортировка</b> - Да где же эта команда по алфавиту (или ещё по чему-то). Нашёл. Всего-то нужно нажать на нужную колонку.</li>
-            <li><b>NEW Reset Sort</b> - Понажимал сортировок, теперь не понятно. Верну как было.</li>
+            <li><b>NEW History</b> - Когда-то случилась ошибка ценой в 20 часов. <b>Я ОТКАЗЫВАЮСЬ ОТ ОШИБКИ. (поставь побольше бекапов)</b></li>
         </ul>
 
         <h3>А где бот аааа</h3>
@@ -277,10 +276,10 @@ class AboutTab(QWidget):
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")
         
         version_text = f"""
-        <h3 style="text-align: center;">Command Editor v1.0.2</h3>
+        <h3 style="text-align: center;">Command Editor v1.0.2h1</h3>
         
         <p><b>Application:</b> Twitch Bot Command Editor</p>
-        <p><b>Version:</b> 1.0.2</p>
+        <p><b>Version:</b> 1.0.2h1</p>
         <p><b>Release Date:</b> 2025-04-16</p>
         <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
