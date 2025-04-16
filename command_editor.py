@@ -214,11 +214,13 @@ class CommandEditor(QMainWindow):
         auto_save_layout = QHBoxLayout()
         
         self.auto_save_checkbox = QCheckBox("Enable Auto-Save")
+        self.auto_save_checkbox.stateChanged.connect(self.on_auto_save_toggle)
         self.auto_save_interval_input = QSpinBox()
         self.auto_save_interval_input.setMinimum(60)
         self.auto_save_interval_input.setMaximum(3600)
         self.auto_save_interval_input.setSingleStep(60)
         self.auto_save_interval_input.setSuffix(" seconds")
+        self.auto_save_interval_input.valueChanged.connect(self.on_auto_save_interval_changed)
         
         auto_save_layout.addWidget(self.auto_save_checkbox)
         auto_save_layout.addWidget(QLabel("Interval:"))
@@ -935,40 +937,52 @@ class CommandEditor(QMainWindow):
     def auto_save(self):
         """Automatically save commands and configuration"""
         try:
+            print("Running auto-save...")
+            
             # Save commands
             if self.commands:
-                # Check for significant changes before saving
+                # Get existing commands for comparison
                 existing_commands = []
-                if os.path.exists('commands.json'):
-                    try:
+                try:
+                    if os.path.exists('commands.json'):
                         with open('commands.json', 'r', encoding='utf-8') as f:
                             existing_commands = json.load(f)
-                    except:
-                        pass
-                        
-                # Save the commands
-                self.config_manager.save_commands(self.commands)
-                print("Auto-saved commands")
+                except Exception as e:
+                    print(f"Error reading existing commands for comparison: {e}")
+                    existing_commands = []
                 
-                # Create backup if significant changes detected
-                if self._has_significant_changes(existing_commands, self.commands):
-                    self.history_manager.save_backup(self.commands)
-                    # Refresh the backup list if the history tab is currently visible
-                    if self.tab_widget.currentWidget() == self.history_tab:
-                        self.refresh_backup_list()
-                    print("Auto-saved backup created")
+                # Save the commands first
+                print("Saving commands...")
+                with open('commands.json', 'w', encoding='utf-8') as f:
+                    json.dump(self.commands, f, indent=4, ensure_ascii=False)
+                
+                # Always create backup on auto-save, don't check for significant changes
+                print("Creating backup during auto-save...")
+                backup_successful = self.history_manager.save_backup(self.commands)
+                
+                if backup_successful:
+                    print("Auto-save backup created successfully")
+                    # Always refresh the backup list when a new backup is created
+                    self.refresh_backup_list()
+                    print("Backup list refreshed")
+                else:
+                    print("Failed to create auto-save backup")
+                
+                # Update commands in Twitch tab if it exists
+                if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
+                    self.twitch_tab.bot.update_commands(self.commands)
             
-            # Save volume setting
+            # Save other settings
             self.config_manager.set_volume(self.volume)
-            
-            # Save interruption setting
             self.config_manager.set_sound_interruption(self.allow_sound_interruption)
-            
-            # Save auto-save settings
+            self.config_manager.set_interruption_message(self.show_interruption_message)
             self.config_manager.set_auto_save(
                 self.auto_save_enabled,
                 self.auto_save_interval
             )
+            
+            print("Auto-save completed successfully")
+            
         except Exception as e:
             print(f"Error during auto-save: {e}")
 
@@ -1266,6 +1280,29 @@ class CommandEditor(QMainWindow):
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
             self.twitch_tab.bot.set_show_interruption_message(self.show_interruption_message)
             self.twitch_tab.add_to_chat(f"Interruption message: {'Enabled' if self.show_interruption_message else 'Disabled'}")
+
+    def on_auto_save_toggle(self, state):
+        self.auto_save_enabled = (state == Qt.Checked)
+        
+        # Update timer
+        if self.auto_save_enabled:
+            self.auto_save_timer.start(self.auto_save_interval * 1000)
+        else:
+            self.auto_save_timer.stop()
+            
+        # Save setting
+        self.config_manager.set_auto_save(self.auto_save_enabled, self.auto_save_interval)
+
+    def on_auto_save_interval_changed(self, value):
+        self.auto_save_interval = value
+        
+        # Update timer if already running
+        if self.auto_save_enabled and self.auto_save_timer.isActive():
+            self.auto_save_timer.stop()
+            self.auto_save_timer.start(value * 1000)
+            
+        # Save setting
+        self.config_manager.set_auto_save(self.auto_save_enabled, self.auto_save_interval)
 
     def filter_commands(self):
         """Filter displayed commands based on search text"""
