@@ -16,8 +16,9 @@ Features:
 - Auto-save each 300s and on exit.
 - Play/Stop Sound for testing volume
 - Sound interruption toggle for twitch chat
-- Sorting
+- Sorting (Removed on v1.0.2h1 until properly tested)
 - Search
+- Backup manager
 
 Known issues:
 - Every textbox change doesn't change the table (only volume works)
