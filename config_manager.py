@@ -197,10 +197,11 @@ class ConfigManager:
                 backup_file = self.backup_dir / f'config_{timestamp}.json'
                 shutil.copy2(self.config_file, backup_file)
                 
-                # Keep only last 5 backups
+                # Keep only last N backups
                 backups = sorted([f for f in self.backup_dir.glob('config_*.json')])
-                if len(backups) > 5:
-                    for old_backup in backups[:-5]:
+                max_backups = self.get_max_backups()
+                if len(backups) > max_backups:
+                    for old_backup in backups[:-max_backups]:
                         old_backup.unlink()
         except Exception as e:
             print(f"Error creating backup: {e}")
@@ -330,6 +331,28 @@ class ConfigManager:
         
         self.save_config()
 
+    def get_sound_interruption(self):
+        """Get sound interruption setting"""
+        return self.config.get('sound', {}).get('allow_interruption', True)
+    
+    def set_sound_interruption(self, allow_interruption):
+        """Set sound interruption setting"""
+        if 'sound' not in self.config:
+            self.config['sound'] = {}
+        self.config['sound']['allow_interruption'] = allow_interruption
+        self.save_config()
+
+    def get_interruption_message(self):
+        """Get whether to show interruption messages"""
+        return self.config.get('sound', {}).get('show_interruption_message', True)
+    
+    def set_interruption_message(self, show_message):
+        """Set whether to show interruption messages"""
+        if 'sound' not in self.config:
+            self.config['sound'] = {}
+        self.config['sound']['show_interruption_message'] = show_message
+        self.save_config()
+
     def save_twitch_config(self, access_token=None, client_id=None, channel=None, refresh_token=None):
         """Save Twitch configuration"""
         try:
@@ -356,3 +379,14 @@ class ConfigManager:
         except Exception as e:
             print(f"Error saving Twitch config: {e}")
             return False
+
+    def get_max_backups(self):
+        """Get maximum number of backups to keep"""
+        return self.config.get('backup', {}).get('max_backups', 10)
+    
+    def set_max_backups(self, max_backups):
+        """Set maximum number of backups to keep"""
+        if 'backup' not in self.config:
+            self.config['backup'] = {}
+        self.config['backup']['max_backups'] = max_backups
+        self.save_config()

@@ -1,8 +1,8 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QLineEdit, QPushButton, QMessageBox)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtCore import QUrl
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtCore import QUrl
 import json
 import os
 from config_manager import ConfigManager
@@ -42,14 +42,9 @@ class TwitchAuthDialog(QDialog):
         layout.addWidget(self.refresh_token_edit)
         
         # Add help text
-        help_label = QLabel("How to get these tokens: Visit twitchtokengenerator.com and generate a token with 'chat:read chat:edit' permissions")
+        help_label = QLabel("Enter your Twitch API credentials to connect the bot")
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
-        
-        # Add a button to open token generator
-        token_gen_btn = QPushButton("Open Twitch Token Generator")
-        token_gen_btn.clicked.connect(self.open_token_generator)
-        layout.addWidget(token_gen_btn)
         
         # Add buttons
         button_layout = QHBoxLayout()
@@ -100,11 +95,28 @@ class TwitchAuthDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to save credentials: {str(e)}")
             
-    def open_token_generator(self):
-        """Open Twitch Token Generator in browser"""
-        QDesktopServices.openUrl(QUrl("https://twitchtokengenerator.com/"))
-        
     def accept(self):
         """Handle dialog acceptance"""
         # This method is overridden to prevent automatic saving
-        super().accept() 
+        super().accept()
+
+    def get_auth_url(self):
+        """Generate Twitch OAuth URL"""
+        scopes = [
+            "chat:read",
+            "chat:edit",
+            "channel:moderate",
+            "channel:read:subscriptions",
+            "moderator:read:chatters",  # Add this scope for chatters list access
+            "channel:manage:redemptions"
+        ]
+        
+        scope_str = "+".join(scopes)
+        
+        return (
+            f"https://id.twitch.tv/oauth2/authorize"
+            f"?client_id={self.client_id}"
+            f"&redirect_uri={self.redirect_uri}"
+            f"&response_type=token"
+            f"&scope={scope_str}"
+        )
