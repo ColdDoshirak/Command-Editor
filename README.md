@@ -21,6 +21,7 @@ Features:
 - Backup manager
 - Currency system
 - Auto-reconnect
+
 Known issues:
 
 - Every textbox change doesn't change the table (only volume works)
