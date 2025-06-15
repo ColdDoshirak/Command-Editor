@@ -30,10 +30,15 @@ class CurrencyTab(QWidget):
         # Создаем контейнер для содержимого скролла
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
-        
-        # === GENERAL SECTION ===
+          # === GENERAL SECTION ===
         general_group = QGroupBox("General")
         general_layout = QVBoxLayout()
+        # Currency Accumulation Toggle - добавляем переключатель в начале секции
+        self.accumulation_check = QCheckBox("Enable Currency Accumulation")
+        self.accumulation_check.setChecked(self.currency_manager.settings.get('accumulation_enabled', True))
+        self.accumulation_check.stateChanged.connect(self.save_settings)
+        self.accumulation_check.setToolTip("When enabled, users will earn currency while watching the stream")
+        general_layout.addWidget(self.accumulation_check)
         
         # Points command
         command_layout = QHBoxLayout()
@@ -382,8 +387,8 @@ class CurrencyTab(QWidget):
         """Save currency settings to file"""
         try:
             # Get settings from UI controls
-            settings = {
-                # General settings
+            settings = {            # General settings
+                'accumulation_enabled': self.accumulation_check.isChecked(),  # New setting for currency accumulation
                 'command': self.command_input.text(),
                 'name': self.name_input.text(),
                 'response': self.response_input.text(),

@@ -12,9 +12,9 @@ class CurrencyManager:
         # Основные хранилища данных
         self.users = {}
         self.ranks = []
-        
-        # Настройки по умолчанию
+          # Настройки по умолчанию
         self.settings = {
+            'accumulation_enabled': True,  # New setting for currency accumulation
             'command': '!points',
             'name': 'Points',
             'response': '$username [$rank] - Hours: $hours - $currencyname: $points',
@@ -485,6 +485,11 @@ class CurrencyManager:
     
     def process_currency_update(self, is_live=False, active_viewers=None, all_viewers=None):
         """Process currency update for viewers"""
+        # Проверяем, включено ли накопление валюты
+        if not self.settings.get('accumulation_enabled', True):
+            print(f"[{datetime.now().isoformat()}] Currency accumulation disabled - skipping update")
+            return False
+            
         # Добавляем защиту от двойного начисления
         current_time = time.time()
         
