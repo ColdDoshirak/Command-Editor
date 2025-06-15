@@ -3,7 +3,7 @@ import os
 import time
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                            QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
-                           QCheckBox, QDialog, QLineEdit, QSpinBox, QMessageBox,
+                           QCheckBox, QDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox,
                            QFileDialog, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
 from currency_manager import CurrencyManager
@@ -160,11 +160,10 @@ class UserCurrencyTab(QWidget):
                 points = data.get('points', 0)
                 points_item = QTableWidgetItem(str(points))
                 points_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.table.setItem(row, 1, points_item)
-                
-                # Часы
+                self.table.setItem(row, 1, points_item)                # Часы в формате "1h15m"
                 hours = data.get('hours', 0)
-                hours_item = QTableWidgetItem(f"{hours:.1f}")
+                formatted_hours = self.currency_manager.format_hours(hours) if hasattr(self.currency_manager, 'format_hours') else f"{hours:.2f}"
+                hours_item = QTableWidgetItem(formatted_hours)
                 hours_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(row, 2, hours_item)
                 
@@ -258,12 +257,12 @@ class UserCurrencyTab(QWidget):
         points_input.setRange(0, 999999)
         points_layout.addWidget(points_input)
         layout.addLayout(points_layout)
-        
-        # Часы
+          # Часы (с поддержкой дробных значений)
         hours_layout = QHBoxLayout()
         hours_layout.addWidget(QLabel("Hours:"))
-        hours_input = QSpinBox()
+        hours_input = QDoubleSpinBox()
         hours_input.setRange(0, 9999)
+        hours_input.setDecimals(2)  # Устанавливаем 2 десятичных знака
         hours_layout.addWidget(hours_input)
         layout.addLayout(hours_layout)
         
@@ -333,12 +332,12 @@ class UserCurrencyTab(QWidget):
         points_input.setValue(user_data.get('points', 0))
         points_layout.addWidget(points_input)
         layout.addLayout(points_layout)
-        
-        # Часы
+          # Часы (с поддержкой дробных значений)
         hours_layout = QHBoxLayout()
         hours_layout.addWidget(QLabel("Hours:"))
-        hours_input = QSpinBox()
+        hours_input = QDoubleSpinBox()  # Используем QDoubleSpinBox для дробных значений
         hours_input.setRange(0, 9999)
+        hours_input.setDecimals(2)  # Устанавливаем 2 десятичных знака
         hours_input.setValue(user_data.get('hours', 0))
         hours_layout.addWidget(hours_input)
         layout.addLayout(hours_layout)

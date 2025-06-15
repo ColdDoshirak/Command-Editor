@@ -392,17 +392,19 @@ class CurrencyManager:
         user = self.users.get(username)
         if not user:
             return "Пользователь не найден"
-        rank = user.get('rank') or ("Regular" if user.get("is_regular") else "Unranked")
-
-        # Format points to always display with 2 decimal places
+        rank = user.get('rank') or ("Regular" if user.get("is_regular") else "Unranked")        # Format points to always display with 2 decimal places
         points = user.get('points', 0)
         formatted_points = f"{float(points):.2f}"
-
+        
         message = self.settings['response']
+        # Форматируем часы в формате "1h15m"
+        hours = user.get('hours', 0)
+        formatted_hours = self.format_hours(hours)
+        
         replacements = {
             '$username': username,
             '$rank': rank,
-            '$hours': str(user.get('hours', 0)),
+            '$hours': formatted_hours,
             '$points': formatted_points,
             '$currencyname': self.settings.get('name', 'Points')
         }
@@ -592,7 +594,19 @@ class CurrencyManager:
                 
                 # Для целочисленных значений не нужна проверка на минимум 0.1
                 
-                self.add_points(uname, total)                # Логирование начисления (с точностью до сотых)
+                self.add_points(uname, total)
+                  # Обновляем часы просмотра (только если stream is live или offline_hours включены)
+                hours_added = 0
+                if is_live or self.settings.get('offline_hours', False):
+                    # Конвертируем elapsed_minutes в часы, с округлением до сотых (поминутная точность)
+                    hours_added = round(elapsed_minutes / 60, 2)
+                    # Если пользователя нет в системе, добавляем его
+                    if uname not in self.users:
+                        self.users[uname] = {'points': 0, 'hours': 0, 'last_seen': time.time()}
+                    # Добавляем часы пользователю
+                    self.users[uname]['hours'] += hours_added
+                
+                # Логирование начисления (с точностью до сотых)
                 bonus_str = f"(base {pts:.2f}"
                 if regular_bonus > 0:
                     bonus_str += f" + regular bonus {regular_bonus:.2f}"
@@ -600,9 +614,19 @@ class CurrencyManager:
                     bonus_str += f" + sub bonus {sub_bonus:.2f}"
                 if mod_bonus > 0:
                     bonus_str += f" + mod bonus {mod_bonus:.2f}"
-                bonus_str += ")"
+                bonus_str += ")"                # Добавляем информацию о часах в лог только если они начислены
+                if hours_added > 0:
+                    # Форматируем добавленные часы в виде минут, так как обычно они будут маленькими
+                    minutes_added = round(hours_added * 60)
+                    hours_info = f", hours +{minutes_added}m"
+                else:
+                    hours_info = ""
+                print(f"[{datetime.now().isoformat()}] awarded {total:.2f} to {uname} {bonus_str} → new total {self.users[uname]['points']:.2f}{hours_info}")
                 
-                print(f"[{datetime.now().isoformat()}] awarded {total:.2f} to {uname} {bonus_str} → new total {self.users[uname]['points']:.2f}")
+                # Добавляем специальный лог для отслеживания часов
+                if hours_added > 0:
+                    total_hours_formatted = self.format_hours(self.users[uname]['hours'])
+                    print(f"[{datetime.now().isoformat()}] Hours tracking: {uname} +{minutes_added}m → new total {total_hours_formatted}")
                 viewers_awarded += 1
             
             self.save_users()
@@ -650,3 +674,57 @@ class CurrencyManager:
                 'last_seen': time.time()
             }
         return self.users[username]['points']
+        
+    def get_hours(self, username):
+        """Получить количество часов пользователя"""
+        username = username.lower()
+        if username not in self.users:
+            self.users[username] = {
+                'points': 0,
+                'hours': 0,
+                'last_seen': time.time()
+            }
+        return self.users[username].get('hours', 0)
+        
+    def get_rank(self, username):
+        """Получить ранг пользователя"""
+        username = username.lower()
+        if username not in self.users:
+            return ""
+            
+        user = self.users[username]
+        
+        # Если у пользователя уже есть ранг, вернем его
+        if 'rank' in user and user['rank']:
+            return user['rank']
+            
+        # Если у пользователя нет ранга, вычислим его на основе поинтов или часов
+        rank_value = user['points'] if self.settings.get('rank_type', 'Points') == 'Points' else user['hours']
+        
+        # Сортируем ранги по требуемым значениям (от большего к меньшему)
+        sorted_ranks = sorted(self.ranks, key=lambda x: x.get('points', 0) if 'points' in x else x.get('required', 0), reverse=True)
+        
+        # Находим подходящий ранг
+        for rank in sorted_ranks:
+            required = rank.get('points', 0) if 'points' in rank else rank.get('required', 0)
+            if rank_value >= required:
+                return rank['name']
+        
+        # Если ранг не был найден, возвращаем пустую строку
+        return ""
+    
+    def format_hours(self, hours):
+        """Форматирует часы в формате 1h15m"""
+        # Округляем до ближайшей минуты
+        total_minutes = round(hours * 60)
+        hours_part = total_minutes // 60
+        minutes_part = total_minutes % 60
+        
+        # Форматируем в виде "1h15m" или только "15m" если часов нет
+        if hours_part > 0:
+            if minutes_part > 0:
+                return f"{hours_part}h{minutes_part}m"
+            else:
+                return f"{hours_part}h"
+        else:
+            return f"{minutes_part}m"

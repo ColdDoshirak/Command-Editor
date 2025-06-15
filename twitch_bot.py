@@ -1071,14 +1071,15 @@ class TwitchBot(commands.Bot):
                 user = ctx.author.name.lower()
                 currency_name = self.currency_manager.get_currency_name()
                 points = self.currency_manager.get_points(user)
-                hours = self.currency_manager.get_hours(user)  # Предполагаем, что есть метод get_hours
-                rank = self.currency_manager.get_rank(user)  # Предполагаем, что есть метод get_rank
+                hours = self.currency_manager.get_hours(user)
+                rank = self.currency_manager.get_rank(user)
                 
-                # Format points to always display with 2 decimal places
+                # Format points with 2 decimal places and hours in the format "1h15m"
                 formatted_points = f"{float(points):.2f}"
+                formatted_hours = self.currency_manager.format_hours(hours)
                 
                 rank_text = f" [{rank}]" if rank else ""
-                await ctx.send(f"{ctx.author.name}{rank_text} - Hours: {hours:.1f} - {currency_name}: {formatted_points}")
+                await ctx.send(f"{ctx.author.name}{rank_text} - Hours: {formatted_hours} - {currency_name}: {formatted_points}")
 
             @self.command(name="points_add")
             async def cmd_points_add(ctx, target: str = None, amount: int = None):
