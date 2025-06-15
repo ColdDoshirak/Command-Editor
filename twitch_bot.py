@@ -93,8 +93,8 @@ class TwitchBot(commands.Bot):
                 self.currency_manager.load_settings()
             
             # Инициализируем словарь для отслеживания кулдаунов
-            self.global_cooldowns = {}  # {команда: время_последнего_использования}
-            self.user_cooldowns = {}    # {команда: {пользователь: время_последнего_использования}
+            self.global_cooldowns = {}  # {нормализованная_команда: время_последнего_использования}
+            self.user_cooldowns = {}    # {нормализованная_команда: {пользователь: время_последнего_использования}
             
             # Заголовки для Helix
             client_id = config.get("client_id")
@@ -196,9 +196,19 @@ class TwitchBot(commands.Bot):
             return
 
         # Нормализуем ключ команды без префикса и в lowercase
-        key = content[1:].split(maxsplit=1)[0].lower()
+        raw_key = content[1:].split(maxsplit=1)[0].lower()
+        # Удаляем невидимые символы и пробелы для нормализации команды
+        key = self.normalize_command_key(raw_key)
         username = message.author.name.lower()
         current_time = time.time()
+        
+        # Для отладки
+        if raw_key != key:
+            print(f"Command normalized: '{raw_key}' -> '{key}'")
+        
+        if not key:  # Проверка на пустую команду после нормализации
+            print("Empty command after normalization, ignoring")
+            return
         
         # Проверка на специальную команду !points до проверки custom команд
         if key == "points" and hasattr(self, 'currency_manager'):
@@ -206,7 +216,11 @@ class TwitchBot(commands.Bot):
             cmd_key = "points"
             cooldown_sec = self.currency_manager.settings.get('cooldown', 5)  # в секундах
             
-            last_used = self.user_cooldowns.get(cmd_key, {}).get(username, 0)
+            # Нормализуем ключ команды и проверяем, не содержит ли он невидимые символы
+            normalized_key = self.normalize_command_key(cmd_key)
+            
+            # Используем нормализованный ключ для проверки кулдауна
+            last_used = self.user_cooldowns.get(normalized_key, {}).get(username, 0)
             elapsed = current_time - last_used
             
             if cooldown_sec > 0 and elapsed < cooldown_sec:
@@ -215,13 +229,17 @@ class TwitchBot(commands.Bot):
                     f"@{username}: command is on cooldown. Try in {remaining} sec."
                 )
                 return
-                
-            # Отправляем сообщение с данными о валюте
+            
+            # Команда выполняется - формируем и отправляем ответ
             response = self.currency_manager.format_currency_message(username)
             await message.channel.send(response)
             
-            # Обновляем время последнего использования
-            self.user_cooldowns.setdefault(cmd_key, {})[username] = current_time
+            # Обновляем время последнего использования только ПОСЛЕ успешного выполнения
+            if cooldown_sec > 0:  # Проверяем, что кулдаун активен
+                self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
+            
+            # Логируем выполнение команды
+            print(f"Points command executed by {username}")
             return
 
         # Далее обрабатываем кастомные команды как раньше
@@ -229,20 +247,33 @@ class TwitchBot(commands.Bot):
             if not cmd.get("Enabled", False):
                 continue
 
-            # Сравниваем тоже без "!" и в lowercase
-            cmd_key = cmd["Command"].lstrip(self.prefix).lower()
+            # Сравниваем тоже без "!" и в lowercase, удаляем невидимые символы
+            raw_cmd_key = cmd["Command"].lstrip(self.prefix).lower()
+            cmd_key = self.normalize_command_key(raw_cmd_key)
+            
+            # Если ключи не совпадают, пропускаем команду
             if cmd_key != key:
                 continue
+                
+            # Для отладки
+            print(f"Command matched: '{key}' with command configuration key '{cmd_key}'")
+            if raw_cmd_key != cmd_key:
+                print(f"  Command normalized in config: '{raw_cmd_key}' -> '{cmd_key}'")
+            print(f"  Command cost: {cmd.get('Cost', 0)}")
 
             # теперь Cooldown измеряется в минутах
             cooldown_min = int(cmd.get("Cooldown", 0))
             cooldown_sec = cooldown_min * 60
-            last_used = self.global_cooldowns.get(cmd_key, 0)
+            
+            # Используем нормализованный ключ для проверки кулдауна
+            normalized_key = self.normalize_command_key(cmd_key)
+            last_used = self.global_cooldowns.get(normalized_key, 0)
             elapsed = current_time - last_used
+            
             if cooldown_sec > 0 and elapsed < cooldown_sec:
                 remaining = int((cooldown_sec - elapsed))
                 await message.channel.send(
-                    f"@{username}: command is on coolddown. Try in {remaining} sec."
+                    f"@{username}: command is on cooldown. Try in {remaining} sec."
                 )
                 return
 
@@ -250,7 +281,8 @@ class TwitchBot(commands.Bot):
             user_cd_min = int(cmd.get("UserCooldown", 0))
             user_cd_sec = user_cd_min * 60
             if user_cd_sec > 0:
-                user_last = self.user_cooldowns.get(cmd_key, {}).get(username, 0)
+                # Используем тот же нормализованный ключ для проверки пользовательского кулдауна
+                user_last = self.user_cooldowns.get(normalized_key, {}).get(username, 0)
                 u_elapsed = current_time - user_last
                 if u_elapsed < user_cd_sec:
                     u_rem = int(user_cd_sec - u_elapsed)
@@ -259,36 +291,120 @@ class TwitchBot(commands.Bot):
                     )
                     return
 
-            # после всех проверок — фиксируем время
-            if cooldown_sec > 0:
-                self.global_cooldowns[cmd_key] = current_time
-            if user_cd_sec > 0:
-                self.user_cooldowns.setdefault(cmd_key, {})[username] = current_time
-
-            # Проверка стоимости (после кулдаунов)
+            # Проверка стоимости ПЕРЕД фиксацией времени кулдауна
             cost = int(cmd.get("Cost", 0))
-            if cost and not self.currency_manager.pay_for_command(username, cost):
+            points_deducted = False
+            
+            if cost > 0:
+                # Проверяем баланс перед списанием
                 current_points = self.currency_manager.get_points(username)
-                formatted_points = f"{float(current_points):.2f}"
-                await message.channel.send(
-                    f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
-                )
-                return
+                print(f"User {username} has {current_points} points, command costs {cost}")
+                
+                if current_points < cost:
+                    formatted_points = f"{float(current_points):.2f}"
+                    await message.channel.send(
+                        f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
+                    )
+                    return
+                
+                # Списываем поинты только если достаточно средств
+                if self.currency_manager.pay_for_command(username, cost):
+                    points_deducted = True
+                    print(f"Deducted {cost} points from {username}")
+                else:
+                    # Этого не должно происходить, но на всякий случай
+                    print(f"Failed to deduct points from {username}")
+                    current_points = self.currency_manager.get_points(username)
+                    formatted_points = f"{float(current_points):.2f}"
+                    await message.channel.send(
+                        f"@{username}: Payment error. Cost: {cost} (you have {formatted_points})"
+                    )
+                    return
                 
             # Выполняем саму команду
+            # Флаги для отслеживания выполнения частей команды
+            command_executed = False
+            has_response = False
+            has_sound = False
+            sound_played = False
+            
             # Отправка текста-ответа
             resp = cmd.get("Response", "").replace("{user}", message.author.name)
-            if resp:
+            if resp and resp.strip():
+                has_response = True
                 await message.channel.send(resp)
+                command_executed = True
+                print(f"Sent text response for command '{cmd_key}'")
                 
             # Проигрывание звука
             sf = cmd.get("SoundFile", "").strip()
             if sf:
+                has_sound = True
                 volume = int(cmd.get("Volume", 100))
-                self.play_sound(sf, volume)
+                sound_played = self.play_sound(sf, volume)
+                if sound_played:
+                    print(f"Successfully played sound for command '{cmd_key}'")
+                    command_executed = True
+                else:
+                    print(f"Failed to play sound for command '{cmd_key}'")
+                    
+            # Команда считается выполненной если либо был отправлен ответ,
+            # либо успешно проигран звук, либо оба действия
+            
+            # Применяем кулдауны и увеличиваем счетчик ТОЛЬКО если команда была успешно выполнена
+            if command_executed:
+                print(f"Command '{cmd_key}' was successfully executed by {username}")
+                # Фиксируем время кулдаунов, используя нормализованный ключ
+                normalized_key = self.normalize_command_key(cmd_key)
+                if cooldown_sec > 0:
+                    self.global_cooldowns[normalized_key] = current_time
+                    print(f"Set global cooldown for '{normalized_key}', {cooldown_sec}s")
+                if user_cd_sec > 0:
+                    self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
+                    print(f"Set user cooldown for '{normalized_key}' and user {username}, {user_cd_sec}s")
+                    
+                # Увеличиваем счетчик использований команды
+                cmd["Count"] += 1
+                print(f"Incremented usage count for '{cmd_key}': {cmd['Count']}")
+            else:
+                # Если команда не выполнена (например, из-за блокировки звука)
+                print(f"Command '{cmd_key}' by {username} did not execute properly")
                 
-            # Увеличиваем счетчик использований команды
-            cmd["Count"] += 1
+                # Определяем причину неисполнения команды для более понятного сообщения
+                reason = "Command could not be executed"
+                
+                # Детализируем причину в зависимости от типа команды и ситуации
+                if has_sound and not sound_played:
+                    if self.sound_channel.get_busy():
+                        reason = "Sound blocked: another sound is already playing"
+                    else:
+                        reason = "Sound file could not be played"
+                        
+                # Если команда имеет и текст и звук, и текст отправился, но звук заблокирован
+                if has_response and has_sound and not sound_played:
+                    reason = "Text response sent, but sound was blocked"
+                
+                # Возвращаем стоимость команды пользователю, если она была списана
+                if points_deducted and cost > 0:
+                    self.currency_manager.add_points(username, cost)
+                    print(f"Refunded {cost} points to {username} because {reason.lower()}")
+                    
+                    # Сохраняем изменения сразу после возврата
+                    self.currency_manager.save_users()
+                    print(f"Points refund saved to currency file for {username}")
+                    
+                    # Подготовка сообщения пользователю
+                    response_message = f"@{username}: {reason}. {cost} points refunded."
+                    
+                    # Специальный случай для звуковых команд без текста
+                    if has_sound and not has_response and not sound_played:
+                        # Проверяем, нужно ли вообще показывать сообщение о блокировке
+                        show_message = getattr(self, 'show_interruption_message', False)
+                        if show_message:
+                            await message.channel.send(response_message)
+                    else:
+                        # Для всех остальных случаев всегда показываем сообщение
+                        await message.channel.send(response_message)
                 
             return  # Команда обработана
             
@@ -358,12 +474,13 @@ class TwitchBot(commands.Bot):
             traceback.print_exc()
     
     def play_sound(self, filepath, volume=100):
-        """Проигрывание звукового файла с учетом настроек прерывания и громкости"""
+        """Проигрывание звукового файла с учетом настроек прерывания и громкости
+        Возвращает True, если звук был успешно запущен, False в противном случае"""
         try:
             # Проверка существования файла
             if not os.path.exists(filepath):
                 print(f"Sound file not found: {filepath}")
-                return
+                return False
 
             # Проверка активного воспроизведения
             if self.sound_channel.get_busy():
@@ -375,14 +492,14 @@ class TwitchBot(commands.Bot):
                     self.sound_channel.fadeout(100)
                 else:
                     print("Blocking sound...")
+                    # Важно: не отправляем сообщение здесь, так как оно будет дублироваться с сообщением
+                    # о возврате очков. Вместо этого просто логируем блокировку
                     show_message = getattr(self, 'show_interruption_message', False)
                     if show_message and self.connected_channels:
-                        chan = self.connected_channels[0]
-                        asyncio.run_coroutine_threadsafe(
-                            chan.send("Sound blocked: another sound is playing."),
-                            self.loop
-                        )
-                    return  # Не проигрываем новый звук
+                        # Мы теперь отправляем более подробное сообщение о блокировке в основном коде
+                        # так что здесь просто логируем это событие
+                        print("Sound blocked because another sound is playing")
+                    return False  # Не проигрываем новый звук
 
             # Загрузка и воспроизведение звука
             snd = self.loaded_sounds.get(filepath)
@@ -398,10 +515,12 @@ class TwitchBot(commands.Bot):
             # Воспроизводим на нашем канале
             self.sound_channel.play(snd)
             print(f"Playing sound: {filepath}")
+            return True  # Звук успешно запущен
             
         except Exception as e:
             print(f"CRITICAL ERROR in play_sound: {e}")
             traceback.print_exc()
+            return False  # В случае ошибки
 
     async def get_all_viewers(self) -> list:
         """Get chatters via Helix API /chat/chatters"""
@@ -554,6 +673,10 @@ class TwitchBot(commands.Bot):
             while self.is_running:
                 try:
                     await asyncio.sleep(10)  # Проверка каждые 10 секунд
+                    
+                    # Периодически очищаем кулдауны
+                    if time.time() % 300 < 10:  # Примерно каждые 5 минут
+                        self.cleanup_cooldowns()
                     
                     # Активная проверка соединения с Twitch IRC
                     connection_alive = False
@@ -1006,4 +1129,78 @@ class TwitchBot(commands.Bot):
             print("Built-in bot commands registered successfully.")
         except Exception as e:
             print(f"Error registering built-in commands: {e}")
+            traceback.print_exc()
+
+    def normalize_command_key(self, key):
+        """Нормализует ключ команды, удаляя невидимые символы и пробелы"""
+        if not key:
+            return ""
+            
+        # Превращаем в нижний регистр
+        key = key.lower()
+        
+        # Сначала удаляем все невидимые символы (Unicode категории C)
+        # и символы-разделители пробельного типа
+        normalized = ''
+        for c in key:
+            if c.isprintable() and not c.isspace():
+                normalized += c
+                
+        # Для дополнительной безопасности обрабатываем вариации имен команд
+        normalized = normalized.replace('!', '')  # Удаляем префиксы команд если они остались
+        
+        # Логирование при обнаружении изменений
+        if normalized != key and key:
+            print(f"Command key normalized: '{key}' -> '{normalized}'")
+            
+        return normalized
+    
+    def cleanup_cooldowns(self):
+        """Очищает кулдауны от устаревших записей и нормализует ключи команд"""
+        try:
+            current_time = time.time()
+            max_age = 3600  # удаляем кулдауны старше 1 часа
+            
+            # Временные словари для нормализованных ключей
+            new_global_cooldowns = {}
+            new_user_cooldowns = {}
+            
+            # Очищаем и нормализуем global_cooldowns
+            for cmd, timestamp in list(self.global_cooldowns.items()):
+                # Пропускаем устаревшие записи
+                if current_time - timestamp > max_age:
+                    continue
+                    
+                # Нормализуем ключ команды
+                normalized_cmd = self.normalize_command_key(cmd)
+                if normalized_cmd:  # Пропускаем пустые ключи
+                    new_global_cooldowns[normalized_cmd] = timestamp
+            
+            # Очищаем и нормализуем user_cooldowns
+            for cmd, users in list(self.user_cooldowns.items()):
+                normalized_cmd = self.normalize_command_key(cmd)
+                if not normalized_cmd:  # Пропускаем пустые ключи
+                    continue
+                    
+                new_users = {}
+                for username, timestamp in users.items():
+                    # Пропускаем устаревшие записи
+                    if current_time - timestamp > max_age:
+                        continue
+                        
+                    # Добавляем актуальные записи
+                    new_users[username] = timestamp
+                    
+                if new_users:  # Только если есть актуальные записи
+                    new_user_cooldowns[normalized_cmd] = new_users
+            
+            # Заменяем словари на новые, нормализованные
+            self.global_cooldowns = new_global_cooldowns
+            self.user_cooldowns = new_user_cooldowns
+            
+            print(f"Cooldowns cleaned up: {len(self.global_cooldowns)} global, {len(self.user_cooldowns)} user commands")
+            
+        except Exception as e:
+            print(f"Error cleaning up cooldowns: {e}")
+            import traceback
             traceback.print_exc()
