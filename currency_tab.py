@@ -29,16 +29,22 @@ class CurrencyTab(QWidget):
         
         # Создаем контейнер для содержимого скролла
         scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-          # === GENERAL SECTION ===
+        scroll_layout = QVBoxLayout(scroll_content)        # === GENERAL SECTION ===
         general_group = QGroupBox("General")
         general_layout = QVBoxLayout()
+        
         # Currency Accumulation Toggle - добавляем переключатель в начале секции
         self.accumulation_check = QCheckBox("Enable Currency Accumulation")
         self.accumulation_check.setChecked(self.currency_manager.settings.get('accumulation_enabled', True))
         self.accumulation_check.stateChanged.connect(self.save_settings)
         self.accumulation_check.setToolTip("When enabled, users will earn currency while watching the stream")
         general_layout.addWidget(self.accumulation_check)
+          # Добавляем опцию показа служебных сообщений в окне программы
+        self.show_service_messages_check = QCheckBox("Show Service Messages in Program")
+        self.show_service_messages_check.setChecked(self.currency_manager.settings.get('show_service_messages', False))
+        self.show_service_messages_check.stateChanged.connect(self.save_settings)
+        self.show_service_messages_check.setToolTip("When enabled, service messages about points calculation will be shown in the program's chat window")
+        general_layout.addWidget(self.show_service_messages_check)
         
         # Points command
         command_layout = QHBoxLayout()
@@ -82,8 +88,7 @@ class CurrencyTab(QWidget):
         cooldown_layout.addWidget(self.cooldown_slider)
         cooldown_layout.addWidget(self.cooldown_value)
         general_layout.addLayout(cooldown_layout)
-        
-        # Rank settings
+          # Rank settings
         rank_layout = QHBoxLayout()
         rank_label = QLabel("Assign ranks based on x amount of")
         self.rank_type = QComboBox()
@@ -91,7 +96,6 @@ class CurrencyTab(QWidget):
         self.rank_type.setCurrentText(self.currency_manager.settings.get('rank_type', 'Points'))
         self.rank_type.currentTextChanged.connect(self.save_settings)
         rank_suffix = QLabel("gained/spent in chat")
-        
         rank_layout.addWidget(rank_label)
         rank_layout.addWidget(self.rank_type)
         rank_layout.addWidget(rank_suffix)
@@ -157,8 +161,7 @@ class CurrencyTab(QWidget):
         online_layout.addWidget(self.online_interval_slider)
         online_layout.addWidget(self.online_interval_value)
         intervals_layout.addLayout(online_layout)
-        
-        # Offline Interval
+          # Offline Interval
         offline_layout = QHBoxLayout()
         offline_label = QLabel("Offline Interval:")
         self.offline_interval_slider = QSlider(Qt.Horizontal)
@@ -172,7 +175,6 @@ class CurrencyTab(QWidget):
         
         self.offline_interval_value = QLabel(f"{self.offline_interval_slider.value()}")
         self.offline_interval_slider.valueChanged.connect(lambda v: self.offline_interval_value.setText(str(v)))
-        
         offline_layout.addWidget(offline_label)
         offline_layout.addWidget(self.offline_interval_slider)
         offline_layout.addWidget(self.offline_interval_value)
@@ -367,8 +369,7 @@ class CurrencyTab(QWidget):
         
         # Set main layout for the tab
         self.setLayout(main_layout)
-        
-        # Подключаем обновление после создания слайдеров и полей ввода
+          # Подключаем обновление после создания слайдеров и полей ввода
         self.live_payout_input.valueChanged.connect(self.update_min_max_labels)
         self.offline_payout_input.valueChanged.connect(self.update_min_max_labels)
         self.online_interval_slider.valueChanged.connect(self.update_min_max_labels)
@@ -379,21 +380,24 @@ class CurrencyTab(QWidget):
         self.active_bonus_input.valueChanged.connect(self.update_min_max_labels)
         if hasattr(self, 'offline_active_bonus_check'):
             self.offline_active_bonus_check.stateChanged.connect(self.update_min_max_labels)
-
+            
         # В конце метода initUI() вызываем обновление меток
         self.update_min_max_labels()
-    
+        
     def save_settings(self):
         """Save currency settings to file"""
         try:
             # Get settings from UI controls
-            settings = {            # General settings
+            settings = {
+                # General settings
                 'accumulation_enabled': self.accumulation_check.isChecked(),  # New setting for currency accumulation
+                'show_service_messages': self.show_service_messages_check.isChecked(),  # Show service messages in chat
                 'command': self.command_input.text(),
                 'name': self.name_input.text(),
                 'response': self.response_input.text(),
                 'cooldown': self.cooldown_slider.value(),
                 'rank_type': self.rank_type.currentText(),
+                'payout_mode': 'per_minute',  # Всегда используем режим per_minute
                 'offline_hours': self.offline_hours_check.isChecked(),
                 'auto_regular': self.auto_regular_check.isChecked(),
                 'auto_regular_amount': self.auto_regular_amount.value(),
@@ -426,14 +430,13 @@ class CurrencyTab(QWidget):
             # Save settings to file
             if hasattr(self.currency_manager, 'save_settings'):
                 self.currency_manager.save_settings()
-                
-            return True
+                return True
         except Exception as e:
             print(f"Error saving currency settings: {e}")
             import traceback
             traceback.print_exc()
             return False
-    
+            
     def update_min_max_labels(self):
         """Update the min/max labels based on current settings"""
         try:
@@ -442,22 +445,18 @@ class CurrencyTab(QWidget):
             online_interval = self.online_interval_slider.value()
             offline_payout = self.offline_payout_input.value()
             offline_interval = self.offline_interval_slider.value()
-            
-            # Получаем бонусы
+              # Получаем бонусы
             regular_bonus = self.regular_bonus_input.value()
             sub_bonus = self.sub_bonus_input.value()
             mod_bonus = self.mod_bonus_input.value()
             active_bonus = self.active_bonus_input.value()
             
-            # Расчет минимальных значений в час (одинаковый для Live и Offline)
+            # Режим "за минуту": рассчитываем почасовые значения из интервальных
             live_min = (60 / online_interval) * live_payout
             offline_min = (60 / offline_interval) * offline_payout
-            
-            # Расчет максимальных значений в час, включая все возможные бонусы
             live_max = (60 / online_interval) * (live_payout + regular_bonus + sub_bonus + mod_bonus + active_bonus)
-            
-            # Для offline максимум также включает все применимые бонусы
             offline_max = (60 / offline_interval) * (offline_payout + regular_bonus + sub_bonus + mod_bonus + active_bonus)
+            unit = "/h"
             
             # Округляем значения
             live_min_rounded = round(live_min)
@@ -467,8 +466,8 @@ class CurrencyTab(QWidget):
             
             # Обновляем метку с расчетными значениями
             self.time_info_label.setText(
-                f"[LIVE] Min: {live_min_rounded}/h - Max: {live_max_rounded}/h    "
-                f"[OFFLINE] Min: {offline_min_rounded}/h - Max: {offline_max_rounded}/h"
+                f"[LIVE] Min: {live_min_rounded}{unit} - Max: {live_max_rounded}{unit}    "
+                f"[OFFLINE] Min: {offline_min_rounded}{unit} - Max: {offline_max_rounded}{unit}"
             )
         except Exception as e:
             print(f"Error updating min/max labels: {e}")

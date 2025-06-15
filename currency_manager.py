@@ -9,12 +9,13 @@ import sys
 
 class CurrencyManager:
     def __init__(self):
-        # Основные хранилища данных
-        self.users = {}
+        # Основные хранилища данных        self.users = {}
         self.ranks = []
-          # Настройки по умолчанию
+        
+        # Настройки по умолчанию
         self.settings = {
             'accumulation_enabled': True,  # New setting for currency accumulation
+            'show_service_messages': False,  # Setting for showing service messages in chat
             'command': '!points',
             'name': 'Points',
             'response': '$username [$rank] - Hours: $hours - $currencyname: $points',
@@ -29,9 +30,9 @@ class CurrencyManager:
             'live_payout': 1,
             'offline_payout': 0,
             'regular_bonus': 0,
-            'sub_bonus': 0,
-            'mod_bonus': 0,
+            'sub_bonus': 0,            'mod_bonus': 0,
             'active_bonus': 1,
+            'payout_mode': 'per_minute',  # Только per_minute режим
             'on_raid': 10,
             'on_follow': 10,
             'on_sub': 10,
@@ -142,11 +143,11 @@ class CurrencyManager:
                 'offline_active_bonus': False,
                 'sub_bonus': 1,
                 'regular_bonus': 1,
-                'mod_bonus': 2,
-                'active_bonus': 1,
+                'mod_bonus': 2,                'active_bonus': 1,
                 'currency_single': 'point',
                 'currency_plural': 'points',
                 'hours_name': 'hours',
+                'show_service_messages': False,  # Настройка для показа служебных сообщений в чате
                 # Добавляем настройки, используемые в process_currency_update
                 'online_amount': 1,
                 'offline_amount': 0,
@@ -171,10 +172,10 @@ class CurrencyManager:
             self.settings.setdefault("follow_points", 5)
             self.settings.setdefault("sub_points", 20)
             self.settings.setdefault("gift_sub_points", 15)  # Для получателя
-            self.settings.setdefault("gift_sub_bonus", 5)    # Бонус дарителю за каждую
-            self.settings.setdefault("bits_ratio", 1)        # Очки за каждые 100 битов
+            self.settings.setdefault("gift_sub_bonus", 5)    # Бонус дарителю за каждую            self.settings.setdefault("bits_ratio", 1)        # Очки за каждые 100 битов
             self.settings.setdefault("host_points", 5)
             self.settings.setdefault("sub_bonus", 2)         # Множитель очков для подписчиков
+            self.settings.setdefault("payout_mode", "per_minute")  # Всегда используем per_minute
             
             return self.settings  # Возвращаем словарь настроек, а не True/False
         except Exception as e:
@@ -393,12 +394,16 @@ class CurrencyManager:
             return "Пользователь не найден"
         rank = user.get('rank') or ("Regular" if user.get("is_regular") else "Unranked")
 
+        # Format points to always display with 2 decimal places
+        points = user.get('points', 0)
+        formatted_points = f"{float(points):.2f}"
+
         message = self.settings['response']
         replacements = {
             '$username': username,
             '$rank': rank,
             '$hours': str(user.get('hours', 0)),
-            '$points': str(user.get('points', 0)),
+            '$points': formatted_points,
             '$currencyname': self.settings.get('name', 'Points')
         }
         for placeholder, value in replacements.items():
@@ -469,8 +474,7 @@ class CurrencyManager:
         if not hasattr(self, 'users') or self.users is None:
             self.users = self.get_all_users()
         
-        if username not in self.users:
-            self.users[username] = {
+        if username not in self.users:            self.users[username] = {
                 'points': 0,
                 'hours': 0,
                 'last_seen': time.time()
@@ -478,25 +482,31 @@ class CurrencyManager:
         else:
             self.users[username]['last_seen'] = time.time()
     
-    # Метод для совместимости с get_all_users
     def get_all_users(self):
         """Метод для совместимости с обращениями к get_all_users"""
         return self.users
     
-    def process_currency_update(self, is_live=False, active_viewers=None, all_viewers=None):
+    def process_currency_update(self, is_live=False, active_viewers=None, all_viewers=None, chat_message_callback=None):
         """Process currency update for viewers"""
         # Проверяем, включено ли накопление валюты
         if not self.settings.get('accumulation_enabled', True):
             print(f"[{datetime.now().isoformat()}] Currency accumulation disabled - skipping update")
+            if chat_message_callback and self.settings.get('show_service_messages', False):
+                chat_message_callback("Currency accumulation disabled")
             return False
             
-        # Добавляем защиту от двойного начисления
+        # Добавляем защиту от двойного начисления и вычисляем интервал начисления
         current_time = time.time()
         
         # Если прошло менее 5 секунд с момента последнего обновления, пропускаем
         if hasattr(self, 'last_update_time') and current_time - self.last_update_time < 5:
             print(f"[{datetime.now().isoformat()}] Skipping currency update - too soon after previous update")
             return
+        
+        # Рассчитываем время, прошедшее с последнего начисления в минутах
+        elapsed_minutes = 0
+        if hasattr(self, 'last_update_time'):
+            elapsed_minutes = (current_time - self.last_update_time) / 60
         
         self.last_update_time = current_time
         
@@ -513,63 +523,95 @@ class CurrencyManager:
             # Логируем начало
             print(f"[{datetime.now().isoformat()}] process_currency_update: is_live={is_live}, "
                   f"active={len(active_viewers)}, all={len(all_viewers)}")
-
-            # Получаем сумму поинтов
+                  
+            # Получаем базовую сумму поинтов и интервал начисления
             if is_live:
-                points_to_award = self.settings.get('live_payout', 0)
+                base_payout = self.settings.get('live_payout', 0)
+                interval_minutes = self.settings.get('online_interval', 5)
             else:
-                points_to_award = self.settings.get('offline_payout', 0)
-
-            print(f"[{datetime.now().isoformat()}] points_to_award = {points_to_award}")
-
+                base_payout = self.settings.get('offline_payout', 0)
+                interval_minutes = self.settings.get('offline_interval', 15)            # Проратируем награду в зависимости от времени с последнего обновления
+            # Формула: (Points per interval) * (elapsed minutes) / (interval minutes)
+            if elapsed_minutes > 0:
+                points_to_award = base_payout * elapsed_minutes / interval_minutes
+            else:
+                # Первый запуск, начисляем минимальную сумму
+                points_to_award = base_payout / (interval_minutes * 2)
+              # Округляем до двух знаков после запятой
+            points_to_award = round(points_to_award, 2)
+            
+            status_message = f"Points calculation: {base_payout:.2f} per {interval_minutes} min, elapsed: {elapsed_minutes:.2f} min, awarding {points_to_award:.2f} points"
+            print(f"[{datetime.now().isoformat()}] Proration: {base_payout} points per {interval_minutes} min interval, "                  f"elapsed: {elapsed_minutes:.2f} min, awarding {points_to_award:.2f} points")
+            
+            # Отправляем сообщение в чат, если есть callback и показ служебных сообщений включен
+            if chat_message_callback and self.settings.get('show_service_messages', False):
+                chat_message_callback(status_message)
+            
             if points_to_award <= 0:
                 print(f"[{datetime.now().isoformat()}] no points to award → skip")
+                if chat_message_callback and self.settings.get('show_service_messages', False):
+                    chat_message_callback("No points to award, skipping update")
                 return False
 
             viewers_awarded = 0
             for user in all_viewers:
                 uname = user.lower()
-                
-                # Базовые очки
+                  # Базовые очки с точностью до сотых
                 pts = points_to_award
                 
                 # Бонус для регуляров
                 is_regular = self.users.get(uname, {}).get('is_regular', False)
-                regular_bonus = self.settings.get('regular_bonus', 0) if is_regular else 0
+                regular_bonus = 0
+                if is_regular:
+                    # Проратируем и бонус регулярам
+                    regular_bonus_rate = self.settings.get('regular_bonus', 0)
+                    if elapsed_minutes > 0:
+                        regular_bonus = round(regular_bonus_rate * elapsed_minutes / interval_minutes, 2)
+                    else:
+                        regular_bonus = round(regular_bonus_rate / (interval_minutes * 2), 2)
                 
                 # Бонус для подписчиков
                 is_subscriber = self.users.get(uname, {}).get('is_subscriber', False)
                 sub_bonus = 0
                 if is_subscriber:
                     sub_multiplier = self.settings.get('sub_bonus', 2)
-                    sub_bonus = pts * (sub_multiplier - 1)  # Дополнительные очки
+                    sub_bonus = round(pts * (sub_multiplier - 1), 2)  # Точность до сотых
                 
                 # Бонус для модераторов
                 is_mod = self.users.get(uname, {}).get('is_mod', False)
                 mod_bonus = 0
                 if is_mod:
-                    mod_bonus_value = self.settings.get('mod_bonus', 0)
-                    mod_bonus = mod_bonus_value  # Дополнительные очки для модераторов
+                    mod_bonus_base = self.settings.get('mod_bonus', 0)
+                    if elapsed_minutes > 0:
+                        mod_bonus = round(mod_bonus_base * elapsed_minutes / interval_minutes, 2)
+                    else:
+                        mod_bonus = round(mod_bonus_base / (interval_minutes * 2), 2)
                 
-                total = pts + regular_bonus + sub_bonus + mod_bonus
-                self.add_points(uname, total)
+                # Применяем все бонусы и округляем итоговую сумму до сотых
+                total = round(pts + regular_bonus + sub_bonus + mod_bonus, 2)
                 
-                # Логирование начисления
-                bonus_str = f"(base {pts}"
+                # Для целочисленных значений не нужна проверка на минимум 0.1
+                
+                self.add_points(uname, total)                # Логирование начисления (с точностью до сотых)
+                bonus_str = f"(base {pts:.2f}"
                 if regular_bonus > 0:
-                    bonus_str += f" + regular bonus {regular_bonus}"
+                    bonus_str += f" + regular bonus {regular_bonus:.2f}"
                 if sub_bonus > 0:
-                    bonus_str += f" + sub bonus {sub_bonus}"
+                    bonus_str += f" + sub bonus {sub_bonus:.2f}"
                 if mod_bonus > 0:
-                    bonus_str += f" + mod bonus {mod_bonus}"
+                    bonus_str += f" + mod bonus {mod_bonus:.2f}"
                 bonus_str += ")"
                 
-                print(f"[{datetime.now().isoformat()}] awarded {total} to {uname} {bonus_str} → new total {self.users[uname]['points']}")
+                print(f"[{datetime.now().isoformat()}] awarded {total:.2f} to {uname} {bonus_str} → new total {self.users[uname]['points']:.2f}")
                 viewers_awarded += 1
-
+            
             self.save_users()
+            summary_message = f"Points update completed: {viewers_awarded} users received points"
             print(f"[{datetime.now().isoformat()}] process_currency_update: done, "
-                  f"{viewers_awarded} users processed")
+                  f"{viewers_awarded} users processed")            # Отправляем итоговое сообщение в чат, если есть callback и показ служебных сообщений включен
+            if chat_message_callback and self.settings.get('show_service_messages', False):
+                chat_message_callback(summary_message)
+                
             return True
 
         except Exception as e:

@@ -468,16 +468,23 @@ class TwitchTab(QWidget):
             self.signal_handler.chat_signal.emit(error_msg)
             print(error_msg)
             viewers = list(getattr(self.bot, 'active_users', []))
-
+        
         self.all_viewers_list.clear()
         for v in sorted(viewers):
             self.all_viewers_list.addItem(v)
         self.all_viewers_count.setText(f"All: {len(viewers)}")
-
+        
+        # Создаем функцию для отправки сообщений только в окно программы
+        def show_service_message(message):
+            # Используем сигнал для отправки сообщения в окно чата программы
+            if hasattr(self, 'signal_handler'):
+                self.signal_handler.chat_signal.emit(f"[POINTS] {message}")
+        
         self.parent.currency_manager.process_currency_update(
             is_live=self.currently_live,
             active_viewers=self.active_users,
-            all_viewers=viewers
+            all_viewers=viewers,
+            chat_message_callback=show_service_message
         )
 
     @pyqtSlot(list)

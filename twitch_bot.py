@@ -269,8 +269,9 @@ class TwitchBot(commands.Bot):
             cost = int(cmd.get("Cost", 0))
             if cost and not self.currency_manager.pay_for_command(username, cost):
                 current_points = self.currency_manager.get_points(username)
+                formatted_points = f"{float(current_points):.2f}"
                 await message.channel.send(
-                    f"@{username}: Not enough points. Cost: {cost} (you have {current_points})"
+                    f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
                 )
                 return
                 
@@ -842,11 +843,14 @@ class TwitchBot(commands.Bot):
             # Начисляем очки рейдеру
             self.currency_manager.add_points(raider.name.lower(), points_to_award)
             
+            # Format points for display
+            formatted_points = f"{float(points_to_award):.2f}"
+            
             # Логируем событие
-            print(f"Raid reward: {raider.name} получил {points_to_award} очков за рейд с {viewers} зрителями")
+            print(f"Raid reward: {raider.name} получил {formatted_points} очков за рейд с {viewers} зрителями")
             
             # Отправляем сообщение в чат
-            message = f"Спасибо за рейд, @{raider.name}! +{points_to_award} очков за рейд с {viewers} зрителями."
+            message = f"Спасибо за рейд, @{raider.name}! +{formatted_points} очков за рейд с {viewers} зрителями."
             
             if len(self.connected_channels) > 0:
                 try:
@@ -857,7 +861,7 @@ class TwitchBot(commands.Bot):
             
             # Уведомляем UI если есть callback
             if self.message_callback:
-                self.message_callback(f"Raid: {raider.name} получил {points_to_award} очков за рейд с {viewers} зрителями")
+                self.message_callback(f"Raid: {raider.name} получил {formatted_points} очков за рейд с {viewers} зрителями")
                 
         except Exception as e:
             print(f"CRITICAL ERROR in event_raid: {e}")
@@ -881,17 +885,20 @@ class TwitchBot(commands.Bot):
             # Добавляем очки подписчику
             self.currency_manager.add_points(subscription.user.name, points_to_award)
             
+            # Format points for display
+            formatted_points = f"{float(points_to_award):.2f}"
+            
             # Отмечаем пользователя как подписчика
             if subscription.user.name in self.currency_manager.users:
                 self.currency_manager.users[subscription.user.name]['is_subscriber'] = True
             
             # Сообщение в чат
             await self.connected_channels[0].send(
-                f"Спасибо за подписку, {subscription.user.name}! Получено {points_to_award} очков."
+                f"Спасибо за подписку, {subscription.user.name}! Получено {formatted_points} очков."
             )
             
             if self.message_callback:
-                self.message_callback(f"Sub: {subscription.user.name} получил {points_to_award} очков за подписку Tier {subscription.tier // 1000}")
+                self.message_callback(f"Sub: {subscription.user.name} получил {formatted_points} очков за подписку Tier {subscription.tier // 1000}")
         except Exception as e:
             print(f"CRITICAL ERROR in event_subscription: {e}")
             import traceback
@@ -906,15 +913,18 @@ class TwitchBot(commands.Bot):
             # Добавляем очки пользователю
             self.currency_manager.add_points(follower.name, follow_points)
             
+            # Format points for display
+            formatted_points = f"{float(follow_points):.2f}"
+            
             # Логируем событие
-            print(f"[Follow] {follower.name} получил {follow_points} очков за подписку")
+            print(f"[Follow] {follower.name} получил {formatted_points} очков за подписку")
             
             # Сообщение в чат (опционально)
             if len(self.connected_channels) > 0:
                 try:
                     channel = self.connected_channels[0]
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"Спасибо за подписку, {follower.name}! +{follow_points} очков"),
+                        channel.send(f"Спасибо за подписку, {follower.name}! +{formatted_points} очков"),
                         self.loop
                     )
                 except Exception as e:
@@ -922,7 +932,7 @@ class TwitchBot(commands.Bot):
                     
             # Уведомляем UI если есть callback
             if self.message_callback:
-                self.message_callback(f"Follow: {follower.name} получил {follow_points} очков за подписку")
+                self.message_callback(f"Follow: {follower.name} получил {formatted_points} очков за подписку")
                 
         except Exception as e:
             print(f"CRITICAL ERROR in event_follow: {e}")
@@ -940,9 +950,12 @@ class TwitchBot(commands.Bot):
                 points = self.currency_manager.get_points(user)
                 hours = self.currency_manager.get_hours(user)  # Предполагаем, что есть метод get_hours
                 rank = self.currency_manager.get_rank(user)  # Предполагаем, что есть метод get_rank
-
+                
+                # Format points to always display with 2 decimal places
+                formatted_points = f"{float(points):.2f}"
+                
                 rank_text = f" [{rank}]" if rank else ""
-                await ctx.send(f"{ctx.author.name}{rank_text} - Hours: {hours:.1f} - {currency_name}: {points}")
+                await ctx.send(f"{ctx.author.name}{rank_text} - Hours: {hours:.1f} - {currency_name}: {formatted_points}")
 
             @self.command(name="points_add")
             async def cmd_points_add(ctx, target: str = None, amount: int = None):
