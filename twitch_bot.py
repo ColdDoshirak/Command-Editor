@@ -210,6 +210,102 @@ class TwitchBot(commands.Bot):
             print("Empty command after normalization, ignoring")
             return
         
+        # Проверка на команду !add_points (только для модераторов)
+        if key == "add_points" and hasattr(self, 'currency_manager'):
+            # Проверяем, является ли пользователь модератором
+            is_mod = await self.is_user_moderator(username)
+            if not is_mod:
+                await message.channel.send(f"@{username}: You don't have permission to use this command.")
+                return
+                
+            # Парсим сообщение для получения параметров (имя пользователя и количество очков)
+            args = content.split(maxsplit=2)[1:]
+            if len(args) < 2:
+                await message.channel.send(f"@{username}: Usage: !add_points @username amount")
+                return
+                
+            # Получаем имя пользователя (удаляем @ если есть)
+            target_user = args[0]
+            if target_user.startswith('@'):
+                target_user = target_user[1:]
+            target_user = target_user.lower()
+                
+            # Парсим количество очков
+            try:
+                points_amount = float(args[1])
+                # Округляем до двух знаков после запятой
+                points_amount = round(points_amount, 2)
+                if points_amount <= 0:
+                    await message.channel.send(f"@{username}: Amount must be greater than 0")
+                    return
+            except ValueError:
+                await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
+                return
+                
+            # Добавляем очки
+            current_points = self.currency_manager.add_points(target_user, points_amount)
+            self.currency_manager.save_users()
+            
+            # Отправляем ответ
+            formatted_points = f"{float(current_points):.2f}"
+            await message.channel.send(
+                f"@{target_user} received {points_amount:.2f} points from @{username}. New balance: {formatted_points}"
+            )
+            return
+            
+        # Проверка на команду !remove_points (только для модераторов)
+        if key == "remove_points" and hasattr(self, 'currency_manager'):
+            # Проверяем, является ли пользователь модератором
+            is_mod = await self.is_user_moderator(username)
+            if not is_mod:
+                await message.channel.send(f"@{username}: You don't have permission to use this command.")
+                return
+                
+            # Парсим сообщение для получения параметров (имя пользователя и количество очков)
+            args = content.split(maxsplit=2)[1:]
+            if len(args) < 2:
+                await message.channel.send(f"@{username}: Usage: !remove_points @username amount")
+                return
+                
+            # Получаем имя пользователя (удаляем @ если есть)
+            target_user = args[0]
+            if target_user.startswith('@'):
+                target_user = target_user[1:]
+            target_user = target_user.lower()
+                
+            # Парсим количество очков
+            try:
+                points_amount = float(args[1])
+                # Округляем до двух знаков после запятой
+                points_amount = round(points_amount, 2)
+                if points_amount <= 0:
+                    await message.channel.send(f"@{username}: Amount must be greater than 0")
+                    return
+            except ValueError:
+                await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
+                return
+                
+            # Получаем текущие очки пользователя
+            current_points = self.currency_manager.get_points(target_user)
+            
+            # Проверяем, хватает ли очков
+            if current_points < points_amount:
+                await message.channel.send(
+                    f"@{username}: User @{target_user} only has {current_points:.2f} points, cannot remove {points_amount:.2f}"
+                )
+                return
+                
+            # Снимаем очки
+            self.currency_manager.remove_points(target_user, points_amount)
+            new_balance = self.currency_manager.get_points(target_user)
+            self.currency_manager.save_users()
+            
+            # Отправляем ответ
+            await message.channel.send(
+                f"@{username} removed {points_amount:.2f} points from @{target_user}. New balance: {new_balance:.2f}"
+            )
+            return
+        
         # Проверка на специальную команду !points до проверки custom команд
         if key == "points" and hasattr(self, 'currency_manager'):
             # Проверяем cooldown для points команды
@@ -219,7 +315,7 @@ class TwitchBot(commands.Bot):
             # Нормализуем ключ команды и проверяем, не содержит ли он невидимые символы
             normalized_key = self.normalize_command_key(cmd_key)
             
-            # Используем нормализованный ключ для проверки кулдауна
+            # Используем нормалованный ключ для проверки кулдауна
             last_used = self.user_cooldowns.get(normalized_key, {}).get(username, 0)
             elapsed = current_time - last_used
             
@@ -664,6 +760,29 @@ class TwitchBot(commands.Bot):
             print(f"Error fetching moderators: {e}")
             return []
 
+    async def is_user_moderator(self, username):
+        """Проверяет, является ли пользователь модератором канала"""
+        # Нормализуем имя пользователя
+        username = username.lower()
+        
+        # Владелец канала всегда считается модератором
+        if username == self.channel.lower():
+            return True
+            
+        # Проверяем, есть ли у пользователя флаг модератора в системе валюты
+        if hasattr(self, 'currency_manager') and username in self.currency_manager.users:
+            if self.currency_manager.users[username].get('is_mod', False):
+                return True
+                
+        # Используем get_channel_moderators для получения актуального списка модераторов
+        try:
+            moderators = await self.get_channel_moderators()
+            return username in moderators
+        except Exception as e:
+            print(f"Error checking moderator status: {e}")
+            # По умолчанию не модератор при ошибке
+            return False
+            
     async def _check_connection(self):
         """Check and maintain connection"""
         try:
@@ -1191,7 +1310,7 @@ class TwitchBot(commands.Bot):
                         
                     # Добавляем актуальные записи
                     new_users[username] = timestamp
-                    
+            
                 if new_users:  # Только если есть актуальные записи
                     new_user_cooldowns[normalized_cmd] = new_users
             
