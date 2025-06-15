@@ -58,6 +58,7 @@ class AboutTab(QWidget):
         <ul>
             <li>Twitch: <a href="https://twitch.tv/HotDoshirak">https://twitch.tv/HotDoshirak</a></li>
             <li>GitHub: <a href="https://github.com/colddoshirak">https://github.com/colddoshirak</a></li>
+            <li>Donate: <a href="https://www.donationalerts.com/r/hotdoshirak1">https://www.donationalerts.com/r/hotdoshirak1</a></li>
         </ul>
         
         <p>Made in 2025 with ai lol</p>
@@ -209,6 +210,8 @@ class AboutTab(QWidget):
         instructions_html = """
         <h2>Руководство по использованию</h2>
 
+        <h2>Высока вероятность, что инструкция переедет в Wiki на Github.</h2>
+
         <h3>Как работать с этим ааа помогите</h3>
         <p>Сейчас объясню</p>
         <ul>
@@ -285,11 +288,11 @@ class AboutTab(QWidget):
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")
         
         version_text = f"""
-        <h3 style="text-align: center;">Command Editor v1.1.0</h3>
+        <h3 style="text-align: center;">Command Editor</h3>
         
         <p><b>Application:</b> Twitch Bot Command Editor</p>
-        <p><b>Version:</b> 1.1.0</p>
-        <p><b>Release Date:</b> 2025-04-22</p>
+        <p><b>Version:</b> 1.1.1</p>
+        <p><b>Release Date:</b> 2025-06-16</p>
         <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
         
