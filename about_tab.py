@@ -1,15 +1,238 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTextBrowser, 
-                          QTabWidget, QScrollArea, QGroupBox, QHBoxLayout)
-from PyQt5.QtCore import Qt
+                          QTabWidget, QScrollArea, QGroupBox, QHBoxLayout, 
+                          QPushButton, QFrame, QMessageBox, QDialog)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QIcon
 import datetime
 from pathlib import Path
 import os
 import sys
+import requests
+import json
+import webbrowser
+
+class UpdateCheckerThread(QThread):
+    """Thread for checking updates without blocking the UI"""
+    update_available = pyqtSignal(str, str, str)  # new_version, download_url, release_notes
+    no_update = pyqtSignal()
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, current_version, github_repo="colddoshirak/Command-Editor"):
+        super().__init__()
+        self.current_version = current_version
+        self.github_repo = github_repo
+    
+    def run(self):
+        """Check for updates on GitHub"""
+        try:
+            # GitHub API URL for latest release
+            api_url = f"https://api.github.com/repos/{self.github_repo}/releases/latest"
+            
+            # Make request with timeout
+            response = requests.get(api_url, timeout=10)
+            response.raise_for_status()
+            
+            release_data = response.json()
+            
+            # Get version from tag name (remove 'v' prefix if present)
+            latest_version = release_data['tag_name'].lstrip('v')
+            download_url = release_data['html_url']
+            release_notes = release_data.get('body', 'No release notes available.')
+            
+            # Compare versions
+            if self._is_newer_version(latest_version, self.current_version):
+                self.update_available.emit(latest_version, download_url, release_notes)
+            else:
+                self.no_update.emit()
+                
+        except requests.exceptions.RequestException as e:
+            self.error_occurred.emit(f"Network error: {str(e)}")
+        except json.JSONDecodeError:
+            self.error_occurred.emit("Failed to parse GitHub response")
+        except KeyError as e:
+            self.error_occurred.emit(f"Unexpected GitHub API response: {str(e)}")
+        except Exception as e:
+            self.error_occurred.emit(f"Unexpected error: {str(e)}")
+    
+    def _is_newer_version(self, latest, current):
+        """Simple version comparison"""
+        try:
+            # Split versions into components and compare
+            latest_parts = [int(x) for x in latest.split('.')]
+            current_parts = [int(x) for x in current.split('.')]
+            
+            # Pad shorter version with zeros
+            max_len = max(len(latest_parts), len(current_parts))
+            latest_parts.extend([0] * (max_len - len(latest_parts)))
+            current_parts.extend([0] * (max_len - len(current_parts)))
+            
+            return latest_parts > current_parts
+        except Exception:
+            # Fallback to string comparison if version parsing fails
+            return latest != current
+
+class UpdateDialog(QDialog):
+    """Dialog to show update information"""
+    
+    def __init__(self, current_version, new_version, download_url, release_notes, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Update Available")
+        self.setModal(True)
+        self.setMinimumSize(500, 400)
+        self.download_url = download_url
+        
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Title
+        title = QLabel(f"New version available: {new_version}")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2196F3;")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+        
+        # Current vs new version
+        version_info = QLabel(f"Current version: {current_version}\nNew version: {new_version}")
+        version_info.setAlignment(Qt.AlignCenter)
+        layout.addWidget(version_info)
+        
+        # Release notes
+        notes_label = QLabel("Release Notes:")
+        notes_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        layout.addWidget(notes_label)
+        
+        notes_text = QLabel(release_notes)
+        notes_text.setWordWrap(True)
+        notes_text.setStyleSheet("background-color: #f5f5f5; padding: 10px; border-radius: 5px;")
+        notes_text.setMaximumHeight(200)
+        layout.addWidget(notes_text)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        download_btn = QPushButton("Download Update")
+        download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        download_btn.clicked.connect(self.download_update)
+        
+        later_btn = QPushButton("Later")
+        later_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #da190b;
+            }
+        """)
+        later_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(download_btn)
+        button_layout.addWidget(later_btn)
+        layout.addLayout(button_layout)
+    
+    def download_update(self):
+        """Open download URL in browser"""
+        webbrowser.open(self.download_url)
+        self.accept()
+
+class UpdateChecker:
+    """Main update checker class"""
+    
+    def __init__(self, parent=None, github_repo="colddoshirak/Command-Editor"):
+        self.parent = parent
+        self.github_repo = github_repo
+        self.current_version = "V1.1.2"  # Default version, will be updated from about tab
+        self.notification_widget = None
+        self.check_button = None  # Reference to the check button for resetting state
+        
+    def set_notification_widget(self, widget):
+        """Set the notification widget for displaying updates"""
+        self.notification_widget = widget
+        
+    def set_current_version(self, version):
+        """Set the current version of the application"""
+        self.current_version = version
+    
+    def set_check_button(self, button):
+        """Set the check button for state management"""
+        self.check_button = button
+    
+    def check_for_updates(self, silent=False):
+        """Start checking for updates"""
+        self.silent = silent
+        
+        # Create and start the update checker thread
+        self.update_thread = UpdateCheckerThread(self.current_version, self.github_repo)
+        self.update_thread.update_available.connect(self._on_update_available)
+        self.update_thread.no_update.connect(self._on_no_update)
+        self.update_thread.error_occurred.connect(self._on_error)
+        self.update_thread.finished.connect(self._on_check_finished)  # Reset button state
+        self.update_thread.start()
+    
+    def _on_update_available(self, new_version, download_url, release_notes):
+        """Handle when update is available"""
+        # Show notification widget if available and this is a silent check
+        if self.notification_widget and self.silent:
+            self.notification_widget.show_notification(new_version, download_url)
+        
+        # Show dialog if not silent
+        if not self.silent:
+            dialog = UpdateDialog(                self.current_version, 
+                new_version, 
+                download_url, 
+                release_notes, 
+                self.parent
+            )
+            dialog.exec_()
+    
+    def _on_no_update(self):
+        """Handle when no update is available"""
+        if not self.silent:
+            QMessageBox.information(
+                self.parent, 
+                "No Updates", 
+                f"You are running the latest version ({self.current_version})"
+            )
+    
+    def _on_error(self, error_message):
+        """Handle errors during update check"""
+        if not self.silent:
+            QMessageBox.warning(
+                self.parent, 
+                "Update Check Failed", 
+                f"Failed to check for updates:\n{error_message}"
+            )
+    
+    def _on_check_finished(self):
+        """Handle when update check is finished (reset button state)"""
+        if self.check_button and not self.silent:
+            self.check_button.setEnabled(True)
+            self.check_button.setText("Check for Updates")
 
 class AboutTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        
+        self.parent = parent
+        self.current_version = "V1.1.2"  # Store current version
+        
+        # Initialize update checker
+        self.update_checker = UpdateChecker(parent=self)
+        self.update_checker.set_current_version(self.current_version)
         
         # Create main layout
         layout = QVBoxLayout()
@@ -256,9 +479,7 @@ class AboutTab(QWidget):
             <li><b>В currency settings не работает смена команды. Также 100% не работает награда за follow, sub, raid. Зато работает Regular и Mod bonus.</li>
             <li><b>Всё надо чинить, вообще всё , пока работает как-то, не понятно каким вообще образом.</li>
             <li><b>Надо сделать вики на гитхабе, а то как-то уже много копится</li>
-        </ul>
-
-        <h3>What about english tutorial?</h3>
+        </ul>        <h3>What about english tutorial?</h3>
         <p>Use google translate, i'm too lazy to make buttons for that. Or check readme.md in repository.</p>
         """
         
@@ -291,7 +512,7 @@ class AboutTab(QWidget):
         <h3 style="text-align: center;">Command Editor</h3>
         
         <p><b>Application:</b> Twitch Bot Command Editor</p>
-        <p><b>Version:</b> 1.1.1</p>
+        <p><b>Version:</b> {self.current_version}</p>
         <p><b>Release Date:</b> 2025-06-16</p>
         <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
@@ -302,4 +523,89 @@ class AboutTab(QWidget):
         version_info.setHtml(version_text)
         layout.addWidget(version_info)
         
+        # Add separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(separator)
+        
+        # Update section
+        update_section = QGroupBox("Updates")
+        update_layout = QVBoxLayout()
+        update_section.setLayout(update_layout)
+        
+        # Update info label
+        update_info = QLabel("Check for updates from GitHub repository")
+        update_info.setAlignment(Qt.AlignCenter)
+        update_layout.addWidget(update_info)
+        
+        # Update button layout
+        button_layout = QHBoxLayout()
+        
+        # Check for updates button
+        self.check_updates_btn = QPushButton("Check for Updates")
+        self.check_updates_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #1565C0;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+                color: #666666;
+            }        """)
+        self.check_updates_btn.clicked.connect(self.check_for_updates)
+        
+        # Set the button reference in update checker
+        self.update_checker.set_check_button(self.check_updates_btn)
+        
+        # Open GitHub button
+        github_btn = QPushButton("Open GitHub Repository")
+        github_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+            }        """)
+        github_btn.clicked.connect(self.open_github)
+        
+        button_layout.addWidget(self.check_updates_btn)
+        button_layout.addWidget(github_btn)
+        update_layout.addLayout(button_layout)
+        
+        layout.addWidget(update_section)
+        
         return widget
+    
+    def check_for_updates(self):
+        """Check for updates from GitHub"""
+        self.check_updates_btn.setEnabled(False)
+        self.check_updates_btn.setText("Checking...")
+        
+        # Start checking for updates
+        self.update_checker.check_for_updates(silent=False)
+    
+    def open_github(self):
+        """Open GitHub repository in browser"""
+        import webbrowser
+        webbrowser.open("https://github.com/colddoshirak/Command-Editor")

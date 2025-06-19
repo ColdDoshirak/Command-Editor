@@ -1,10 +1,11 @@
 from PyQt5 import sip
-from PyQt5.QtGui import QTextCursor
+from PyQt5.QtGui import QTextCursor, QColor
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTextEdit, QGroupBox, QMessageBox, QDialog, QListWidget, QSplitter,
-    QGridLayout, QSizePolicy, QTabWidget, QComboBox
+    QGridLayout, QSizePolicy, QTabWidget, QComboBox, QMenu, QAction,
+    QListWidgetItem
 )
 import threading
 import asyncio
@@ -129,12 +130,57 @@ class TwitchTab(QWidget):
         self.active_viewers_list = QListWidget()
         active_layout.addWidget(self.active_viewers_list)
         active_tab.setLayout(active_layout)
-        self.viewers_tabs.addTab(active_tab, "Active Chatters")
-        # Moderators
+        self.viewers_tabs.addTab(active_tab, "Active Chatters")        # Moderators
         moderators_tab = QWidget()
         moderators_layout = QVBoxLayout()
+        
+        # Список модераторов
         self.moderators_list_widget = QListWidget()
+        self.moderators_list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.moderators_list_widget.customContextMenuRequested.connect(self.show_moderator_context_menu)
         moderators_layout.addWidget(self.moderators_list_widget)
+        
+        # Кнопки управления модераторами
+        moderator_controls_layout = QHBoxLayout()
+        
+        # Поле ввода для добавления модератора
+        self.add_moderator_input = QLineEdit()
+        self.add_moderator_input.setPlaceholderText("Введите имя модератора...")
+        self.add_moderator_input.returnPressed.connect(self.add_manual_moderator)
+        moderator_controls_layout.addWidget(self.add_moderator_input)
+        
+        # Кнопка добавления
+        self.add_moderator_button = QPushButton("Добавить")
+        self.add_moderator_button.clicked.connect(self.add_manual_moderator)
+        moderator_controls_layout.addWidget(self.add_moderator_button)
+          # Кнопка удаления выбранного
+        self.remove_moderator_button = QPushButton("Удалить")
+        self.remove_moderator_button.clicked.connect(self.remove_selected_moderator)
+        moderator_controls_layout.addWidget(self.remove_moderator_button)
+        
+        moderators_layout.addLayout(moderator_controls_layout)
+        
+        # Дополнительные кнопки
+        additional_controls_layout = QHBoxLayout()
+        
+        # Кнопка открытия файла модераторов
+        self.open_moderators_file_button = QPushButton("Открыть файл")
+        self.open_moderators_file_button.clicked.connect(self.open_moderators_file)
+        self.open_moderators_file_button.setToolTip("Открыть moderators.json для показа на стриме")
+        additional_controls_layout.addWidget(self.open_moderators_file_button)
+        
+        # Кнопка обновления
+        self.refresh_moderators_button = QPushButton("Обновить")
+        self.refresh_moderators_button.clicked.connect(self.refresh_moderators)
+        additional_controls_layout.addWidget(self.refresh_moderators_button)
+        
+        moderators_layout.addLayout(additional_controls_layout)
+        
+        # Информационная надпись
+        moderator_info = QLabel("Серые - API, зеленые - ручные, синие - оба, красные - исключены\nФайл moderators.json безопасен для показа на стриме")
+        moderator_info.setStyleSheet("color: gray; font-size: 10px;")
+        moderators_layout.addWidget(moderator_info)
+        
         moderators_tab.setLayout(moderators_layout)
         self.viewers_tabs.addTab(moderators_tab, "Moderators")
         viewer_layout.addWidget(self.viewers_tabs)
@@ -180,6 +226,9 @@ class TwitchTab(QWidget):
         else:
             self.auth_status.setText("Not authenticated")
             self.auth_status.setStyleSheet("color: red;")
+        
+        # Загружаем ручной список модераторов при запуске
+        self.update_moderators_display_only()
 
     def save_settings(self):
         try:
@@ -441,6 +490,7 @@ class TwitchTab(QWidget):
                     
             except (RuntimeError, concurrent.futures.TimeoutError) as e:
                 error_msg = f"Error checking stream status: {str(e)}"
+                self.signal_handler.chat_signal.emit(error_msg)
                 print(error_msg)
                 # Если loop закрыт, обновим индикатор состояния
                 if isinstance(e, RuntimeError) and "closed" in str(e).lower():
@@ -515,10 +565,42 @@ class TwitchTab(QWidget):
 
     @pyqtSlot(list)
     def update_moderators_list(self, moderators):
+        """Обновляет список модераторов с учетом источника"""
+        manual_mods = self.config_manager.get_manual_moderators()
+        excluded_mods = self.config_manager.get_excluded_moderators()
+        
         self.moderators_list_widget.blockSignals(True)
         self.moderators_list_widget.clear()
-        for mod in sorted(moderators):
-            self.moderators_list_widget.addItem(mod)
+        
+        # Объединяем списки для отображения (включая исключенных для информации)
+        all_mods = set(moderators + manual_mods + excluded_mods)
+        
+        for mod in sorted(all_mods):
+            in_api = mod in moderators
+            in_manual = mod in manual_mods
+            in_excluded = mod in excluded_mods
+            
+            if in_excluded:
+                # Исключенный модератор - красный цвет
+                item = QListWidgetItem(f"[Исключен] {mod}")
+                item.setForeground(QColor("red"))
+            elif in_api and in_manual:
+                # В обоих списках - синий цвет
+                item = QListWidgetItem(f"[Оба] {mod}")
+                item.setForeground(QColor("blue"))
+                item = QListWidgetItem(f"[Оба] {mod}")
+                item.setForeground(QColor("blue"))
+            elif in_manual:
+                # Только в ручном - зеленый цвет
+                item = QListWidgetItem(f"[Ручной] {mod}")
+                item.setForeground(QColor("green"))
+            else:
+                # Только в API - серый цвет
+                item = QListWidgetItem(f"[API] {mod}")
+                item.setForeground(QColor("gray"))
+            
+            self.moderators_list_widget.addItem(item)
+        
         self.moderators_list_widget.blockSignals(False)
 
     def save_update_frequency(self):
@@ -533,3 +615,210 @@ class TwitchTab(QWidget):
     def update_currency(self):
         if self.parent and hasattr(self.parent, 'user_currency_tab'):
             self.parent.user_currency_tab.populate_table()
+
+    def add_manual_moderator(self):
+        """Добавляет модератора в ручной список"""
+        username = self.add_moderator_input.text().strip()
+        if not username:
+            QMessageBox.warning(self, "Ошибка", "Введите имя пользователя")
+            return
+          # Добавляем в конфигурацию
+        if self.config_manager.add_manual_moderator(username):
+            self.add_moderator_input.clear()
+            
+            # Немедленно обновляем список модераторов в боте
+            self.update_bot_moderators_status(username, True)
+            
+            self.refresh_moderators()
+            
+            # Проверяем, был ли пользователь в исключенных
+            if username in self.config_manager.get_excluded_moderators():
+                QMessageBox.information(self, "Успех", f"Модератор {username} добавлен и восстановлен из исключенных")
+            else:
+                QMessageBox.information(self, "Успех", f"Модератор {username} добавлен")
+        else:
+            QMessageBox.warning(self, "Информация", f"Модератор {username} уже есть в списке или был восстановлен из исключенных")
+
+    def remove_selected_moderator(self):
+        """Удаляет выбранного модератора из ручного списка"""
+        current_item = self.moderators_list_widget.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "Ошибка", "Выберите модератора для удаления")
+            return
+        
+        # Извлекаем имя пользователя из текста элемента
+        text = current_item.text()
+        if "[Ручной]" in text:
+            username = text.replace("[Ручной]", "").strip()
+        elif "[Оба]" in text:
+            username = text.replace("[Оба]", "").strip()
+        else:
+            QMessageBox.warning(self, "Ошибка", "Можно удалять только ручных модераторов")
+            return
+        
+        # Подтверждение удаления
+        reply = QMessageBox.question(
+            self, "Подтверждение", 
+            f"Удалить {username} из ручного списка модераторов?",
+            QMessageBox.Yes | QMessageBox.No        )
+        
+        if reply == QMessageBox.Yes:
+            if self.config_manager.remove_manual_moderator(username):
+                # Немедленно обновляем статус модератора в боте
+                self.update_bot_moderators_status(username, False)
+                
+                self.refresh_moderators()
+                QMessageBox.information(self, "Успех", f"Модератор {username} удален")
+            else:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось удалить модератора {username}")
+
+    def update_bot_moderators_status(self, username, is_moderator):
+        """Обновляет статус модератора в боте и системе валюты"""
+        username = username.lower()
+        
+        # Обновляем в системе валюты
+        if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'currency_manager'):
+            currency_manager = self.parent.currency_manager
+            if username in currency_manager.users:
+                currency_manager.users[username]['is_mod'] = is_moderator
+                currency_manager.save_users()
+                print(f"User {username} moderator status updated to: {is_moderator}")
+        
+        # Обновляем в боте
+        if self.bot and hasattr(self.bot, 'currency_manager'):
+            if username in self.bot.currency_manager.users:
+                self.bot.currency_manager.users[username]['is_mod'] = is_moderator
+                self.bot.currency_manager.save_users()
+                print(f"Bot: User {username} moderator status updated to: {is_moderator}")
+        
+        # Критически важно: перезагружаем конфигурацию модераторов в боте
+        if self.bot and hasattr(self.bot, 'config_manager'):
+            # Перезагружаем конфигурацию модераторов
+            self.bot.config_manager.moderators_config = self.bot.config_manager.load_moderators_config()
+            print(f"Bot moderators config reloaded")
+
+    def restore_excluded_moderator(self):
+        """Восстанавливает исключенного модератора"""
+        current_item = self.moderators_list_widget.currentItem()
+        if not current_item:
+            return
+        
+        # Извлекаем имя пользователя из текста элемента
+        text = current_item.text()
+        if "[Исключен]" in text:
+            username = text.replace("[Исключен]", "").strip()
+        else:
+            return
+        
+        # Подтверждение восстановления
+        reply = QMessageBox.question(
+            self, "Подтверждение", 
+            f"Восстановить {username} как модератора?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            if self.config_manager.remove_excluded_moderator(username):
+                # Немедленно обновляем статус модератора в боте
+                self.update_bot_moderators_status(username, True)
+                
+                self.refresh_moderators()
+                QMessageBox.information(self, "Успех", f"Модератор {username} восстановлен")
+            else:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось восстановить модератора {username}")
+
+    def show_moderator_context_menu(self, position):
+        """Показывает контекстное меню для списка модераторов"""
+        item = self.moderators_list_widget.itemAt(position)
+        if not item:
+            return
+        
+        menu = QMenu(self)
+        
+        # Проверяем, можно ли удалить модератора
+        text = item.text()
+        if "[Ручной]" in text or "[Оба]" in text:
+            remove_action = QAction("Удалить из ручного списка", self)
+            remove_action.triggered.connect(self.remove_selected_moderator)
+            menu.addAction(remove_action)
+        elif "[Исключен]" in text:
+            restore_action = QAction("Восстановить модератора", self)
+            restore_action.triggered.connect(self.restore_excluded_moderator)
+            menu.addAction(restore_action)
+        
+        # Показываем информацию о модераторе
+        info_action = QAction("Информация", self)
+        info_action.triggered.connect(lambda: self.show_moderator_info(item))
+        menu.addAction(info_action)
+        
+        menu.exec_(self.moderators_list_widget.mapToGlobal(position))
+
+    def show_moderator_info(self, item):
+        """Показывает информацию о модераторе"""
+        text = item.text()
+        if "[API]" in text:
+            username = text.replace("[API]", "").strip()
+            source = "Только API"
+        elif "[Ручной]" in text:
+            username = text.replace("[Ручной]", "").strip()
+            source = "Только ручной список"
+        elif "[Оба]" in text:
+            username = text.replace("[Оба]", "").strip()
+            source = "API и ручной список"
+        elif "[Исключен]" in text:
+            username = text.replace("[Исключен]", "").strip()
+            source = "Исключен из модераторов"
+        else:
+            username = text.strip()
+            source = "Неизвестно"
+        
+        QMessageBox.information(
+            self, "Информация о модераторе",
+            f"Пользователь: {username}\nИсточник: {source}"
+        )
+
+    def refresh_moderators(self):
+        """Обновляет список модераторов"""
+        if self.bot and hasattr(self.bot, 'loop') and self.bot.loop and not self.bot.loop.is_closed():
+            try:
+                # Запрашиваем обновленный список модераторов
+                asyncio.run_coroutine_threadsafe(
+                    self.bot.get_channel_moderators(), self.bot.loop
+                )
+            except Exception as e:
+                print(f"Error refreshing moderators: {e}")
+                # Если не можем получить через API, показываем хотя бы ручной список
+                self.update_moderators_display_only()
+        else:            # Если бот не подключен, показываем только ручной список
+            self.update_moderators_display_only()
+
+    def update_moderators_display_only(self):
+        """Обновляет отображение списка модераторов без запроса к API"""
+        manual_mods = self.config_manager.get_manual_moderators()
+        
+        self.moderators_list_widget.clear()
+        for mod in sorted(manual_mods):
+            item = QListWidgetItem(f"[Ручной] {mod}")
+            item.setForeground(QColor("green"))
+            self.moderators_list_widget.addItem(item)
+
+    def open_moderators_file(self):
+        """Открывает файл модераторов в текстовом редакторе"""
+        import subprocess
+        import platform
+        
+        moderators_file_path = self.config_manager.moderators_file
+        
+        try:
+            if platform.system() == 'Windows':
+                # Открываем в Блокноте на Windows
+                subprocess.run(['notepad.exe', str(moderators_file_path)])
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', str(moderators_file_path)])
+            else:  # Linux
+                subprocess.run(['xdg-open', str(moderators_file_path)])
+        except Exception as e:
+            QMessageBox.warning(
+                self, "Ошибка", 
+                f"Не удалось открыть файл модераторов:\n{e}\n\nПуть к файлу: {moderators_file_path}"
+            )

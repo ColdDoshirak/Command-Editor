@@ -709,77 +709,138 @@ class TwitchBot(commands.Bot):
             traceback.print_exc()
 
     async def get_channel_moderators(self):
-        """Получает список модераторов канала через API"""
+        """Получает список модераторов канала через API и объединяет с ручным списком"""
         try:
-            if not self.broadcaster_id or not self._helix_headers:
-                print("Cannot fetch moderators: missing broadcaster_id or API headers")
-                return []
-                
-            # Запрашиваем данные о модераторах
-            response = requests.get(
-                "https://api.twitch.tv/helix/moderation/moderators",
-                headers=self._helix_headers,
-                params={"broadcaster_id": self.broadcaster_id},
-                timeout=5
-            )
+            # Получаем ручной список модераторов
+            manual_mods = []
+            excluded_mods = []
+            if hasattr(self, 'config_manager'):
+                manual_mods = self.config_manager.get_manual_moderators()
+                excluded_mods = self.config_manager.get_excluded_moderators()
             
-            mods = []
-            # Если запрос успешен
-            if response.status_code == 200:
-                data = response.json()
-                # Перебираем всех модераторов
-                for mod in data.get("data", []):
-                    mod_name = mod.get("user_login", "").lower()
-                    mods.append(mod_name)
-                    
-                    # Обновляем статус модератора в системе валюты
-                    if hasattr(self, 'currency_manager') and mod_name in self.currency_manager.users:
+            api_mods = []
+            # Пытаемся получить модераторов через API
+            if self.broadcaster_id and self._helix_headers:
+                # Запрашиваем данные о модераторах
+                response = requests.get(
+                    "https://api.twitch.tv/helix/moderation/moderators",
+                    headers=self._helix_headers,
+                    params={"broadcaster_id": self.broadcaster_id},
+                    timeout=5
+                )
+                
+                # Если запрос успешен
+                if response.status_code == 200:
+                    data = response.json()
+                    # Перебираем всех модераторов
+                    for mod in data.get("data", []):
+                        mod_name = mod.get("user_login", "").lower()
+                        
+                        # Пропускаем исключенных модераторов
+                        if mod_name in excluded_mods:
+                            print(f"User {mod_name} excluded from moderators list")
+                            continue
+                            
+                        api_mods.append(mod_name)
+                        
+                        # Обновляем статус модератора в системе валюты
+                        if hasattr(self, 'currency_manager') and mod_name in self.currency_manager.users:
+                            self.currency_manager.users[mod_name]['is_mod'] = True
+                            print(f"User {mod_name} marked as moderator (API)")
+                else:
+                    print(f"Error fetching moderators: API returned {response.status_code}")
+            else:
+                print("Cannot fetch moderators: missing broadcaster_id or API headers")
+            
+            # Объединяем списки (API + ручные), исключая заблокированных
+            all_mods = set(api_mods + manual_mods)
+            mods = [mod for mod in all_mods if mod not in excluded_mods]
+            
+            # Дополнительно добавляем владельца канала как модератора
+            if self.channel.lower() not in mods:
+                mods.append(self.channel.lower())
+            
+            # Обновляем статус модераторов в системе валюты для всех
+            if hasattr(self, 'currency_manager'):
+                for mod_name in mods:
+                    if mod_name in self.currency_manager.users:
                         self.currency_manager.users[mod_name]['is_mod'] = True
                         print(f"User {mod_name} marked as moderator")
                 
-                # Дополнительно добавляем владельца канала как модератора
-                if self.channel.lower() not in mods:
-                    mods.append(self.channel.lower())
-                    if hasattr(self, 'currency_manager') and self.channel.lower() in self.currency_manager.users:
-                        self.currency_manager.users[self.channel.lower()]['is_mod'] = True
-                        print(f"Channel owner {self.channel} marked as moderator")
+                # Убираем статус модератора у исключенных пользователей
+                for excluded_mod in excluded_mods:
+                    if excluded_mod in self.currency_manager.users:
+                        self.currency_manager.users[excluded_mod]['is_mod'] = False
+                        print(f"User {excluded_mod} excluded from moderators")
+                
+                # Отмечаем владельца канала (если он не в исключенных)
+                if self.channel.lower() not in excluded_mods and self.channel.lower() in self.currency_manager.users:
+                    self.currency_manager.users[self.channel.lower()]['is_mod'] = True
+                    print(f"Channel owner {self.channel} marked as moderator")
                 
                 # Сохраняем изменения в системе валюты
                 self.currency_manager.save_users()
+            
+            # Отправляем сигнал с обновленным списком модераторов, если есть signal_handler
+            if hasattr(self, 'signal_handler') and self.signal_handler:
+                self.signal_handler.moderators_signal.emit(mods)
                 
-                # Отправляем сигнал с обновленным списком модераторов, если есть signal_handler
-                if hasattr(self, 'signal_handler') and self.signal_handler:
-                    self.signal_handler.moderators_signal.emit(mods)
-                    
-                return mods
-            else:
-                print(f"Error fetching moderators: API returned {response.status_code}")
-                return []
+            return mods
                 
         except Exception as e:
             print(f"Error fetching moderators: {e}")
-            return []
+            # В случае ошибки возвращаем хотя бы ручной список
+            manual_mods = []
+            if hasattr(self, 'config_manager'):
+                manual_mods = self.config_manager.get_manual_moderators()
+            
+            # Добавляем владельца канала
+            if self.channel.lower() not in manual_mods:
+                manual_mods.append(self.channel.lower())
+            
+            return manual_mods
 
     async def is_user_moderator(self, username):
         """Проверяет, является ли пользователь модератором канала"""
         # Нормализуем имя пользователя
         username = username.lower()
         
-        # Владелец канала всегда считается модератором
+        print(f"DEBUG: Checking moderator status for user: {username}")
+        
+        # Сначала проверяем, не исключен ли пользователь
+        if hasattr(self, 'config_manager'):
+            excluded_mods = self.config_manager.get_excluded_moderators()
+            print(f"DEBUG: Excluded moderators: {excluded_mods}")
+            if username in excluded_mods:
+                print(f"DEBUG: User {username} is in excluded moderators list - DENYING ACCESS")
+                return False
+        
+        # Владелец канала всегда считается модератором (если не исключен)
         if username == self.channel.lower():
+            print(f"DEBUG: User {username} is channel owner - GRANTING ACCESS")
             return True
             
         # Проверяем, есть ли у пользователя флаг модератора в системе валюты
         if hasattr(self, 'currency_manager') and username in self.currency_manager.users:
-            if self.currency_manager.users[username].get('is_mod', False):
+            is_mod_in_currency = self.currency_manager.users[username].get('is_mod', False)
+            print(f"DEBUG: User {username} is_mod in currency_manager: {is_mod_in_currency}")
+            if is_mod_in_currency:
+                print(f"DEBUG: User {username} has mod flag in currency manager - GRANTING ACCESS")
                 return True
                 
         # Используем get_channel_moderators для получения актуального списка модераторов
         try:
             moderators = await self.get_channel_moderators()
-            return username in moderators
+            is_in_mod_list = username in moderators
+            print(f"DEBUG: User {username} in channel moderators list: {is_in_mod_list}")
+            if is_in_mod_list:
+                print(f"DEBUG: User {username} found in channel moderators - GRANTING ACCESS")
+            else:
+                print(f"DEBUG: User {username} NOT found in channel moderators - DENYING ACCESS")
+            return is_in_mod_list
         except Exception as e:
-            print(f"Error checking moderator status: {e}")
+            print(f"DEBUG: Error checking moderator status: {e}")
+            print(f"DEBUG: User {username} - error occurred, DENYING ACCESS by default")
             # По умолчанию не модератор при ошибке
             return False
             
@@ -1203,10 +1264,19 @@ class TwitchBot(commands.Bot):
             @self.command(name="points_add")
             async def cmd_points_add(ctx, target: str = None, amount: int = None):
                 """Добавить очки пользователю (только для модераторов)"""
-                if not (ctx.author.is_mod or ctx.author.is_broadcaster):
+                username = ctx.author.name.lower()
+                print(f"DEBUG: Command !points_add called by user: {username}")
+                
+                is_mod = await self.is_user_moderator(username)
+                print(f"DEBUG: is_user_moderator returned {is_mod} for user {username}")
+                
+                if not is_mod:
+                    print(f"DEBUG: DENYING command access to {username}")
                     await ctx.send(f"@{ctx.author.name}: You don't have permission to use this command")
                     return
-
+                
+                print(f"DEBUG: GRANTING command access to {username}")
+                
                 if not target or not amount:
                     await ctx.send("Usage: !points_add <username> <amount>")
                     return
@@ -1226,9 +1296,18 @@ class TwitchBot(commands.Bot):
             @self.command(name="points_remove")
             async def cmd_points_remove(ctx, target: str = None, amount: int = None):
                 """Удалить очки у пользователя (только для модераторов)"""
-                if not (ctx.author.is_mod or ctx.author.is_broadcaster):
+                username = ctx.author.name.lower()
+                print(f"DEBUG: Command !points_remove called by user: {username}")
+                
+                is_mod = await self.is_user_moderator(username)
+                print(f"DEBUG: is_user_moderator returned {is_mod} for user {username}")
+                
+                if not is_mod:
+                    print(f"DEBUG: DENYING command access to {username}")
                     await ctx.send(f"@{ctx.author.name}: You don't have permission to use this command")
                     return
+                
+                print(f"DEBUG: GRANTING command access to {username}")
 
                 if not target or not amount:
                     await ctx.send("Usage: !points_remove <username> <amount>")

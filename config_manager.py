@@ -16,11 +16,11 @@ class ConfigManager:
         else:
             # Если приложение запущено как .py
             self.program_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        
-        # Настраиваем пути к конфигурационным файлам
+          # Настраиваем пути к конфигурационным файлам
         self.config_file = self.program_dir / 'config.json'
         self.twitch_file = self.program_dir / 'twitch_config.json'
         self.commands_file = self.program_dir / 'commands.json'
+        self.moderators_file = self.program_dir / 'moderators.json'  # Отдельный файл для модераторов
         self.backup_dir = self.program_dir / 'backups'
         
         # Default configuration
@@ -42,19 +42,26 @@ class ConfigManager:
             },
             'commands': {}
         }
-        
-        # Default Twitch configuration
+          # Default Twitch configuration
         self.default_twitch = {
             'access_token': '',
             'client_id': '',
             'refresh_token': ''
         }
-        
-        # Load or create config
+          # Default moderators configuration
+        self.default_moderators = {
+            'manual_moderators': [],
+            'excluded_moderators': [],
+            'notes': 'Этот файл содержит список ручных модераторов и исключенных модераторов. Безопасен для показа на стриме'
+        }
+          # Load or create config
         self.config = self.load_config()
         
         # Load Twitch config (отдельный вызов)
         self.twitch_config = self.load_twitch_config()
+        
+        # Load moderators config (отдельный вызов)
+        self.moderators_config = self.load_moderators_config()
         
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from file"""
@@ -114,6 +121,33 @@ class ConfigManager:
             self.save_twitch_config_file(twitch_config)
             return twitch_config
         
+    def load_moderators_config(self) -> Dict[str, Any]:
+        """Load moderators configuration from separate file"""
+        if self.moderators_file.exists():
+            try:
+                with open(self.moderators_file, 'r', encoding='utf-8') as f:
+                    loaded_moderators = json.load(f)
+                    # Merge with default moderators config
+                    moderators_config = {**self.default_moderators, **loaded_moderators}
+                return moderators_config
+            except json.JSONDecodeError:
+                moderators_config = self.default_moderators.copy()
+                self.save_moderators_config_file(moderators_config)
+                return moderators_config
+        else:
+            # Migrate existing manual_moderators from twitch_config if present
+            existing_manual_mods = self.twitch_config.get('manual_moderators', [])
+            moderators_config = self.default_moderators.copy()
+            if existing_manual_mods:
+                moderators_config['manual_moderators'] = existing_manual_mods
+                # Remove from twitch_config
+                if 'manual_moderators' in self.twitch_config:
+                    del self.twitch_config['manual_moderators']
+                    self.save_twitch_config_file()
+            
+            self.save_moderators_config_file(moderators_config)
+            return moderators_config
+    
     def save_config(self, config=None):
         """Save configuration to file"""
         try:
@@ -177,6 +211,26 @@ class ConfigManager:
             return True
         except Exception as e:
             print(f"Error saving twitch config: {e}")
+            return False
+    
+    def save_moderators_config_file(self, moderators_config=None):
+        """Save moderators configuration to separate file"""
+        try:
+            if moderators_config is not None:
+                # Update only provided fields
+                for key, value in moderators_config.items():
+                    self.moderators_config[key] = value
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.moderators_file), exist_ok=True)
+            
+            # Save to separate file
+            with open(self.moderators_file, 'w', encoding='utf-8') as f:
+                json.dump(self.moderators_config, f, indent=4, ensure_ascii=False)
+                
+            return True
+        except Exception as e:
+            print(f"Error saving moderators config: {e}")
             return False
     
     def _update_nested_dict(self, original, update):
@@ -390,3 +444,80 @@ class ConfigManager:
             self.config['backup'] = {}
         self.config['backup']['max_backups'] = max_backups
         self.save_config()
+
+    def get_manual_moderators(self):
+        """Get manual moderators list"""
+        return self.moderators_config.get('manual_moderators', [])
+    
+    def set_manual_moderators(self, moderators_list):
+        """Set manual moderators list"""
+        self.moderators_config['manual_moderators'] = moderators_list
+        self.save_moderators_config_file()
+    
+    def add_manual_moderator(self, username):
+        """Add a moderator to manual list and remove from excluded list if present"""
+        username = username.lower().strip()
+        if not username:
+            return False
+        
+        manual_mods = self.get_manual_moderators()
+        added = False
+        
+        if username not in manual_mods:
+            manual_mods.append(username)
+            self.set_manual_moderators(manual_mods)
+            added = True
+        
+        # Убираем из списка исключенных, если там есть
+        if self.remove_excluded_moderator(username):
+            print(f"User {username} removed from excluded list")
+            added = True
+        
+        return added
+    
+    def remove_manual_moderator(self, username):
+        """Remove a moderator from manual list and add to excluded list"""
+        username = username.lower().strip()
+        manual_mods = self.get_manual_moderators()
+        removed = False
+        
+        if username in manual_mods:
+            manual_mods.remove(username)
+            self.set_manual_moderators(manual_mods)
+            removed = True
+        
+        # Добавляем в список исключенных, чтобы API не переопределял решение
+        self.add_excluded_moderator(username)
+        
+        return True  # Возвращаем True, если действие выполнено
+
+    def get_excluded_moderators(self):
+        """Get excluded moderators list"""
+        return self.moderators_config.get('excluded_moderators', [])
+    
+    def set_excluded_moderators(self, moderators_list):
+        """Set excluded moderators list"""
+        self.moderators_config['excluded_moderators'] = moderators_list
+        self.save_moderators_config_file()
+    
+    def add_excluded_moderator(self, username):
+        """Add a moderator to excluded list"""
+        username = username.lower().strip()
+        if not username:
+            return False
+        excluded_mods = self.get_excluded_moderators()
+        if username not in excluded_mods:
+            excluded_mods.append(username)
+            self.set_excluded_moderators(excluded_mods)
+            return True
+        return False
+    
+    def remove_excluded_moderator(self, username):
+        """Remove a moderator from excluded list"""
+        username = username.lower().strip()
+        excluded_mods = self.get_excluded_moderators()
+        if username in excluded_mods:
+            excluded_mods.remove(username)
+            self.set_excluded_moderators(excluded_mods)
+            return True
+        return False
