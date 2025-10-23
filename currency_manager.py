@@ -5,6 +5,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 import sys
+import hashlib
+import shutil
+import logging
+from typing import Optional, Dict, Any, List
 
 
 class CurrencyManager:
@@ -55,22 +59,53 @@ class CurrencyManager:
         self.users_file = self.data_dir / 'users_currency.json'
         self.currency_file = self.data_dir / 'users_currency.json'
         
+        # Backup-related settings
+        self.backup_dir = self.data_dir / 'backups' / 'currency'
+        self._load_backup_settings()  # Load backup settings from config
+        self.backup_enabled = True
+
+        # Создаем директорию для бэкапов
+        os.makedirs(self.backup_dir, exist_ok=True)
+
         # Загружаем данные
         self.load_data()
-        
+
         self.users_lock = threading.Lock()  # Блокировка для безопасности потоков
+
+        # Initialize data integrity tracking
+        self.data_checksum = None
+        self.last_backup_time = 0
         
     def load_data(self):
-        """Reload users data from file"""
+        """Reload users data from file with integrity checking and recovery"""
         try:
             # Load users from JSON file if it exists, otherwise start empty
             if os.path.exists(self.users_file):
+                # First, check data integrity
+                integrity_check = self.validate_data_integrity()
+
+                if not integrity_check['is_valid']:
+                    print(f"[CURRENCY RECOVERY] Data integrity issues detected: {integrity_check['errors']}")
+                    if integrity_check.get('recovered', False):
+                        print(f"[CURRENCY RECOVERY] Data automatically recovered from backup")
+                    else:
+                        print(f"[CURRENCY RECOVERY] Could not recover data: {integrity_check['warnings']}")
+
+                # Load the data (either original or recovered)
                 with open(self.users_file, 'r', encoding='utf-8') as f:
                     self.users = json.load(f)
             else:
                 self.users = {}
+
+            # Calculate initial checksum
+            self._calculate_checksum()
+
+            print(f"[CURRENCY LOAD] Loaded {len(self.users)} users from {self.users_file}")
+
         except Exception as e:
-            print(f"Error loading currency data: {e}")
+            print(f"[CURRENCY LOAD] Error loading currency data: {e}")
+            import traceback
+            traceback.print_exc()
             # Ensure users dict exists even on error
             self.users = {}
     
@@ -629,13 +664,19 @@ class CurrencyManager:
                     print(f"[{datetime.now().isoformat()}] Hours tracking: {uname} +{minutes_added}m → new total {total_hours_formatted}")
                 viewers_awarded += 1
             
-            self.save_users()
+            # Use enhanced save with backup creation for major currency updates
+            if not self.enhanced_save_users(force_backup=True):
+                print(f"[{datetime.now().isoformat()}] [CURRENCY SAVE] Failed to save updated currency data")
+                if chat_message_callback and self.settings.get('show_service_messages', False):
+                    chat_message_callback("Warning: Failed to save currency changes")
+
             summary_message = f"Points update completed: {viewers_awarded} users received points"
             print(f"[{datetime.now().isoformat()}] process_currency_update: done, "
-                  f"{viewers_awarded} users processed")            # Отправляем итоговое сообщение в чат, если есть callback и показ служебных сообщений включен
+                  f"{viewers_awarded} users processed")
+            # Отправляем итоговое сообщение в чат, если есть callback и показ служебных сообщений включен
             if chat_message_callback and self.settings.get('show_service_messages', False):
                 chat_message_callback(summary_message)
-                
+
             return True
 
         except Exception as e:
@@ -719,7 +760,7 @@ class CurrencyManager:
         total_minutes = round(hours * 60)
         hours_part = total_minutes // 60
         minutes_part = total_minutes % 60
-        
+
         # Форматируем в виде "1h15m" или только "15m" если часов нет
         if hours_part > 0:
             if minutes_part > 0:
@@ -728,3 +769,300 @@ class CurrencyManager:
                 return f"{hours_part}h"
         else:
             return f"{minutes_part}m"
+
+    # === BACKUP AND RECOVERY METHODS ===
+
+    def create_backup(self, force: bool = False) -> bool:
+        """Create a backup of currency data"""
+        try:
+            if not self.backup_enabled:
+                return True
+
+            current_time = time.time()
+
+            # Check if we should create a backup (every 30 minutes or forced)
+            if not force and current_time - self.last_backup_time < 1800:  # 30 minutes
+                return True
+
+            if not os.path.exists(self.users_file):
+                print("[CURRENCY BACKUP] No currency file to backup")
+                return True
+
+            # Generate backup filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"users_currency_{timestamp}.json"
+            backup_path = self.backup_dir / backup_name
+
+            # Copy the current file
+            shutil.copy2(self.users_file, backup_path)
+
+            # Add metadata
+            metadata = {
+                'backup_time': current_time,
+                'original_file': str(self.users_file),
+                'user_count': len(self.users),
+                'total_points': sum(user.get('points', 0) for user in self.users.values()),
+                'total_hours': sum(user.get('hours', 0) for user in self.users.values())
+            }
+
+            metadata_file = backup_path.with_suffix('.json.meta')
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+
+            self.last_backup_time = current_time
+
+            # Clean up old backups
+            self._cleanup_old_backups()
+
+            print(f"[CURRENCY BACKUP] Backup created: {backup_path}")
+            return True
+
+        except Exception as e:
+            print(f"[CURRENCY BACKUP] Error creating backup: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _cleanup_old_backups(self):
+        """Remove old backups keeping only the most recent ones"""
+        try:
+            backup_files = list(self.backup_dir.glob("users_currency_*.json"))
+
+            if len(backup_files) <= self.max_currency_backups:
+                return
+
+            # Sort by modification time (newest first)
+            backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+            # Remove old backups
+            for old_backup in backup_files[self.max_currency_backups:]:
+                try:
+                    old_backup.unlink()
+                    # Also remove metadata file if it exists
+                    meta_file = old_backup.with_suffix('.json.meta')
+                    if meta_file.exists():
+                        meta_file.unlink()
+                except Exception as e:
+                    print(f"[CURRENCY BACKUP] Error removing old backup {old_backup}: {e}")
+
+        except Exception as e:
+            print(f"[CURRENCY BACKUP] Error during cleanup: {e}")
+
+    def get_available_backups(self) -> List[Dict[str, Any]]:
+        """Get list of available currency backups"""
+        try:
+            backups = []
+            backup_files = list(self.backup_dir.glob("users_currency_*.json"))
+
+            for backup_file in sorted(backup_files, key=lambda x: x.stat().st_mtime, reverse=True):
+                try:
+                    metadata_file = backup_file.with_suffix('.json.meta')
+                    metadata = {}
+
+                    if metadata_file.exists():
+                        with open(metadata_file, 'r', encoding='utf-8') as f:
+                            metadata = json.load(f)
+
+                    # Get file size
+                    size_bytes = backup_file.stat().st_size
+
+                    # Human readable size
+                    if size_bytes < 1024:
+                        size_str = f"{size_bytes} B"
+                    elif size_bytes < 1024 * 1024:
+                        size_str = f"{size_bytes / 1024:.1f} KB"
+                    else:
+                        size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+
+                    backups.append({
+                        'path': backup_file,
+                        'filename': backup_file.name,
+                        'timestamp': metadata.get('backup_time', backup_file.stat().st_mtime),
+                        'readable_time': datetime.fromtimestamp(metadata.get('backup_time', backup_file.stat().st_mtime)).strftime("%Y-%m-%d %H:%M:%S"),
+                        'size': size_bytes,
+                        'size_str': size_str,
+                        'user_count': metadata.get('user_count', 'Unknown'),
+                        'total_points': metadata.get('total_points', 'Unknown'),
+                        'total_hours': metadata.get('total_hours', 'Unknown')
+                    })
+
+                except Exception as e:
+                    print(f"[CURRENCY BACKUP] Error reading backup metadata {backup_file}: {e}")
+
+            return backups
+
+        except Exception as e:
+            print(f"[CURRENCY BACKUP] Error getting backups list: {e}")
+            return []
+
+    def restore_from_backup(self, backup_path: Path) -> bool:
+        """Restore currency data from a backup file"""
+        try:
+            if not backup_path.exists():
+                print(f"[CURRENCY BACKUP] Backup file does not exist: {backup_path}")
+                return False
+
+            # Create emergency backup of current state before restoration
+            emergency_backup_name = f"users_currency_emergency_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            emergency_backup_path = self.data_dir / emergency_backup_name
+
+            if os.path.exists(self.users_file):
+                shutil.copy2(self.users_file, emergency_backup_path)
+                print(f"[CURRENCY BACKUP] Emergency backup created: {emergency_backup_path}")
+
+            # Restore from backup
+            shutil.copy2(backup_path, self.users_file)
+
+            # Reload data
+            self.load_data()
+
+            # Update checksum
+            self._calculate_checksum()
+
+            print(f"[CURRENCY BACKUP] Successfully restored from backup: {backup_path}")
+            return True
+
+        except Exception as e:
+            print(f"[CURRENCY BACKUP] Error restoring from backup: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def validate_data_integrity(self) -> Dict[str, Any]:
+        """Check data integrity and attempt automatic recovery if needed"""
+        try:
+            results = {
+                'is_valid': True,
+                'errors': [],
+                'warnings': [],
+                'recovered': False
+            }
+
+            # Check if main file exists
+            if not os.path.exists(self.users_file):
+                results['errors'].append("Main currency file does not exist")
+                results['is_valid'] = False
+                return results
+
+            # Load and validate JSON structure
+            try:
+                with open(self.users_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                if not isinstance(data, dict):
+                    results['errors'].append("Currency data is not a valid dictionary")
+                    results['is_valid'] = False
+                else:
+                    # Validate structure of each user entry
+                    for username, user_data in data.items():
+                        if not isinstance(user_data, dict):
+                            results['errors'].append(f"Invalid user data structure for {username}")
+                            continue
+
+                        # Check required fields
+                        required_fields = ['points', 'hours', 'last_seen']
+                        for field in required_fields:
+                            if field not in user_data:
+                                results['warnings'].append(f"Missing field '{field}' for user {username}")
+
+                        # Validate data types
+                        if 'points' in user_data and not isinstance(user_data['points'], (int, float)):
+                            results['errors'].append(f"Invalid points type for user {username}")
+
+                        if 'hours' in user_data and not isinstance(user_data['hours'], (int, float)):
+                            results['errors'].append(f"Invalid hours type for user {username}")
+
+            except json.JSONDecodeError as e:
+                results['errors'].append(f"JSON parsing error: {e}")
+                results['is_valid'] = False
+
+            # If main file is corrupted, try to restore from the latest backup
+            if not results['is_valid'] and any(error for error in results['errors'] if 'JSON parsing error' in error):
+                print("[CURRENCY RECOVERY] Attempting automatic recovery from backup...")
+
+                backups = self.get_available_backups()
+                if backups:
+                    latest_backup = backups[0]['path']
+                    if self.restore_from_backup(latest_backup):
+                        results['recovered'] = True
+                        results['recovery_source'] = str(latest_backup)
+                        print("[CURRENCY RECOVERY] Successfully recovered from backup")
+                    else:
+                        results['warnings'].append("Failed to recover from backup")
+                else:
+                    results['warnings'].append("No backups available for recovery")
+
+            results['is_valid'] = len(results['errors']) == 0
+            return results
+
+        except Exception as e:
+            print(f"[CURRENCY INTEGRITY] Error during integrity check: {e}")
+            return {
+                'is_valid': False,
+                'errors': [f"Integrity check failed: {e}"],
+                'warnings': [],
+                'recovered': False
+            }
+
+    def _calculate_checksum(self) -> str:
+        """Calculate checksum of current data for integrity verification"""
+        try:
+            data_str = json.dumps(self.users, sort_keys=True, separators=(',', ':'))
+            checksum = hashlib.md5(data_str.encode('utf-8')).hexdigest()
+            self.data_checksum = checksum
+            return checksum
+        except Exception as e:
+            print(f"[CURRENCY CHECKSUM] Error calculating checksum: {e}")
+            return ""
+
+    def enhanced_save_users(self, force_backup: bool = False) -> bool:
+        """Enhanced save method with automatic backups and retry logic"""
+        max_retries = 3
+        retry_delay = 0.5
+
+        for attempt in range(max_retries):
+            try:
+                # Try to save normally first
+                success = self.save_users()
+
+                if success:
+                    # Create backup if needed
+                    if force_backup or self._should_create_backup():
+                        self.create_backup()
+
+                    # Update checksum
+                    self._calculate_checksum()
+
+                    return True
+
+            except Exception as e:
+                print(f"[CURRENCY SAVE] Attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    # Final attempt failed
+                    print(f"[CURRENCY SAVE] All {max_retries} attempts failed")
+
+        return False
+
+    def _should_create_backup(self) -> bool:
+        """Determine if a backup should be created"""
+        # Create backup if no backup exists, or it's been more than 30 minutes
+        if not hasattr(self, 'last_backup_time'):
+            return True
+
+        return time.time() - self.last_backup_time > 1800  # 30 minutes
+
+    def _load_backup_settings(self):
+        """Load backup settings from config manager"""
+        try:
+            # Try to import config_manager here to avoid circular imports
+            from config_manager import ConfigManager
+
+            config_manager = ConfigManager()
+            self.max_currency_backups = config_manager.get_max_currency_backups()
+            print(f"[CURRENCY BACKUP] Loaded max backups: {self.max_currency_backups}")
+        except Exception as e:
+            print(f"[CURRENCY BACKUP] Error loading backup settings: {e}")
+            self.max_currency_backups = 10  # Fallback default

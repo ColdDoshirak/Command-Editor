@@ -1,8 +1,8 @@
 import os
 import json
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                            QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
-                           QGroupBox, QSlider, QScrollArea, QSizePolicy, QGridLayout)
+                           QGroupBox, QSlider, QScrollArea, QSizePolicy, QGridLayout, QMessageBox)
 from PyQt5.QtCore import Qt, QTimer
 from currency_manager import CurrencyManager
 
@@ -354,7 +354,66 @@ class CurrencyTab(QWidget):
         event_layout.addLayout(event_row2)
         event_group.setLayout(event_layout)
         scroll_layout.addWidget(event_group)
-        
+
+        # === BACKUP MANAGEMENT SECTION ===
+        backup_group = QGroupBox("Currency Data Backup & Recovery")
+        backup_layout = QVBoxLayout()
+
+        # Backup info
+        backup_info = QLabel(
+            "Automatic backups are created regularly and when major changes occur. "
+            "You can manually create backups or restore from existing ones here."
+        )
+        backup_info.setWordWrap(True)
+        backup_layout.addWidget(backup_info)
+
+        # Backup controls
+        backup_controls_layout = QHBoxLayout()
+
+        # Create backup button
+        self.create_backup_btn = QPushButton("Create Manual Backup")
+        self.create_backup_btn.clicked.connect(self.create_manual_backup)
+        self.create_backup_btn.setToolTip("Create a backup of the current currency data")
+        backup_controls_layout.addWidget(self.create_backup_btn)
+
+        # Refresh backups button
+        self.refresh_backups_btn = QPushButton("Refresh List")
+        self.refresh_backups_btn.clicked.connect(self.refresh_backup_list)
+        backup_controls_layout.addWidget(self.refresh_backups_btn)
+
+        # Backup status
+        self.backup_status_label = QLabel("Loading...")
+        backup_controls_layout.addWidget(QLabel("Status:"))
+        backup_controls_layout.addWidget(self.backup_status_label)
+        backup_controls_layout.addStretch()
+
+        backup_layout.addLayout(backup_controls_layout)
+
+        # Backup settings
+        backup_settings_layout = QHBoxLayout()
+        max_backups_label = QLabel("Maximum Backups:")
+        self.max_currency_backups_spin = QSpinBox()
+        self.max_currency_backups_spin.setMinimum(1)
+        self.max_currency_backups_spin.setMaximum(100)
+        self.max_currency_backups_spin.setValue(self.currency_manager.max_currency_backups)
+        self.max_currency_backups_spin.valueChanged.connect(self.update_max_currency_backups)
+        backup_settings_layout.addWidget(max_backups_label)
+        backup_settings_layout.addWidget(self.max_currency_backups_spin)
+        backup_settings_layout.addStretch()
+        backup_layout.addLayout(backup_settings_layout)
+
+        # Backup list (will be populated when tab is shown)
+        self.backup_list_layout = QVBoxLayout()
+        self.backup_list_widget = QWidget()
+        self.backup_list_widget.setLayout(self.backup_list_layout)
+        backup_layout.addWidget(self.backup_list_widget)
+
+        # Initial backup list refresh
+        QTimer.singleShot(500, self.refresh_backup_list)
+
+        backup_group.setLayout(backup_layout)
+        scroll_layout.addWidget(backup_group)
+
         # Add spacer at the bottom
         scroll_layout.addStretch(1)
         
@@ -473,3 +532,239 @@ class CurrencyTab(QWidget):
             print(f"Error updating min/max labels: {e}")
             import traceback
             traceback.print_exc()
+
+    def create_manual_backup(self):
+        """Create a manual backup of currency data"""
+        try:
+            self.create_backup_btn.setEnabled(False)
+            self.create_backup_btn.setText("Creating...")
+
+            success = self.currency_manager.create_backup(force=True)
+
+            if success:
+                # Refresh the backup list
+                self.refresh_backup_list()
+                # Update status
+                self.backup_status_label.setText("Backup created successfully")
+                self.backup_status_label.setStyleSheet("color: green;")
+            else:
+                self.backup_status_label.setText("Failed to create backup")
+                self.backup_status_label.setStyleSheet("color: red;")
+
+        except Exception as e:
+            print(f"Error creating manual backup: {e}")
+            self.backup_status_label.setText("Error creating backup")
+            self.backup_status_label.setStyleSheet("color: red;")
+        finally:
+            self.create_backup_btn.setEnabled(True)
+            self.create_backup_btn.setText("Create Manual Backup")
+
+    def refresh_backup_list(self):
+        """Refresh the list of available backups"""
+        try:
+            from PyQt5.QtWidgets import QFrame, QMessageBox
+
+            # Clear existing backup items
+            layout = self.backup_list_layout
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            # Get available backups
+            backups = self.currency_manager.get_available_backups()
+
+            if not backups:
+                no_backups_label = QLabel("No backups found. Automatic backups will be created during normal operation.")
+                no_backups_label.setStyleSheet("color: gray; font-style: italic;")
+                layout.addWidget(no_backups_label)
+                self.backup_status_label.setText("No backups")
+                self.backup_status_label.setStyleSheet("color: gray;")
+                return
+
+            # Update status
+            self.backup_status_label.setText(f"{len(backups)} backups available")
+            self.backup_status_label.setStyleSheet("color: blue;")
+
+            # Add each backup to the list
+            for i, backup in enumerate(backups):
+                # Create a frame for this backup item
+                backup_frame = QFrame()
+                backup_frame.setFrameStyle(QFrame.Box)
+                backup_frame.setLineWidth(1)
+                backup_frame_layout = QVBoxLayout()
+
+                # Backup info header
+                header_layout = QHBoxLayout()
+
+                time_label = QLabel(f"⏰ {backup['readable_time']}")
+                time_label.setStyleSheet("font-weight: bold;")
+                header_layout.addWidget(time_label)
+
+                size_label = QLabel(f"📊 {backup['size_str']}")
+                header_layout.addWidget(size_label)
+
+                users_label = QLabel(f"👥 {backup['user_count']} users")
+                header_layout.addWidget(users_label)
+
+                header_layout.addStretch()
+                backup_frame_layout.addLayout(header_layout)
+
+                # Backup details
+                details_layout = QVBoxLayout()
+
+                if backup['total_points'] != 'Unknown' and backup['total_hours'] != 'Unknown':
+                    details_label = QLabel(
+                        f"Points: {backup['total_points']}, Hours: {backup['total_hours']}"
+                    )
+                    details_label.setStyleSheet("color: gray; padding-left: 10px;")
+                    details_layout.addWidget(details_label)
+
+                # Buttons layout
+                buttons_layout = QHBoxLayout()
+                buttons_layout.addSpacing(10)
+
+                # Restore button
+                restore_btn = QPushButton("Restore")
+                restore_btn.setToolTip(f"Restore currency data from this backup")
+                restore_btn.clicked.connect(lambda checked, path=backup['path']: self.restore_from_backup(path))
+                buttons_layout.addWidget(restore_btn)
+
+                # View info button
+                info_btn = QPushButton("Info")
+                info_btn.setToolTip("Show detailed backup information")
+                info_btn.clicked.connect(lambda checked, b=backup: self.show_backup_info(b))
+                buttons_layout.addWidget(info_btn)
+
+                buttons_layout.addStretch()
+                details_layout.addLayout(buttons_layout)
+
+                backup_frame_layout.addLayout(details_layout)
+                backup_frame.setLayout(backup_frame_layout)
+
+                # Style the frame
+                if i == 0:  # Latest backup
+                    backup_frame.setStyleSheet("""
+                        QFrame {
+                            border: 2px solid #4CAF50;
+                            border-radius: 5px;
+                            background-color: #f9fff9;
+                        }
+                    """)
+                    latest_label = QLabel("🆕 Latest Backup")
+                    latest_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+                    backup_frame_layout.insertWidget(0, latest_label)
+
+                layout.addWidget(backup_frame)
+
+                # Add some spacing between items
+                layout.addSpacing(5)
+
+        except Exception as e:
+            print(f"Error refreshing backup list: {e}")
+            error_label = QLabel(f"Error loading backups: {e}")
+            error_label.setStyleSheet("color: red;")
+            self.backup_list_layout.addWidget(error_label)
+            self.backup_status_label.setText("Error")
+            self.backup_status_label.setStyleSheet("color: red;")
+
+    def restore_from_backup(self, backup_path):
+        """Restore currency data from a backup"""
+        try:
+            from PyQt5.QtWidgets import QMessageBox
+
+            # Confirm restoration
+            reply = QMessageBox.question(
+                self,
+                "Confirm Restore",
+                "This will replace the current currency data with the selected backup.\n\n"
+                "An emergency backup will be created first.\n\nContinue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply != QMessageBox.Yes:
+                return
+
+            # Perform restoration
+            success = self.currency_manager.restore_from_backup(backup_path)
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Restore Successful",
+                    "Currency data has been successfully restored from backup.\n\n"
+                    "The program may need to be restarted for all changes to take effect."
+                )
+
+                # Refresh backup list to show any changes
+                self.refresh_backup_list()
+
+                # Signal to parent to refresh any currency displays
+                if self.parent and hasattr(self.parent, 'user_currency_tab'):
+                    self.parent.user_currency_tab.populate_table()
+
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Restore Failed",
+                    "Failed to restore currency data from backup.\n\n"
+                    "Check the program logs for more details."
+                )
+
+        except Exception as e:
+            print(f"Error during backup restoration: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred during restoration:\n\n{e}"
+            )
+
+    def show_backup_info(self, backup):
+        """Show detailed information about a backup"""
+        try:
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Backup Information")
+            dialog.setModal(True)
+
+            layout = QVBoxLayout()
+
+            # Basic info
+            info_text = f"""
+            <h3>Backup Details</h3>
+
+            <p><b>Created:</b> {backup['readable_time']}</p>
+            <p><b>Filename:</b> {backup['filename']}</p>
+            <p><b>Size:</b> {backup['size_str']}</p>
+            <p><b>Users:</b> {backup['user_count']}</p>
+            <p><b>Total Points:</b> {backup['total_points']}</p>
+            <p><b>Total Hours:</b> {backup['total_hours']}</p>
+            """
+
+            info_label = QLabel(info_text)
+            info_label.setTextFormat(1)  # Rich text
+            layout.addWidget(info_label)
+
+            # Buttons
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+            buttons.accepted.connect(dialog.accept)
+            layout.addWidget(buttons)
+
+            dialog.setLayout(layout)
+            dialog.exec_()
+
+        except Exception as e:
+            print(f"Error showing backup info: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to show backup information: {e}")
+
+    def update_max_currency_backups(self, value):
+        """Update the maximum number of currency backups to keep"""
+        try:
+            self.currency_manager.max_currency_backups = value
+            if self.parent and hasattr(self.parent, 'config_manager'):
+                self.parent.config_manager.set_max_currency_backups(value)
+            print(f"Updated max currency backups to: {value}")
+        except Exception as e:
+            print(f"Error updating max currency backups: {e}")

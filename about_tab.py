@@ -228,7 +228,7 @@ class AboutTab(QWidget):
         super().__init__(parent)
         
         self.parent = parent
-        self.current_version = "V1.1.2"  # Store current version
+        self.current_version = "V1.1.3"  # Store current version
         
         # Initialize update checker
         self.update_checker = UpdateChecker(parent=self)
@@ -513,7 +513,7 @@ class AboutTab(QWidget):
         
         <p><b>Application:</b> Twitch Bot Command Editor</p>
         <p><b>Version:</b> {self.current_version}</p>
-        <p><b>Release Date:</b> 2025-06-16</p>
+        <p><b>Release Date:</b> 2025-10-23</p>
         <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
         

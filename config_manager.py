@@ -328,6 +328,30 @@ class ConfigManager:
         self.config['auto_save']['enabled'] = enabled
         self.config['auto_save']['interval'] = interval
         self.save_config()
+
+    def get_currency_auto_save(self):
+        """Get currency auto-save settings"""
+        return self.config.get('currency_auto_save', {'enabled': True, 'interval': 300})
+
+    def set_currency_auto_save(self, enabled, interval):
+        """Set currency auto-save settings"""
+        if 'currency_auto_save' not in self.config:
+            self.config['currency_auto_save'] = {}
+        self.config['currency_auto_save']['enabled'] = enabled
+        self.config['currency_auto_save']['interval'] = interval
+        self.save_config()
+
+    def get_system_auto_backup(self):
+        """Get system auto-backup settings"""
+        return self.config.get('system_auto_backup', {'enabled': False, 'interval': 3600})
+
+    def set_system_auto_backup(self, enabled, interval):
+        """Set system auto-backup settings"""
+        if 'system_auto_backup' not in self.config:
+            self.config['system_auto_backup'] = {}
+        self.config['system_auto_backup']['enabled'] = enabled
+        self.config['system_auto_backup']['interval'] = interval
+        self.save_config()
         
     def get_recent_files(self):
         return self.config.get('recent_files', [])
@@ -443,6 +467,28 @@ class ConfigManager:
         if 'backup' not in self.config:
             self.config['backup'] = {}
         self.config['backup']['max_backups'] = max_backups
+        self.save_config()
+
+    def get_max_currency_backups(self):
+        """Get maximum number of currency backups to keep"""
+        return self.config.get('backup', {}).get('max_currency_backups', 10)
+
+    def set_max_currency_backups(self, max_backups):
+        """Set maximum number of currency backups to keep"""
+        if 'backup' not in self.config:
+            self.config['backup'] = {}
+        self.config['backup']['max_currency_backups'] = max_backups
+        self.save_config()
+
+    def get_max_comprehensive_backups(self):
+        """Get maximum number of comprehensive backups to keep"""
+        return self.config.get('backup', {}).get('max_comprehensive_backups', 5)
+
+    def set_max_comprehensive_backups(self, max_backups):
+        """Set maximum number of comprehensive backups to keep"""
+        if 'backup' not in self.config:
+            self.config['backup'] = {}
+        self.config['backup']['max_comprehensive_backups'] = max_backups
         self.save_config()
 
     def get_manual_moderators(self):
