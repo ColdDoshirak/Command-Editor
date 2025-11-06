@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
                            QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
                            QFileDialog, QMessageBox, QSlider, QGroupBox, QTabWidget,
-                           QDialog, QHeaderView, QMenu, QScrollArea)
+                           QDialog, QHeaderView, QMenu, QScrollArea, QTextEdit)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
 import PyQt5.QtCore as QtCore
 from PyQt5.QtGui import QPixmap, QFont, QTextCursor  # Add QTextCursor here
@@ -229,7 +229,13 @@ class CommandEditor(QMainWindow):
         self.permission_combo.addItems(["Everyone", "Moderator", "Admin"])
         self.info_edit = QLineEdit()
         self.group_edit = QLineEdit()
-        self.response_edit = QLineEdit()
+        self.response_edit = QTextEdit()
+        self.response_edit.setMaximumHeight(80)  # Ограничиваем высоту для компактности
+        self.response_edit.setPlaceholderText("Введите текст ответа...\nShift+Enter - новая строка\nEnter - сохранить изменения")
+        self.response_edit.textChanged.connect(self.on_response_changed)
+        
+        # Устанавливаем обработчик клавиш для поддержки Shift+Enter
+        self.response_edit.keyPressEvent = self.response_key_press_event
         
         left_column.addWidget(QLabel("Command:"))
         left_column.addWidget(self.command_edit)
@@ -631,6 +637,26 @@ class CommandEditor(QMainWindow):
         # Unblock signals
         self.table.blockSignals(False)
         
+    def response_key_press_event(self, event):
+        """Обработка клавиш в поле Response для поддержки Shift+Enter"""
+        if event.key() == Qt.Key_Return and not event.modifiers() & Qt.ShiftModifier:
+            # Enter без Shift - сохраняем изменения
+            self.save_commands()
+            return
+        # В остальных случаях используем стандартную обработку
+        QTextEdit.keyPressEvent(self.response_edit, event)
+            
+    def on_response_changed(self):
+        """Обработка изменений в поле Response"""
+        selected_items = self.table.selectedItems()
+        if selected_items:
+            row = selected_items[0].row()
+            if row < len(self.commands):
+                self.commands[row]["Response"] = self.response_edit.toPlainText()
+                self.table.item(row, 4).setText(self.response_edit.toPlainText())
+                self.save_commands()
+            
+                
     def update_details(self, current_row, current_col, previous_row, previous_col):
         if current_row >= 0 and current_row < len(self.commands):
             cmd = self.commands[current_row]
@@ -638,7 +664,7 @@ class CommandEditor(QMainWindow):
             self.permission_combo.setCurrentText(cmd["Permission"])
             self.info_edit.setText(cmd["Info"])
             self.group_edit.setText(cmd["Group"])
-            self.response_edit.setText(cmd["Response"])
+            self.response_edit.setPlainText(cmd["Response"])
             self.cooldown_spin.setValue(cmd["Cooldown"])
             self.user_cooldown_spin.setValue(cmd["UserCooldown"])
             self.cost_spin.setValue(cmd["Cost"])
@@ -699,7 +725,7 @@ class CommandEditor(QMainWindow):
                         cmd["Volume"] = int(item.text() or 100)
                     except ValueError:
                         cmd["Volume"] = 100
-                        
+                
                 # Save changes
                 self.save_commands()
                 
@@ -763,7 +789,7 @@ class CommandEditor(QMainWindow):
         if not sound_files:
             QMessageBox.warning(self, "Warning", "No sound files found in the selected directory!")
             return
-            
+
         # Create a dictionary of command names to sound files
         sound_dict = {}
         for sound_file in sound_files:
@@ -938,7 +964,7 @@ class CommandEditor(QMainWindow):
                 self.auto_save_enabled,
                 self.auto_save_interval
             )
-            
+
             # Save backup settings
             if hasattr(self, 'history_manager'):
                 self.config_manager.set_max_backups(self.history_manager.max_backups)
@@ -1095,7 +1121,7 @@ class CommandEditor(QMainWindow):
             if not channel:
                 QMessageBox.warning(self, "Error", "Please enter a channel name")
                 return
-                
+
             try:
                 # создаём бота
                 self.bot = TwitchBot(
@@ -1381,8 +1407,6 @@ class CommandEditor(QMainWindow):
     def on_permission_changed(self, text):
         self.update_command_field(text, 1)  # Corrected column index
         
-    def on_response_changed(self, text):
-        self.update_command_field(text, 4)  # Corrected column index
         
     def on_info_changed(self, text):
         self.update_command_field(text, 2)  # Corrected column index

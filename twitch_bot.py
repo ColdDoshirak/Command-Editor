@@ -176,6 +176,33 @@ class TwitchBot(commands.Bot):
             print(f"CRITICAL ERROR in event_ready: {e}")
             import traceback; traceback.print_exc()
 
+    async def send_multiline_response(self, channel, response_text, username):
+        """
+        Отправляет многострочный ответ, где каждая строка отправляется отдельным сообщением.
+        Строки, содержащие только пробелы, создают задержку в 1 секунду.
+        """
+        if not response_text or not response_text.strip():
+            return
+            
+        # Разбиваем ответ на строки
+        lines = response_text.split('\n')
+        
+        for line in lines:
+            # Проверяем, содержит ли строка только пробелы (задержка)
+            if line.isspace() or line == '':
+                # Создаем задержку в 0.2 секунды
+                await asyncio.sleep(0.2)
+                continue
+
+            # Заменяем {user} на имя пользователя
+            formatted_line = line.replace("{user}", username)
+            
+            # Отправляем непустую строку как отдельное сообщение
+            if formatted_line.strip():
+                await channel.send(formatted_line)
+                # Небольшая задержка между сообщениями для избежания rate limit
+                await asyncio.sleep(0.1)
+
     async def event_message(self, message):
         # When we receive a message, we know the connection is active
         # Reset the heartbeat and reconnection attempt counters
@@ -284,7 +311,7 @@ class TwitchBot(commands.Bot):
             except ValueError:
                 await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
                 return
-                
+
             # Получаем текущие очки пользователя
             current_points = self.currency_manager.get_points(target_user)
             
@@ -386,7 +413,7 @@ class TwitchBot(commands.Bot):
                         f"@{username}: you can use this command in {u_rem} sec."
                     )
                     return
-
+                
             # Проверка стоимости ПЕРЕД фиксацией времени кулдауна
             cost = int(cmd.get("Cost", 0))
             points_deducted = False
@@ -402,7 +429,7 @@ class TwitchBot(commands.Bot):
                         f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
                     )
                     return
-                
+
                 # Списываем поинты только если достаточно средств
                 if self.currency_manager.pay_for_command(username, cost):
                     points_deducted = True
@@ -424,13 +451,13 @@ class TwitchBot(commands.Bot):
             has_sound = False
             sound_played = False
             
-            # Отправка текста-ответа
-            resp = cmd.get("Response", "").replace("{user}", message.author.name)
+            # Отправка текста-ответа (многострочного)
+            resp = cmd.get("Response", "")
             if resp and resp.strip():
                 has_response = True
-                await message.channel.send(resp)
+                await self.send_multiline_response(message.channel, resp, message.author.name)
                 command_executed = True
-                print(f"Sent text response for command '{cmd_key}'")
+                print(f"Sent multiline response for command '{cmd_key}'")
                 
             # Проигрывание звука
             sf = cmd.get("SoundFile", "").strip()
