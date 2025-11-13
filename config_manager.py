@@ -232,6 +232,29 @@ class ConfigManager:
         except Exception as e:
             print(f"Error saving moderators config: {e}")
             return False
+
+    def save_system_commands(self, commands):
+        """Save system commands to a separate file"""
+        try:
+            system_commands_file = self.program_dir / 'system_commands.json'
+            with open(system_commands_file, 'w', encoding='utf-8') as f:
+                json.dump(commands, f, indent=4, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"Error saving system commands: {e}")
+            return False
+
+    def load_system_commands(self):
+        """Load system commands from a separate file"""
+        try:
+            system_commands_file = self.program_dir / 'system_commands.json'
+            if system_commands_file.exists():
+                with open(system_commands_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return []
+        except Exception as e:
+            print(f"Error loading system commands: {e}")
+            return []
     
     def _update_nested_dict(self, original, update):
         """Recursively update a nested dictionary without overwriting non-updated values"""

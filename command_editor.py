@@ -24,6 +24,7 @@ import time
 from currency_tab import CurrencyTab
 from user_currency_tab import UserCurrencyTab
 from ranks_tab import RanksTab
+from sys_commands_tab import SysCommandsTab  # Import the new system commands tab
 from currency_manager import CurrencyManager
 from PyQt5 import sip  # правильный импорт
 from PyQt5.QtCore import QMetaType
@@ -410,6 +411,11 @@ class CommandEditor(QMainWindow):
         
         # Add tabs to tab widget
         self.tab_widget.addTab(main_tab, "Commands")
+
+        # Add system commands tab right after Commands
+        self.sys_commands_tab = SysCommandsTab(parent=self)
+        self.tab_widget.addTab(self.sys_commands_tab, "Sys.Commands")
+
         self.twitch_tab = TwitchTab(parent=self, commands_data=self.commands)
         self.tab_widget.addTab(self.twitch_tab, "Twitch")
 
@@ -417,7 +423,7 @@ class CommandEditor(QMainWindow):
         # Add tabs for currency management
         self.currency_manager = CurrencyManager()
         if hasattr(self.currency_manager, 'load_settings'):
-            self.currency_manager.load_settings()  # Загружаем настройки при запуске
+            self.currency_manager.load_settings() # Загружаем настройки при запуске
             print("Currency settings loaded in CommandEditor")
 
         self.currency_tab = CurrencyTab(parent=self)

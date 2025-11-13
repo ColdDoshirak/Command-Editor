@@ -237,133 +237,92 @@ class TwitchBot(commands.Bot):
             print("Empty command after normalization, ignoring")
             return
         
-        # Проверка на команду !add_points (только для модераторов)
-        if key == "add_points" and hasattr(self, 'currency_manager'):
-            # Проверяем, является ли пользователь модератором
-            is_mod = await self.is_user_moderator(username)
-            if not is_mod:
-                await message.channel.send(f"@{username}: You don't have permission to use this command.")
-                return
-                
-            # Парсим сообщение для получения параметров (имя пользователя и количество очков)
-            args = content.split(maxsplit=2)[1:]
-            if len(args) < 2:
-                await message.channel.send(f"@{username}: Usage: !add_points @username amount")
-                return
-                
-            # Получаем имя пользователя (удаляем @ если есть)
-            target_user = args[0]
-            if target_user.startswith('@'):
-                target_user = target_user[1:]
-            target_user = target_user.lower()
-                
-            # Парсим количество очков
-            try:
-                points_amount = float(args[1])
-                # Округляем до двух знаков после запятой
-                points_amount = round(points_amount, 2)
-                if points_amount <= 0:
-                    await message.channel.send(f"@{username}: Amount must be greater than 0")
-                    return
-            except ValueError:
-                await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
-                return
-                
-            # Добавляем очки
-            current_points = self.currency_manager.add_points(target_user, points_amount)
-            self.currency_manager.save_users()
-            
-            # Отправляем ответ
-            formatted_points = f"{float(current_points):.2f}"
-            await message.channel.send(
-                f"@{target_user} received {points_amount:.2f} points from @{username}. New balance: {formatted_points}"
-            )
-            return
-            
-        # Проверка на команду !remove_points (только для модераторов)
-        if key == "remove_points" and hasattr(self, 'currency_manager'):
-            # Проверяем, является ли пользователь модератором
-            is_mod = await self.is_user_moderator(username)
-            if not is_mod:
-                await message.channel.send(f"@{username}: You don't have permission to use this command.")
-                return
-                
-            # Парсим сообщение для получения параметров (имя пользователя и количество очков)
-            args = content.split(maxsplit=2)[1:]
-            if len(args) < 2:
-                await message.channel.send(f"@{username}: Usage: !remove_points @username amount")
-                return
-                
-            # Получаем имя пользователя (удаляем @ если есть)
-            target_user = args[0]
-            if target_user.startswith('@'):
-                target_user = target_user[1:]
-            target_user = target_user.lower()
-                
-            # Парсим количество очков
-            try:
-                points_amount = float(args[1])
-                # Округляем до двух знаков после запятой
-                points_amount = round(points_amount, 2)
-                if points_amount <= 0:
-                    await message.channel.send(f"@{username}: Amount must be greater than 0")
-                    return
-            except ValueError:
-                await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
-                return
 
-            # Получаем текущие очки пользователя
-            current_points = self.currency_manager.get_points(target_user)
-            
-            # Проверяем, хватает ли очков
-            if current_points < points_amount:
-                await message.channel.send(
-                    f"@{username}: User @{target_user} only has {current_points:.2f} points, cannot remove {points_amount:.2f}"
-                )
-                return
+
+        # Check for system commands from the sys_commands tab
+        system_commands = self.config_manager.load_system_commands()
+        for sys_cmd in system_commands:
+            # Skip disabled commands
+            if not sys_cmd.get("enabled", False):
+                continue
                 
-            # Снимаем очки
-            self.currency_manager.remove_points(target_user, points_amount)
-            new_balance = self.currency_manager.get_points(target_user)
-            self.currency_manager.save_users()
+            # Get the command name (original or custom name for duplicates)
+            cmd_name = sys_cmd.get("command_name", sys_cmd["command"])
+            cmd_key = self.normalize_command_key(cmd_name.lstrip('!'))
             
-            # Отправляем ответ
-            await message.channel.send(
-                f"@{username} removed {points_amount:.2f} points from @{target_user}. New balance: {new_balance:.2f}"
-            )
-            return
-        
-        # Проверка на специальную команду !points до проверки custom команд
-        if key == "points" and hasattr(self, 'currency_manager'):
-            # Проверяем cooldown для points команды
-            cmd_key = "points"
-            cooldown_sec = self.currency_manager.settings.get('cooldown', 5)  # в секундах
-            
-            # Нормализуем ключ команды и проверяем, не содержит ли он невидимые символы
-            normalized_key = self.normalize_command_key(cmd_key)
-            
-            # Используем нормалованный ключ для проверки кулдауна
-            last_used = self.user_cooldowns.get(normalized_key, {}).get(username, 0)
-            elapsed = current_time - last_used
-            
-            if cooldown_sec > 0 and elapsed < cooldown_sec:
-                remaining = int(cooldown_sec - elapsed)
-                await message.channel.send(
-                    f"@{username}: command is on cooldown. Try in {remaining} sec."
-                )
-                return
-            
-            # Команда выполняется - формируем и отправляем ответ
-            response = self.currency_manager.format_currency_message(username)
-            await message.channel.send(response)
-            
-            # Обновляем время последнего использования только ПОСЛЕ успешного выполнения
-            if cooldown_sec > 0:  # Проверяем, что кулдаун активен
-                self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
-            
-            # Логируем выполнение команды
-            print(f"Points command executed by {username}")
-            return
+            # Check if the message matches this system command
+            if key == cmd_key:
+                # Check permissions
+                required_permission = sys_cmd.get("permission", "Everyone").lower()
+                user_is_mod = await self.is_user_moderator(username)
+                
+                if required_permission == "moderator" and not user_is_mod:
+                    await message.channel.send(f"@{username}: You don't have permission to use this command.")
+                    return
+                elif required_permission == "admin" and not user_is_mod:  # Simplified admin check
+                    await message.channel.send(f"@{username}: You don't have permission to use this command.")
+                    return
+                
+                # Check cooldowns
+                cooldown_min = int(sys_cmd.get("cooldown", 0))
+                user_cooldown_min = int(sys_cmd.get("user_cooldown", 0))
+                cooldown_sec = cooldown_min * 60
+                user_cooldown_sec = user_cooldown_min * 60
+                
+                # Global cooldown check
+                if cooldown_sec > 0:
+                    last_used = self.global_cooldowns.get(cmd_key, 0)
+                    elapsed = current_time - last_used
+                    if elapsed < cooldown_sec:
+                        remaining = int(cooldown_sec - elapsed)
+                        await message.channel.send(
+                            f"@{username}: command is on cooldown. Try in {remaining} sec."
+                        )
+                        return
+                
+                # User cooldown check
+                if user_cooldown_sec > 0:
+                    last_used = self.user_cooldowns.get(cmd_key, {}).get(username, 0)
+                    elapsed = current_time - last_used
+                    if elapsed < user_cooldown_sec:
+                        remaining = int(user_cooldown_sec - elapsed)
+                        await message.channel.send(
+                            f"@{username}: you can use this command in {remaining} sec."
+                        )
+                        return
+                
+                # Check command cost
+                cost = int(sys_cmd.get("cost", 0))
+                if cost > 0:
+                    # Check if user has enough points
+                    current_points = self.currency_manager.get_points(username)
+                    if current_points < cost:
+                        formatted_points = f"{float(current_points):.2f}"
+                        await message.channel.send(
+                            f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
+                        )
+                        return
+                    
+                    # Deduct points
+                    if not self.currency_manager.pay_for_command(username, cost):
+                        formatted_points = f"{float(current_points):.2f}"
+                        await message.channel.send(
+                            f"@{username}: Payment error. Cost: {cost} (you have {formatted_points})"
+                        )
+                        return
+                
+                # Execute the command based on its type
+                await self.execute_system_command(message, username, sys_cmd, content)
+                
+                # Update cooldowns after successful execution
+                if cooldown_sec > 0:
+                    self.global_cooldowns[cmd_key] = current_time
+                if user_cooldown_sec > 0:
+                    self.user_cooldowns.setdefault(cmd_key, {})[username] = current_time
+                
+                return  # Command processed, exit the event_message method
+
+        # Далее обрабатываем кастомные команды как раньше
 
         # Далее обрабатываем кастомные команды как раньше
         for cmd in getattr(self, "_commands_list", []):
@@ -1430,3 +1389,246 @@ class TwitchBot(commands.Bot):
             print(f"Error cleaning up cooldowns: {e}")
             import traceback
             traceback.print_exc()
+
+    async def execute_system_command(self, message, username, sys_cmd, full_content):
+        """Execute a system command based on its type and configuration"""
+        command_type = sys_cmd.get("command", "").lower()
+        command_name = sys_cmd.get("command_name", sys_cmd["command"]).lower()
+        
+
+        # Special handling for different system commands
+        if command_name == "!random" or command_type == "!random":
+            await self.execute_random_command(message, username, sys_cmd, full_content)
+        elif command_name == "!points" or command_type == "!points":
+            # Handle points command
+            cmd_key = "points"
+            cooldown_sec = self.currency_manager.settings.get('cooldown', 5)  # in seconds
+            
+            # Normalize the command key and check if it contains invisible characters
+            normalized_key = self.normalize_command_key(cmd_key)
+            
+            # Use the normalized key for cooldown check
+            last_used = self.user_cooldowns.get(normalized_key, {}).get(username, 0)
+            current_time = time.time()
+            elapsed = current_time - last_used
+            
+            if cooldown_sec > 0 and elapsed < cooldown_sec:
+                remaining = int(cooldown_sec - elapsed)
+                await message.channel.send(
+                    f"@{username}: command is on cooldown. Try in {remaining} sec."
+                )
+                return
+            
+            # Command executes - format and send response
+            response = self.currency_manager.format_currency_message(username)
+            await message.channel.send(response)
+            
+            # Update the last usage time only AFTER successful execution
+            if cooldown_sec > 0:  # Check if cooldown is active
+                self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
+        elif command_name == "!add_points" or command_type == "!add_points":
+            # Handle add_points command
+            # Check if user is moderator
+            is_mod = await self.is_user_moderator(username)
+            if not is_mod:
+                await message.channel.send(f"@{username}: You don't have permission to use this command.")
+                return
+                
+            # Parse message for parameters (target user and amount)
+            args = full_content.split(maxsplit=2)[1:]
+            if len(args) < 2:
+                await message.channel.send(f"@{username}: Usage: !add_points @username amount")
+                return
+                
+            # Get target user (remove @ if present)
+            target_user = args[0]
+            if target_user.startswith('@'):
+                target_user = target_user[1:]
+            target_user = target_user.lower()
+                
+            # Parse amount
+            try:
+                points_amount = float(args[1])
+                # Round to two decimal places
+                points_amount = round(points_amount, 2)
+                if points_amount <= 0:
+                    await message.channel.send(f"@{username}: Amount must be greater than 0")
+                    return
+            except ValueError:
+                await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
+                return
+                
+            # Add points
+            current_points = self.currency_manager.add_points(target_user, points_amount)
+            self.currency_manager.save_users()
+            
+            # Send response
+            formatted_points = f"{float(current_points):.2f}"
+            await message.channel.send(
+                f"@{target_user} received {points_amount:.2f} points from @{username}. New balance: {formatted_points}"
+            )
+        elif command_name == "!remove_points" or command_type == "!remove_points":
+            # Handle remove_points command
+            # Check if user is moderator
+            is_mod = await self.is_user_moderator(username)
+            if not is_mod:
+                await message.channel.send(f"@{username}: You don't have permission to use this command.")
+                return
+                
+            # Parse message for parameters (target user and amount)
+            args = full_content.split(maxsplit=2)[1:]
+            if len(args) < 2:
+                await message.channel.send(f"@{username}: Usage: !remove_points @username amount")
+                return
+                
+            # Get target user (remove @ if present)
+            target_user = args[0]
+            if target_user.startswith('@'):
+                target_user = target_user[1:]
+            target_user = target_user.lower()
+                
+            # Parse amount
+            try:
+                points_amount = float(args[1])
+                # Round to two decimal places
+                points_amount = round(points_amount, 2)
+                if points_amount <= 0:
+                    await message.channel.send(f"@{username}: Amount must be greater than 0")
+                    return
+            except ValueError:
+                await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
+                return
+
+            # Get current points of the user
+            current_points = self.currency_manager.get_points(target_user)
+            
+            # Check if user has enough points
+            if current_points < points_amount:
+                await message.channel.send(
+                    f"@{username}: User @{target_user} only has {current_points:.2f} points, cannot remove {points_amount:.2f}"
+                )
+                return
+                
+            # Remove points
+            self.currency_manager.remove_points(target_user, points_amount)
+            new_balance = self.currency_manager.get_points(target_user)
+            self.currency_manager.save_users()
+            
+            # Send response
+            await message.channel.send(
+                f"@{username} removed {points_amount:.2f} points from @{target_user}. New balance: {new_balance:.2f}"
+            )
+        else:
+            # For any other system commands that might have custom responses
+            response = sys_cmd.get("response", "")
+            if response:
+                # Replace placeholders in the response
+                formatted_response = response.replace("{user}", username)
+                await message.channel.send(formatted_response)
+
+    async def execute_random_command(self, message, username, sys_cmd, full_content):
+        """Execute the random command functionality"""
+        # Get the configured group name from the system command settings
+        group_name = sys_cmd.get("random_group", "GENERAL").upper()
+
+        # Find all enabled commands in the specified group (or ALL groups if "ALL" is specified)
+        commands_in_group = []
+        for cmd in getattr(self, "_commands_list", []):
+            if cmd.get("Enabled", False):
+                if group_name == "ALL":
+                    # Include commands from all groups when "ALL" is specified
+                    commands_in_group.append(cmd)
+                else:
+                    # Include only commands from the specific group
+                    cmd_group = cmd.get("Group", "GENERAL").upper()
+                    if cmd_group == group_name:
+                        commands_in_group.append(cmd)
+
+        if not commands_in_group:
+            if group_name == "ALL":
+                await message.channel.send(f"@{username}: No enabled commands found")
+            else:
+                await message.channel.send(f"@{username}: No commands found in group '{group_name}'")
+            return
+
+        # Select a random command from the group
+        import random
+        selected_cmd = random.choice(commands_in_group)
+
+        # Process the selected command as if it was triggered directly
+        # We need to simulate the command execution with the selected command's settings
+        cmd_key = self.normalize_command_key(selected_cmd["Command"].lstrip('!'))
+
+        # Check cooldowns for the selected command
+        cooldown_min = int(selected_cmd.get("Cooldown", 0))
+        user_cooldown_min = int(selected_cmd.get("UserCooldown", 0))
+        cooldown_sec = cooldown_min * 60
+        user_cooldown_sec = user_cooldown_min * 60
+        current_time = time.time()
+
+        # Global cooldown check
+        if cooldown_sec > 0:
+            last_used = self.global_cooldowns.get(cmd_key, 0)
+            elapsed = current_time - last_used
+            if elapsed < cooldown_sec:
+                remaining = int(cooldown_sec - elapsed)
+                await message.channel.send(
+                    f"@{username}: command is on cooldown. Try in {remaining} sec."
+                )
+                return
+
+        # User cooldown check
+        if user_cooldown_sec > 0:
+            last_used = self.user_cooldowns.get(cmd_key, {}).get(username, 0)
+            elapsed = current_time - last_used
+            if elapsed < user_cooldown_sec:
+                remaining = int(user_cooldown_sec - elapsed)
+                await message.channel.send(
+                    f"@{username}: you can use this command in {remaining} sec."
+                )
+                return
+
+        # Check command cost
+        cost = int(selected_cmd.get("Cost", 0))
+        if cost > 0:
+            # Check if user has enough points
+            current_points = self.currency_manager.get_points(username)
+            if current_points < cost:
+                formatted_points = f"{float(current_points):.2f}"
+                await message.channel.send(
+                    f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
+                )
+                return
+
+            # Deduct points
+            if not self.currency_manager.pay_for_command(username, cost):
+                formatted_points = f"{float(current_points):.2f}"
+                await message.channel.send(
+                    f"@{username}: Payment error. Cost: {cost} (you have {formatted_points})"
+                )
+                return
+
+        # Show picked command if enabled
+        if sys_cmd.get("show_picked_command", True):
+            await message.channel.send(f"Picked {selected_cmd['Command']}.")
+
+        # Execute the command's response
+        resp = selected_cmd.get("Response", "")
+        if resp and resp.strip():
+            await self.send_multiline_response(message.channel, resp, username)
+
+        # Execute the command's sound if any
+        sf = selected_cmd.get("SoundFile", "").strip()
+        if sf:
+            volume = int(selected_cmd.get("Volume", 100))
+            sound_played = self.play_sound(sf, volume)
+            if sound_played:
+                print(f"Successfully played sound for random command '{cmd_key}'")
+
+        # Update cooldowns after successful execution
+        if cooldown_sec > 0:
+            self.global_cooldowns[cmd_key] = current_time
+        if user_cooldown_sec > 0:
+            self.user_cooldowns.setdefault(cmd_key, {})[username] = current_time
+
+        print(f"Random command executed: {selected_cmd['Command']} from group '{group_name}' by {username}")
