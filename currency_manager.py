@@ -76,6 +76,103 @@ class CurrencyManager:
         self.data_checksum = None
         self.last_backup_time = 0
         
+        # Флаг для предотвращения двойного сохранения
+        self._save_pending = False
+        
+    def _validate_points_operation(self, username, amount, operation="add"):
+        """
+        Валидация операции с очками для предотвращения аномальных значений
+        
+        Args:
+            username: Имя пользователя
+            amount: Количество очков
+            operation: Тип операции ("add" или "remove")
+            
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        try:
+            # Проверяем тип данных
+            if not isinstance(amount, (int, float)):
+                return False, f"Invalid amount type: {type(amount)}"
+            
+            # Проверяем на NaN и бесконечность
+            if amount != amount or amount in (float('inf'), float('-inf')):
+                return False, f"Invalid amount value: {amount}"
+            
+            # Проверяем диапазон значений
+            max_single_operation = 1000000  # Максимальное количество очков за одну операцию
+            if abs(amount) > max_single_operation:
+                return False, f"Amount too large: {amount} (max: {max_single_operation})"
+            
+            # Проверяем минимальное значение
+            if abs(amount) < 0.01:
+                return False, f"Amount too small: {amount} (min: 0.01)"
+            
+            # Для операции add проверяем, что amount не отрицательный
+            if operation == "add" and amount < 0:
+                return False, f"Negative amount not allowed for add operation: {amount}"
+            
+            # Проверяем максимальный баланс
+            max_balance = 10000000  # Максимальный баланс пользователя
+            current_points = self.users.get(username, {}).get('points', 0)
+            
+            if operation == "add":
+                new_balance = current_points + amount
+                if new_balance > max_balance:
+                    return False, f"New balance too large: {new_balance} (max: {max_balance})"
+                
+                # Проверяем резкое изменение баланса (более чем в 10 раз за одну операцию)
+                if current_points > 0 and amount / current_points > 10:
+                    return False, f"Suspicious balance change: current={current_points}, adding={amount}"
+            
+            elif operation == "remove":
+                if amount > current_points:
+                    return False, f"Cannot remove more than current balance: current={current_points}, removing={amount}"
+            
+            return True, ""
+            
+        except Exception as e:
+            return False, f"Validation error: {str(e)}"
+    
+    def _format_points(self, points):
+        """
+        Форматирует очки с корректным округлением
+        
+        Args:
+            points: Количество очков
+            
+        Returns:
+            float: Отформатированное значение с точностью до 2 знаков после запятой
+        """
+        try:
+            if points is None:
+                return 0.0
+            return round(float(points), 2)
+        except (ValueError, TypeError):
+            return 0.0
+    
+    def _parse_amount(self, amount):
+        """
+        Парсит и валидирует количество очков
+        
+        Args:
+            amount: Количество очков (может быть строкой)
+            
+        Returns:
+            float: Спарсенное значение с точностью до 2 знаков после запятой
+        """
+        try:
+            if isinstance(amount, str):
+                amount = amount.replace(',', '.')  # Заменяем запятую на точку
+                amount = float(amount)
+            elif not isinstance(amount, (int, float)):
+                amount = float(amount)
+            
+            return round(float(amount), 2)
+        except (ValueError, TypeError):
+            return 0.0
+        
     def load_data(self):
         """Reload users data from file with integrity checking and recovery"""
         try:
@@ -100,6 +197,9 @@ class CurrencyManager:
             # Calculate initial checksum
             self._calculate_checksum()
 
+            # Сбрасываем флаг отложенного сохранения после загрузки данных
+            self._save_pending = False
+
             print(f"[CURRENCY LOAD] Loaded {len(self.users)} users from {self.users_file}")
 
         except Exception as e:
@@ -108,9 +208,15 @@ class CurrencyManager:
             traceback.print_exc()
             # Ensure users dict exists even on error
             self.users = {}
+            # Сбрасываем флаг отложенного сохранения даже в случае ошибки
+            self._save_pending = False
     
-    def save_users(self):
+    def save_users(self, force=False):
         """Сохранить данные о пользователях"""
+        # Проверяем флаг отложенного сохранения
+        if not force and not self._save_pending:
+            return True
+            
         try:
             # Убедимся, что директория существует
             os.makedirs(os.path.dirname(str(self.users_file)), exist_ok=True)
@@ -118,6 +224,9 @@ class CurrencyManager:
             with open(self.users_file, 'w', encoding='utf-8') as f:
                 json.dump(self.users, f, indent=4, ensure_ascii=False)
             print(f"Пользователи сохранены в {self.users_file}")
+            
+            # Сбрасываем флаг отложенного сохранения
+            self._save_pending = False
             return True
         except Exception as e:
             print(f"Ошибка сохранения данных пользователей: {e}")
@@ -126,9 +235,9 @@ class CurrencyManager:
             return False
     
     # Метод для совместимости с currency_file
-    def save_currency_users(self):
+    def save_currency_users(self, force=False):
         """Alias для save_users() для совместимости"""
-        return self.save_users()
+        return self.save_users(force)
     
     def save_ranks(self):
         """Сохранить данные о рангах"""
@@ -233,7 +342,7 @@ class CurrencyManager:
         }
         
         # Save changes
-        self.save_users()
+        self.save_users(force=True)
     
     def update_user(self, username, points=None, hours=None):
         """Update user data in the currency system"""
@@ -255,7 +364,7 @@ class CurrencyManager:
         self.users[username]['last_seen'] = time.time()
         
         # Save changes
-        self.save_users()
+        self.save_users(force=True)
         return True
     
     def remove_user(self, username):
@@ -269,7 +378,7 @@ class CurrencyManager:
             del self.users[username]
             
             # Save changes
-            self.save_users()
+            self.save_users(force=True)
             return True
             
         return False
@@ -281,7 +390,16 @@ class CurrencyManager:
         if username.startswith('@'):
             username = username[1:]
         
+        # Парсим и валидируем количество очков
+        amount = self._parse_amount(amount)
+        
         with self.users_lock:  # Блокируем доступ на время изменений
+            # Валидация операции
+            is_valid, error_msg = self._validate_points_operation(username, amount, "add")
+            if not is_valid:
+                print(f"[CURRENCY ERROR] add_points validation failed for {username}: {error_msg}")
+                return self.users.get(username, {}).get('points', 0)
+            
             if username not in self.users:
                 self.users[username] = {
                     'points': 0,
@@ -289,20 +407,27 @@ class CurrencyManager:
                     'last_seen': time.time()
                 }
                 
-            self.users[username]['points'] += amount
+            # Сохраняем текущий баланс для проверки
+            old_points = self.users[username]['points']
+            
+            # Добавляем очки с форматированием
+            self.users[username]['points'] = self._format_points(self.users[username]['points'] + amount)
             self.users[username]['last_seen'] = time.time()
             
-            # Применение бонуса только если был передан параметр apply_bonus=True
+            # Применение бонуса для регуляров
             if self.users[username].get("is_regular"):
-                bonus = self.settings.get("regular_bonus", 0)
-                self.users[username]['points'] += bonus
+                bonus = self._parse_amount(self.settings.get("regular_bonus", 0))
+                self.users[username]['points'] = self._format_points(self.users[username]['points'] + bonus)
                 
             current_points = self.users[username]['points']
             
-        # Проверки ранга и автоматического получения статуса регуляра после освобождения блокировки
-        self.check_auto_regular(username)
-        self.check_rank_promotion(username)
-        
+            # Проверки ранга и автоматического получения статуса регуляра внутри блокировки
+            self.check_auto_regular(username)
+            self.check_rank_promotion(username)
+            
+            # Устанавливаем флаг отложенного сохранения
+            self._save_pending = True
+            
         return current_points
     
     def set_points(self, username, amount):
@@ -316,16 +441,41 @@ class CurrencyManager:
             }
         self.users[username]['points'] = amount
         self.users[username]['last_seen'] = time.time()
-        self.save_users()
+        self.save_users(force=True)
     
     def remove_points(self, username, amount):
         """Убрать очки у пользователя"""
-        if username not in self.users:
-            return False
-        
-        self.users[username]['points'] = max(0, self.users[username]['points'] - amount)
-        self.save_users()
-        return True
+        username = username.lower()
+        if username.startswith('@'):
+            username = username[1:]
+
+        # Парсим и валидируем количество очков
+        amount = self._parse_amount(amount)
+
+        with self.users_lock:  # Блокируем доступ на время изменений
+            if username not in self.users:
+                self.users[username] = {
+                    'points': 0,
+                    'hours': 0,
+                    'last_seen': time.time()
+                }
+
+            # Валидация операции
+            is_valid, error_msg = self._validate_points_operation(username, amount, "remove")
+            if not is_valid:
+                print(f"[CURRENCY ERROR] remove_points validation failed for {username}: {error_msg}")
+                return self.users[username]['points']
+
+            # Вычитаем очки с форматированием
+            new_points = self._format_points(self.users[username]['points'] - amount)
+            self.users[username]['points'] = max(0, new_points)
+            self.users[username]['last_seen'] = time.time()
+            current_points = self.users[username]['points']
+
+            # Устанавливаем флаг отложенного сохранения
+            self._save_pending = True
+
+        return current_points
     
     def add_hours(self, username, hours):
         """Добавить часы пользователю"""
@@ -335,7 +485,7 @@ class CurrencyManager:
         self.users[username]['hours'] += hours
         if self.settings.get('rank_type') == 'Hours':
             self.check_rank_promotion(username)
-        self.save_users()
+        self.save_users(force=True)
         return True
     
     def add_rank(self, name, required, group, description=""):
@@ -398,7 +548,7 @@ class CurrencyManager:
             if rank_value >= rank['required']:
                 if user['rank'] != rank['name']:
                     user['rank'] = rank['name']
-                    self.save_users()
+                    self.save_users(force=True)
                     return True
                 break
         
@@ -476,7 +626,7 @@ class CurrencyManager:
                 self.check_rank_promotion(username)
         
         if updated_count > 0:
-            self.save_users()
+            self.save_users(force=True)
         
         return updated_count
     
@@ -498,7 +648,7 @@ class CurrencyManager:
         
         if self.users[username]['points'] >= cost:
             self.users[username]['points'] -= cost
-            self.save_users()
+            self.save_users(force=True)
             return True
         
         return False
@@ -1022,8 +1172,8 @@ class CurrencyManager:
 
         for attempt in range(max_retries):
             try:
-                # Try to save normally first
-                success = self.save_users()
+                # Try to save normally first with force flag to bypass pending check
+                success = self.save_users(force=True)
 
                 if success:
                     # Create backup if needed
