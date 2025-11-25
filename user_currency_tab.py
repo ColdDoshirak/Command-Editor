@@ -130,9 +130,8 @@ class UserCurrencyTab(QWidget):
             if self.table.verticalScrollBar():
                 scroll_position = self.table.verticalScrollBar().value()
             
-            # Принудительно перезагрузим данные пользователей
+            # Получаем текущие данные пользователей из менеджера
             if self.currency_manager:
-                self.currency_manager.load_data()
                 users_data = self.currency_manager.users
             else:
                 users_data = {}
@@ -287,18 +286,15 @@ class UserCurrencyTab(QWidget):
             hours = hours_input.value()
             
             if self.currency_manager:
-                # Добавляем нового пользователя
+                # Добавляем нового пользователя через CurrencyManager API
                 if not hasattr(self.currency_manager, 'users') or self.currency_manager.users is None:
                     self.currency_manager.users = {}
-                    
-                self.currency_manager.users[username] = {
-                    'points': points,
-                    'hours': hours,
-                    'last_seen': time.time()
-                }
-                
-                # Сохраняем изменения
-                self.currency_manager.save_users()
+
+                # Используем add_user, затем обновляем значения и сохраняем принудительно
+                self.currency_manager.add_user(username, points=points, hours=hours)
+                self.currency_manager.users[username]['last_seen'] = time.time()
+                # Явное сохранение, чтобы гарантировать запись в файл
+                self.currency_manager.save_users(force=True)
                 
                 # Обновляем таблицу
                 self.populate_table()
@@ -371,9 +367,11 @@ class UserCurrencyTab(QWidget):
             self.currency_manager.users[username]['hours'] = hours
             self.currency_manager.users[username]['is_regular'] = is_regular
             self.currency_manager.users[username]['last_seen'] = time.time()
-            
-            # Сохраняем изменения
-            self.currency_manager.save_users()
+
+            # Помечаем данные как изменённые и сохраняем принудительно
+            if hasattr(self.currency_manager, "_save_pending"):
+                self.currency_manager._save_pending = True
+            self.currency_manager.save_users(force=True)
             
             # Обновляем таблицу
             self.populate_table()
@@ -403,9 +401,11 @@ class UserCurrencyTab(QWidget):
                 if username in self.currency_manager.users:
                     # Удаляем пользователя
                     del self.currency_manager.users[username]
-                    
-                    # Сохраняем изменения
-                    self.currency_manager.save_users()
+
+                    # Помечаем данные как изменённые и сохраняем принудительно
+                    if hasattr(self.currency_manager, "_save_pending"):
+                        self.currency_manager._save_pending = True
+                    self.currency_manager.save_users(force=True)
                     
                     # Принудительно очищаем таблицу, если пользователей не осталось
                     if not self.currency_manager.users:
@@ -432,7 +432,8 @@ class UserCurrencyTab(QWidget):
         """Manually save currency users data"""
         try:
             if self.currency_manager:
-                success = self.currency_manager.save_users()
+                # Явное сохранение по запросу пользователя всегда должно писать файл
+                success = self.currency_manager.save_users(force=True)
                 if success:
                     QMessageBox.information(self, "Сохранение", "Данные пользователей успешно сохранены!")
                     # Обновляем время последнего обновления

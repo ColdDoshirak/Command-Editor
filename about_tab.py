@@ -155,7 +155,7 @@ class UpdateChecker:
     def __init__(self, parent=None, github_repo="colddoshirak/Command-Editor"):
         self.parent = parent
         self.github_repo = github_repo
-        self.current_version = "V1.1.5"  # Default version, will be updated from about tab
+        self.current_version = "V1.1.5a"  # Default version, will be updated from about tab
         self.notification_widget = None
         self.check_button = None  # Reference to the check button for resetting state
         
@@ -228,7 +228,7 @@ class AboutTab(QWidget):
         super().__init__(parent)
         
         self.parent = parent
-        self.current_version = "V1.1.5"  # Store current version
+        self.current_version = "V1.1.5a"  # Store current version
         
         # Initialize update checker
         self.update_checker = UpdateChecker(parent=self)
@@ -513,7 +513,7 @@ class AboutTab(QWidget):
         
         <p><b>Application:</b> Twitch Bot Command Editor</p>
         <p><b>Version:</b> {self.current_version}</p>
-        <p><b>Release Date:</b> 2025-11-13</p>
+        <p><b>Release Date:</b> 2025-11-25</p>
         <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
         
