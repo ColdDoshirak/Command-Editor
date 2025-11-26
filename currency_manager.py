@@ -101,7 +101,7 @@ class CurrencyManager:
                 return False, f"Invalid amount value: {amount}"
             
             # Проверяем диапазон значений
-            max_single_operation = 1000000  # Максимальное количество очков за одну операцию
+            max_single_operation = 5000000  # Максимальное количество очков за одну операцию
             if abs(amount) > max_single_operation:
                 return False, f"Amount too large: {amount} (max: {max_single_operation})"
             
@@ -114,7 +114,7 @@ class CurrencyManager:
                 return False, f"Negative amount not allowed for add operation: {amount}"
             
             # Проверяем максимальный баланс
-            max_balance = 10000000  # Максимальный баланс пользователя
+            max_balance = 50000000  # Максимальный баланс пользователя
             current_points = self.users.get(username, {}).get('points', 0)
             
             if operation == "add":
@@ -123,8 +123,9 @@ class CurrencyManager:
                     return False, f"New balance too large: {new_balance} (max: {max_balance})"
                 
                 # Проверяем резкое изменение баланса (более чем в 10 раз за одну операцию)
-                if current_points > 0 and amount / current_points > 10:
-                    return False, f"Suspicious balance change: current={current_points}, adding={amount}"
+                # Это прям дерьмище полное
+                #if current_points > 0 and amount / current_points > 10:
+                #    return False, f"Suspicious balance change: current={current_points}, adding={amount}"
             
             elif operation == "remove":
                 if amount > current_points:

@@ -1459,24 +1459,33 @@ class TwitchBot(commands.Bot):
                 return
                 
             # Add points with validation
-            current_points = self.currency_manager.add_points(target_user, points_amount)
-            
-            # Check if validation failed (add_points returns current points even on validation failure)
-            # We need to check if the operation was successful by comparing before/after values
-            old_points = self.currency_manager.get_points(target_user) - points_amount
-            if current_points <= old_points and points_amount > 0:
-                # Validation likely failed, send appropriate error message
+            # Сначала запоминаем баланс до операции
+            old_points = self.currency_manager.get_points(target_user)
+            new_points = self.currency_manager.add_points(target_user, points_amount)
+
+            # Если баланс не изменился, считаем, что валидация не прошла
+            if new_points == old_points and points_amount > 0:
                 await message.channel.send(
                     f"@{username}: Failed to add points. Possible reasons: amount too large, "
                     f"would exceed maximum balance, or suspicious balance change detected."
                 )
                 return
-            
-            # Send response
-            formatted_points = f"{float(current_points):.2f}"
+
+            # Если мы здесь — операция прошла успешно, но проверим, не превысили ли мы максимальный баланс
+            max_balance = 50000000  # Должен совпадать с max_balance в CurrencyManager._validate_points_operation
+            formatted_points = f"{float(new_points):.2f}"
+
+            # Основное сообщение об успешном добавлении
             await message.channel.send(
                 f"@{target_user} received {points_amount:.2f} points from @{username}. New balance: {formatted_points}"
             )
+
+            # Дополнительное предупреждение, если баланс достиг или превысил максимум
+            if new_points >= max_balance:
+                await message.channel.send(
+                    f"@{username}: Warning: @{target_user} has reached or exceeded the maximum balance limit "
+                    f"({max_balance:.0f} points). Further additions may be blocked by validation."
+                )
         elif command_name == "!remove_points" or command_type == "!remove_points":
             # Handle remove_points command
             # Check if user is moderator
@@ -1509,38 +1518,36 @@ class TwitchBot(commands.Bot):
                 await message.channel.send(f"@{username}: Invalid amount format. Use numbers only.")
                 return
 
-            # Get current points of the user
-            current_points = self.currency_manager.get_points(target_user)
-            
+            # Get current points of the user BEFORE removal
+            old_balance = self.currency_manager.get_points(target_user)
+
             # Check if user has enough points
-            if current_points < points_amount:
+            if old_balance < points_amount:
                 await message.channel.send(
-                    f"@{username}: User @{target_user} only has {current_points:.2f} points, cannot remove {points_amount:.2f}"
+                    f"@{username}: User @{target_user} only has {old_balance:.2f} points, cannot remove {points_amount:.2f}"
                 )
                 return
-                
+
             # Remove points with validation
-            old_balance = self.currency_manager.get_points(target_user)
-            expected_new_balance = old_balance - points_amount
             new_balance = self.currency_manager.remove_points(target_user, points_amount)
-            
-            # Check if validation failed (remove_points returns current points even on validation failure)
-            # If the balance didn't change when it should have, validation likely failed
-            if new_balance != expected_new_balance and points_amount > 0:
-                # Validation failed, determine specific error type
-                if points_amount > 1000000:
-                    error_msg = f"Amount too large: {points_amount:.2f} (max: 1000000)"
+
+            # Если баланс не изменился, считаем, что валидация не прошла
+            # (remove_points в случае фейла возвращает текущий баланс без изменений)
+            if new_balance == old_balance:
+                # Определяем тип ошибки по тем же правилам, что и в CurrencyManager
+                if points_amount > 5000000:
+                    error_msg = f"Amount too large: {points_amount:.2f} (max: 5000000)"
                 elif points_amount < 0.01:
                     error_msg = f"Amount too small: {points_amount:.2f} (min: 0.01)"
                 elif points_amount > old_balance:
                     error_msg = f"Cannot remove more than current balance: current={old_balance:.2f}, removing={points_amount:.2f}"
                 else:
                     error_msg = "Validation error occurred"
-                
+
                 await message.channel.send(f"@{username}: Failed to remove points. {error_msg}")
                 return
-            
-            # Send response
+
+            # Если мы здесь — операция прошла успешно, баланс изменился
             await message.channel.send(
                 f"@{username} removed {points_amount:.2f} points from @{target_user}. New balance: {new_balance:.2f}"
             )
