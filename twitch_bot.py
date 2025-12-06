@@ -1643,7 +1643,9 @@ class TwitchBot(commands.Bot):
 
         # Show picked command if enabled
         if sys_cmd.get("show_picked_command", True):
-            await message.channel.send(f"Picked {selected_cmd['Command']}.")
+            response_template = sys_cmd.get("picked_command_response", "Picked {command}.")
+            formatted_response = response_template.replace("{command}", selected_cmd['Command'])
+            await message.channel.send(formatted_response)
 
         # Execute the command's response
         resp = selected_cmd.get("Response", "")

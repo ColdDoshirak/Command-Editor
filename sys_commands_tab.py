@@ -172,6 +172,11 @@ class SysCommandsTab(QWidget):
 
         # Show picked command setting (only for !random commands)
         self.show_picked_command_check = QCheckBox("Show picked command")
+        
+        # Picked command response setting (only for !random commands)
+        self.picked_command_response_label = QLabel("Picked Command Response:")
+        self.picked_command_response_edit = QLineEdit()
+        self.picked_command_response_edit.setPlaceholderText("Picked {command}.")
 
         # Connect signals for detail fields
         self.command_edit.textChanged.connect(lambda: self.on_detail_field_changed("command_name", self.command_edit.text()))
@@ -185,6 +190,7 @@ class SysCommandsTab(QWidget):
         self.enabled_check.stateChanged.connect(lambda: self.on_detail_field_changed("enabled", self.enabled_check.isChecked()))
         self.random_group_edit.textChanged.connect(lambda: self.on_detail_field_changed("random_group", self.random_group_edit.text()))
         self.show_picked_command_check.stateChanged.connect(lambda: self.on_detail_field_changed("show_picked_command", self.show_picked_command_check.isChecked()))
+        self.picked_command_response_edit.textChanged.connect(lambda: self.on_detail_field_changed("picked_command_response", self.picked_command_response_edit.text()))
 
         right_column.addWidget(QLabel("Cooldown:"))
         right_column.addWidget(self.cooldown_spin)
@@ -202,6 +208,10 @@ class SysCommandsTab(QWidget):
 
         # Add show picked command setting
         right_column.addWidget(self.show_picked_command_check)
+        
+        # Add picked command response setting
+        right_column.addWidget(self.picked_command_response_label)
+        right_column.addWidget(self.picked_command_response_edit)
         
         details_layout.addLayout(left_column)
         details_layout.addLayout(right_column)
@@ -478,6 +488,8 @@ class SysCommandsTab(QWidget):
             self.random_group_label.setVisible(is_random_command)
             self.random_group_edit.setVisible(is_random_command)
             self.show_picked_command_check.setVisible(is_random_command)
+            self.picked_command_response_label.setVisible(is_random_command)
+            self.picked_command_response_edit.setVisible(is_random_command)
 
             if is_random_command:
                 self.random_group_edit.blockSignals(True)
@@ -487,6 +499,10 @@ class SysCommandsTab(QWidget):
                 self.show_picked_command_check.blockSignals(True)
                 self.show_picked_command_check.setChecked(cmd.get("show_picked_command", True))
                 self.show_picked_command_check.blockSignals(False)
+                
+                self.picked_command_response_edit.blockSignals(True)
+                self.picked_command_response_edit.setText(cmd.get("picked_command_response", "Picked {command}."))
+                self.picked_command_response_edit.blockSignals(False)
 
     def on_detail_field_changed(self, field_name, value):
         """Handle changes to detail fields"""
@@ -517,11 +533,13 @@ class SysCommandsTab(QWidget):
         # Save changes
         self.save_system_commands()
 
-        # Update the table to reflect changes
-        self.update_table()
-
-        # Reselect the current row to maintain selection
-        self.table.selectRow(row)
+        # Update the table to reflect changes, but avoid full table update for text fields
+        # to prevent cursor jumping in text input fields
+        if field_name not in ["info", "group", "random_group", "picked_command_response", "command_name"]:
+            # Only update table for non-text fields to avoid cursor issues
+            self.update_table()
+            # Reselect the current row to maintain selection
+            self.table.selectRow(row)
 
         # Update the parent's command list if it exists
         if self.parent and hasattr(self.parent, 'update_system_commands'):
