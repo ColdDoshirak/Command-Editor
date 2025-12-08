@@ -1274,6 +1274,8 @@ class CommandEditor(QMainWindow):
                     system_backup_path = self.create_comprehensive_backup()
                     if system_backup_path:
                         print(f"Auto-save comprehensive backup created: {system_backup_path}")
+                        # Clean up old comprehensive backups after successful creation
+                        self._cleanup_old_comprehensive_backups()
                         self.refresh_comprehensive_backups()
                     else:
                         print("Failed to create auto-save comprehensive backup")
@@ -1705,6 +1707,8 @@ class CommandEditor(QMainWindow):
 
             if backup_path:
                 print(f"Automatic comprehensive backup created: {backup_path}")
+                # Clean up old comprehensive backups after successful creation
+                self._cleanup_old_comprehensive_backups()
                 # Refresh the backup list
                 self.refresh_comprehensive_backups()
             else:
@@ -2062,112 +2066,6 @@ class CommandEditor(QMainWindow):
         tab.setLayout(layout)
         return tab
 
-    def create_comprehensive_backup(self):
-        """Create a comprehensive backup of the entire system"""
-        try:
-            self.create_system_backup_btn.setEnabled(False)
-            self.create_system_backup_btn.setText("Creating Backup...")
-
-            # Create backup directory
-            backup_dir = Path("backups") / "comprehensive"
-            backup_dir.mkdir(parents=True, exist_ok=True)
-
-            # Generate timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_name = f"system_backup_{timestamp}"
-            backup_path = backup_dir / backup_name
-
-            backup_data = {
-                "backup_info": {
-                    "timestamp": datetime.now().isoformat(),
-                    "version": "1.0",
-                    "description": "Comprehensive system backup"
-                },
-                "commands": self.commands.copy() if self.commands else [],
-                "currency_users": {},
-                "moderators": {},
-                "config": {},
-                "ranks": []
-            }
-
-            # Add currency data if available
-            if hasattr(self, 'currency_manager') and self.currency_manager.users:
-                backup_data["currency_users"] = self.currency_manager.users.copy()
-
-            # Add moderator data
-            try:
-                backup_data["moderators"] = {
-                    "manual": self.config_manager.get_manual_moderators(),
-                    "excluded": self.config_manager.get_excluded_moderators()
-                }
-            except:
-                backup_data["moderators"] = {"manual": [], "excluded": []}
-
-            # Add configuration
-            try:
-                backup_data["config"] = {
-                    "volume": self.config_manager.get_volume(),
-                    "sound_interruption": self.config_manager.get_sound_interruption(),
-                    "interruption_message": self.config_manager.get_interruption_message(),
-                    "auto_save": self.config_manager.get_auto_save(),
-                    "max_backups": self.config_manager.get_max_backups(),
-                    "twitch_config": self.config_manager.get_twitch_config()
-                }
-            except:
-                backup_data["config"] = {}
-
-            # Add ranks data
-            try:
-                if hasattr(self, 'currency_manager') and hasattr(self.currency_manager, 'ranks'):
-                    backup_data["ranks"] = self.currency_manager.ranks.copy()
-                else:
-                    backup_data["ranks"] = []
-            except:
-                backup_data["ranks"] = []
-
-            # Save backup data
-            with open(backup_path.with_suffix('.json'), 'w', encoding='utf-8') as f:
-                json.dump(backup_data, f, indent=2, ensure_ascii=False)
-
-            # Create metadata
-            metadata = {
-                "backup_time": time.time(),
-                "backup_name": backup_name,
-                "commands_count": len(backup_data["commands"]),
-                "users_count": len(backup_data["currency_users"]),
-                "moderators_count": len(backup_data["moderators"].get("manual", [])),
-                "total_size": backup_path.with_suffix('.json').stat().st_size
-            }
-
-            with open(backup_path.with_suffix('.json.meta'), 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2)
-
-            # Clean up old comprehensive backups
-            self._cleanup_old_comprehensive_backups()
-
-            # Refresh the list
-            self.refresh_comprehensive_backups()
-
-            QMessageBox.information(
-                self,
-                "Backup Created",
-                f"Comprehensive system backup created successfully!\n\n"
-                f"Backup file: {backup_name}.json\n"
-                f"Includes {len(backup_data['commands'])} commands, "
-                f"{len(backup_data['currency_users'])} users, "
-                f"and all system settings."
-            )
-
-        except Exception as e:
-            print(f"Error creating comprehensive backup: {e}")
-            QMessageBox.critical(
-                self,
-                "Backup Failed",
-                f"Failed to create comprehensive backup:\n\n{str(e)}"
-            )
-        finally:
-            self.create_system_backup_btn.setEnabled(True)
-            self.create_system_backup_btn.setText("Create Full System Backup")
 
     def refresh_comprehensive_backups(self):
         """Refresh the list of comprehensive backups"""
@@ -2602,6 +2500,10 @@ class CommandEditor(QMainWindow):
                 json.dump(metadata, f, indent=2)
 
             print(f"[COMPREHENSIVE BACKUP] Created backup: {backup_path.name}")
+            
+            # Clean up old comprehensive backups after successful creation
+            self._cleanup_old_comprehensive_backups()
+            
             return backup_path
 
         except Exception as e:
