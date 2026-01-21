@@ -11,6 +11,7 @@ from pathlib import Path
 import traceback
 import requests
 from currency_manager import CurrencyManager
+from datetime import datetime, timezone
 from typing import Union
 
 class TwitchBot(commands.Bot):
@@ -50,7 +51,12 @@ class TwitchBot(commands.Bot):
             
             # Инициализация для проигрывания звуков
             self.loaded_sounds = {}
-            self.sound_channel = sound_channel or pygame.mixer.Channel(1)  # Канал 1, чтобы не конфликтовать с CommandEditor
+            if sound_channel:
+                self.sound_channel = sound_channel
+            else:
+                # Initialize multiple channels
+                pygame.mixer.set_num_channels(32)
+                self.sound_channel = pygame.mixer.Channel(0)  # Канал 0 — дефолтный (общий)
             
             # Отладочное сообщение
             print(f"TwitchBot initialized with sound channel and interruption settings: allow_sound_interruption={self.allow_sound_interruption}")
@@ -124,6 +130,20 @@ class TwitchBot(commands.Bot):
             # Для отслеживания кулдаунов команд
             self.global_cooldowns = {}  # {команда: время_использования}
             self.user_cooldowns = {}    # {команда: {пользователь: время_использования}}
+
+            # Command queue initialization
+            self.command_queues = {}  # {group_name: asyncio.Queue}
+            self.queue_workers = {}   # {group_name: asyncio.Task}
+            self.queue_processing = {} # {group_name: bool}
+
+            # Stream status
+            self.is_live = False
+            self.stream_start_time = None
+            
+            # Start queue processing for enabled groups
+            self.loop = asyncio.get_event_loop()
+            self.init_queues()
+
         except Exception as e:
             print(f"CRITICAL ERROR in __init__: {e}")
             import traceback
@@ -137,6 +157,152 @@ class TwitchBot(commands.Bot):
     def update_commands(self, commands_list):
         """Вызывается из CommandEditor после каждой правки таблицы"""
         self._commands_list = commands_list or []
+        self.init_queues() # Re-initialize queues to pick up new groups
+
+    def init_queues(self):
+        """Initialize queues for all command groups"""
+        print(f"DEBUG: init_queues called. Commands count: {len(self._commands_list)}")
+        groups = set()
+        for cmd in self._commands_list:
+            groups.add(cmd.get("Group", "GENERAL"))
+        
+        categories = self.config_manager.get_audio_categories()
+        print(f"DEBUG: Categories loaded: {list(categories.keys())}")
+        
+        # Try to get the right loop
+        current_loop = None
+        try:
+            current_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            pass
+            
+        if not current_loop:
+            current_loop = getattr(self, 'loop', None)
+
+        print(f"DEBUG: init_queues groups: {groups}. Loop: {current_loop} (Running: {current_loop.is_running() if current_loop else 'N/A'})")
+        
+        for group in groups:
+            is_enabled = categories.get(group, {}).get("queue_enabled", False)
+            print(f"DEBUG: Group '{group}' queue_enabled: {is_enabled}")
+            if is_enabled:
+                if group not in self.command_queues:
+                    self.command_queues[group] = asyncio.Queue()
+                    self.queue_processing[group] = True
+                    print(f"Created new queue for group: {group}")
+                
+                # Start/Check worker
+                if current_loop and current_loop.is_running():
+                    if group not in self.queue_workers or self.queue_workers[group].done():
+                        print(f"Starting/Restarting queue worker task for group: {group}")
+                        self.queue_workers[group] = current_loop.create_task(self.process_queue(group))
+                    else:
+                        print(f"Queue worker for group {group} is already running.")
+                else:
+                    print(f"Loop not running yet (status: {current_loop.is_running() if current_loop else 'No Loop'}). Worker for {group} will start later.")
+            else:
+                # If queue was disabled, stop processing (queue will remain but won't be used)
+                if self.queue_processing.get(group, False):
+                    print(f"Disabling queue processing for group: {group}")
+                    self.queue_processing[group] = False
+                if group in self.queue_workers:
+                    print(f"Cancelling worker for group: {group}")
+                    self.queue_workers[group].cancel()
+                    del self.queue_workers[group]
+
+    async def process_queue(self, group):
+        """Sequential processing for a specific command group"""
+        print(f"Starting queue worker for group: {group}")
+        while self.queue_processing.get(group, False):
+            try:
+                # Wait for next command in queue
+                queue_item = await self.command_queues[group].get()
+                message, cmd_data = queue_item
+                
+                # Execute the command
+                await self.execute_queued_command(message, cmd_data)
+                
+                # Mark as done
+                self.command_queues[group].task_done()
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in queue worker for {group}: {e}")
+                traceback.print_exc()
+                await asyncio.sleep(1)
+
+    async def execute_queued_command(self, message, cmd):
+        """Execute a single command from the queue and wait for completion if it has sound"""
+        username = message.author.name.lower()
+        content = message.content.strip()
+        cmd_name = cmd.get("Command", "unknown")
+        group = cmd.get("Group", "GENERAL")
+        
+        print(f"--- Starting execution of queued command: !{cmd_name} (Group: {group}) ---")
+        
+        # 1. Handle Cost
+        cost = int(cmd.get("Cost", 0))
+        if cost > 0:
+            if not self.currency_manager.pay_for_command(username, cost):
+                await message.channel.send(f"@{username}, you don't have enough points ({cost}) for !{cmd['Command']}")
+                print(f"Execution cancelled: user {username} doesn't have enough points.")
+                return
+
+        # 2. Handle Volume
+        cmd_volume = float(cmd.get("Volume", 1.0))
+        final_volume = self.volume * cmd_volume
+
+        # 3. Handle Sound
+        sound_file = cmd.get("SoundFile", "")
+        if sound_file:
+            categories = self.config_manager.get_audio_categories()
+            channel_id = categories.get(group, {}).get("audio_channel", 0)
+            
+            print(f"Playing queued sound: {sound_file} (Channel: {channel_id}, Volume: {final_volume})")
+            await self.play_sound_sequentially(sound_file, final_volume, channel_id)
+
+        # 4. Handle Response
+        response = cmd.get("Response", "")
+        if response:
+            await self.send_multiline_response(message.channel, response, username)
+            print(f"Sent response for queued command !{cmd_name}")
+
+        print(f"--- Finished execution of queued command: !{cmd_name} ---")
+
+        # 5. Handle Count/Usage logic if needed? 
+        # (Assuming the original logic handled this elsewhere, but we might need to replicate it here)
+        # For simplicity, we'll stick to the core execution for now.
+
+    async def play_sound_sequentially(self, sound_file, volume, channel_id=0):
+        """Play sound and wait for it to finish on the specified channel"""
+        sound_path = Path(sound_file)
+        if not sound_path.is_absolute():
+            sound_path = Path(self.config_manager.get_sound_config().get("sound_dir", "")) / sound_file
+
+        if sound_path.exists():
+            try:
+                # Load sound
+                sound = pygame.mixer.Sound(str(sound_path))
+                sound.set_volume(volume)
+                
+                # Select channel
+                if channel_id > 0:
+                    channel = pygame.mixer.Channel(channel_id)
+                else:
+                    channel = self.sound_channel
+                
+                print(f"--- PLAYING on channel {channel_id} (Internal: {channel}) ---")
+                # Play on selected channel
+                channel.play(sound)
+                
+                # Wait for playback to finish
+                while channel.get_busy():
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                print(f"Error playing queued sound {sound_file}: {e}")
+        else:
+            print(f"Sound file not found: {sound_path}")
 
     async def event_ready(self):
         print(f"Bot is ready! Connected to {self.channel}")
@@ -172,6 +338,11 @@ class TwitchBot(commands.Bot):
             # Запускаем периодическую проверку соединения, если не запущена
             if not self.connection_check_task or self.connection_check_task.done():
                 self.connection_check_task = asyncio.create_task(self._check_connection())
+            
+            # Start queue workers now that we have a running loop
+            print("Initializing command queues and workers...")
+            self.init_queues()
+            
         except Exception as e:
             print(f"CRITICAL ERROR in event_ready: {e}")
             import traceback; traceback.print_exc()
@@ -235,6 +406,11 @@ class TwitchBot(commands.Bot):
         
         if not key:  # Проверка на пустую команду после нормализации
             print("Empty command after normalization, ignoring")
+            return
+            
+        # Queue Management Commands
+        if key in ["queue", "skip", "clear", "volume"]:
+            await self.handle_queue_commands(message, key, content)
             return
         
 
@@ -410,6 +586,53 @@ class TwitchBot(commands.Bot):
             has_sound = False
             sound_played = False
             
+            # Команда считается выполненной если либо был отправлен ответ,
+            # либо успешно проигран звук, либо оба действия
+            
+            # Check if this group has queueing enabled
+            group = cmd.get("Group", "GENERAL")
+            categories = self.config_manager.get_audio_categories()
+            if categories.get(group, {}).get("queue_enabled", False):
+                # Ensure queue and worker are initialized
+                if group not in self.command_queues or group not in self.queue_workers or self.queue_workers[group].done():
+                    print(f"Lazy initializing queue/worker for group: {group}")
+                    self.init_queues()
+
+                # CHECK QUEUE LIMITS
+                max_size = categories.get(group, {}).get("max_queue_size", 0)
+                if max_size > 0 and self.command_queues[group].qsize() >= max_size:
+                    print(f"Queue full for group '{group}' (max {max_size}). Rejecting command.")
+                    
+                    # Refund if points were deducted
+                    if points_deducted and cost > 0:
+                        self.currency_manager.add_points(username, cost)
+                        self.currency_manager.save_users()
+                        await message.channel.send(f"@{username}: Queue for {group} is full ({max_size}). {cost} points refunded.")
+                    else:
+                        await message.channel.send(f"@{username}: Queue for {group} is full ({max_size}). Try again later.")
+                    return
+
+                # ENQUEUE COMMAND
+                print(f"Enqueuing command '{cmd_key}' to group '{group}'")
+                # We skip status checks/refunds here because the queue worker will handle it
+                # However, we still want to apply cooldowns now to prevent spamming the queue
+                
+                # Apply cooldowns before enqueuing
+                normalized_key = self.normalize_command_key(cmd_key)
+                if cooldown_sec > 0:
+                    self.global_cooldowns[normalized_key] = current_time
+                if user_cd_sec > 0:
+                    self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
+                
+                # Put in queue
+                await self.command_queues[group].put((message, cmd))
+                
+                # Notify user it's enqueued
+                # await message.channel.send(f"@{username}: Command !{cmd['Command']} added to {group} queue.")
+                return
+
+            # NORMAL EXECUTION
+            # ... existing execution logic ...
             # Отправка текста-ответа (многострочного)
             resp = cmd.get("Response", "")
             if resp and resp.strip():
@@ -423,16 +646,19 @@ class TwitchBot(commands.Bot):
             if sf:
                 has_sound = True
                 volume = int(cmd.get("Volume", 100))
-                sound_played = self.play_sound(sf, volume)
+                
+                # Get group audio channel
+                group = cmd.get("Group", "GENERAL")
+                categories = self.config_manager.get_audio_categories()
+                channel_id = categories.get(group, {}).get("audio_channel", 0)
+                
+                sound_played = self.play_sound(sf, volume, channel_id)
                 if sound_played:
                     print(f"Successfully played sound for command '{cmd_key}'")
                     command_executed = True
                 else:
                     print(f"Failed to play sound for command '{cmd_key}'")
                     
-            # Команда считается выполненной если либо был отправлен ответ,
-            # либо успешно проигран звук, либо оба действия
-            
             # Применяем кулдауны и увеличиваем счетчик ТОЛЬКО если команда была успешно выполнена
             if command_executed:
                 print(f"Command '{cmd_key}' was successfully executed by {username}")
@@ -487,7 +713,7 @@ class TwitchBot(commands.Bot):
                     else:
                         # Для всех остальных случаев всегда показываем сообщение
                         await message.channel.send(response_message)
-                
+            
             return  # Команда обработана
             
         # Если не нашли команду среди своих - пробуем встроенные
@@ -555,7 +781,7 @@ class TwitchBot(commands.Bot):
             import traceback
             traceback.print_exc()
     
-    def play_sound(self, filepath, volume=100):
+    def play_sound(self, filepath, volume=100, channel_id=0):
         """Проигрывание звукового файла с учетом настроек прерывания и громкости
         Возвращает True, если звук был успешно запущен, False в противном случае"""
         try:
@@ -564,24 +790,24 @@ class TwitchBot(commands.Bot):
                 print(f"Sound file not found: {filepath}")
                 return False
 
-            # Проверка активного воспроизведения
-            if self.sound_channel.get_busy():
-                allow_interrupt = getattr(self, 'allow_sound_interruption', False)
-                print(f"Checking interruption in play_sound. Allowed: {allow_interrupt}")
-                
-                if allow_interrupt:
-                    print("Interrupting sound...")
-                    self.sound_channel.fadeout(100)
-                else:
-                    print("Blocking sound...")
-                    # Важно: не отправляем сообщение здесь, так как оно будет дублироваться с сообщением
-                    # о возврате очков. Вместо этого просто логируем блокировку
-                    show_message = getattr(self, 'show_interruption_message', False)
-                    if show_message and self.connected_channels:
-                        # Мы теперь отправляем более подробное сообщение о блокировке в основном коде
-                        # так что здесь просто логируем это событие
-                        print("Sound blocked because another sound is playing")
-                    return False  # Не проигрываем новый звук
+            # Определяем канал
+            if channel_id > 0:
+                channel = pygame.mixer.Channel(channel_id)
+                # Для выделенных каналов (>0) мы не применяем логику прерывания,
+                # они играют параллельно.
+            else:
+                channel = self.sound_channel
+                # Проверка активного воспроизведения ТОЛЬКО для дефолтного канала (0)
+                if channel.get_busy():
+                    allow_interrupt = getattr(self, 'allow_sound_interruption', False)
+                    print(f"Checking interruption in play_sound. Allowed: {allow_interrupt}")
+                    
+                    if allow_interrupt:
+                        print("Interrupting sound on shared channel...")
+                        channel.fadeout(100)
+                    else:
+                        print("Blocking sound on shared channel...")
+                        return False
 
             # Загрузка и воспроизведение звука
             snd = self.loaded_sounds.get(filepath)
@@ -594,9 +820,9 @@ class TwitchBot(commands.Bot):
             print(f"Setting sound volume to: {vol} (from command volume: {volume})")
             snd.set_volume(vol)
 
-            # Воспроизводим на нашем канале
-            self.sound_channel.play(snd)
-            print(f"Playing sound: {filepath}")
+            # Воспроизводим на выбранном канале
+            channel.play(snd)
+            print(f"Playing sound: {filepath} on channel {channel_id}")
             return True  # Звук успешно запущен
             
         except Exception as e:
@@ -647,9 +873,15 @@ class TwitchBot(commands.Bot):
             # Если запрос успешен
             if response.status_code == 200:
                 data = response.json()
+                stream_info = data.get("data", [])
                 # Если есть данные, значит стрим идёт
-                is_live = len(data.get("data", [])) > 0
+                is_live = len(stream_info) > 0
                 
+                if is_live:
+                    self.stream_start_time = stream_info[0].get("started_at")
+                else:
+                    self.stream_start_time = None
+
                 # Если статус изменился, логируем это
                 if is_live != self.is_live:
                     status_msg = "LIVE" if is_live else "OFFLINE"
@@ -1385,10 +1617,157 @@ class TwitchBot(commands.Bot):
             
             print(f"Cooldowns cleaned up: {len(self.global_cooldowns)} global, {len(self.user_cooldowns)} user commands")
             
+            # Заменяем словари на новые, нормализованные
+            self.global_cooldowns = new_global_cooldowns
+            self.user_cooldowns = new_user_cooldowns
+            
+            print(f"Cooldowns cleaned up: {len(self.global_cooldowns)} global, {len(self.user_cooldowns)} user commands")
+            
         except Exception as e:
             print(f"Error cleaning up cooldowns: {e}")
             import traceback
             traceback.print_exc()
+
+    async def handle_queue_commands(self, message, cmd_key, content):
+        """Handle queue management commands (!queue, !skip, !clear, !volume)"""
+        username = message.author.name.lower()
+        args = content.split()
+        
+        # !queue [group]
+        if cmd_key == "queue":
+            target_group = args[1].upper() if len(args) > 1 else None
+            
+            if target_group:
+                # Show specific group queue
+                if target_group in self.command_queues:
+                    q_size = self.command_queues[target_group].qsize()
+                    await message.channel.send(f"@{username}: Queue '{target_group}' has {q_size} pending commands.")
+                else:
+                    await message.channel.send(f"@{username}: Queue group '{target_group}' not found.")
+            else:
+                # Show all active queues
+                active_queues = []
+                for grp, q in self.command_queues.items():
+                    if q.qsize() > 0:
+                        active_queues.append(f"{grp}: {q.qsize()}")
+                
+                if active_queues:
+                    await message.channel.send(f"@{username}: Active queues: {', '.join(active_queues)}")
+                else:
+                    await message.channel.send(f"@{username}: All queues are empty.")
+            return
+
+        # Moderator check for control commands
+        is_mod = await self.is_user_moderator(username)
+        if not is_mod:
+             # Create a dummy sys_cmd dict to verify permissions if needed, 
+             # but for now hardcoded mod check is safer for these control commands
+             await message.channel.send(f"@{username}: You don't have permission to use this command.")
+             return
+
+        # !skip [group] (stops sound effectively)
+        if cmd_key == "skip":
+            # If a group is specified, stop that group's assigned channel
+            target_group = args[1].upper() if len(args) > 1 else None
+            
+            if target_group:
+                 categories = self.config_manager.get_audio_categories()
+                 
+                 # Check if this group exists in config
+                 if target_group in categories or any(cmd.get("Group") == target_group for cmd in getattr(self, "_commands_list", [])):
+                     channel_id = categories.get(target_group, {}).get("audio_channel", 0)
+                     
+                     if channel_id > 0:
+                         # Dedicated channel
+                         target_chan = pygame.mixer.Channel(channel_id)
+                         if target_chan.get_busy():
+                             target_chan.stop()
+                             await message.channel.send(f"@{username}: Skipped sound for group '{target_group}' (Channel {channel_id}).")
+                         else:
+                             await message.channel.send(f"@{username}: No sound playing on channel {channel_id} (group '{target_group}').")
+                     else:
+                         # Shared channel (0)
+                         if self.sound_channel.get_busy():
+                             self.sound_channel.stop()
+                             await message.channel.send(f"@{username}: Skipped sound on main channel (for group '{target_group}').")
+                         else:
+                             await message.channel.send(f"@{username}: No sound playing on main channel.")
+                 else:
+                      await message.channel.send(f"@{username}: Group '{target_group}' not found.")
+            else:
+                # No group specified = stop ALL busy channels
+                stopped_count = 0
+                
+                # Stop main channel
+                if self.sound_channel.get_busy():
+                    self.sound_channel.stop()
+                    stopped_count += 1
+                
+                # Stop all other channels (up to 32)
+                num_channels = pygame.mixer.get_num_channels()
+                for i in range(1, num_channels): # Start from 1 as 0 is main
+                     chan = pygame.mixer.Channel(i)
+                     if chan.get_busy():
+                         chan.stop()
+                         stopped_count += 1
+                
+                if stopped_count > 0:
+                     await message.channel.send(f"@{username}: Skipped all playing sounds ({stopped_count} channels).")
+                else:
+                     await message.channel.send(f"@{username}: No sounds are currently playing.")
+            return
+
+        # !clear [group]
+        if cmd_key == "clear":
+            target_group = args[1].upper() if len(args) > 1 else None
+            
+            if target_group:
+                if target_group in self.command_queues:
+                    q = self.command_queues[target_group]
+                    count = 0
+                    while not q.empty():
+                        try:
+                            q.get_nowait()
+                            q.task_done()
+                            count += 1
+                        except asyncio.QueueEmpty:
+                            break
+                    await message.channel.send(f"@{username}: Cleared {count} commands from '{target_group}' queue.")
+                else:
+                    await message.channel.send(f"@{username}: Queue group '{target_group}' not found.")
+            else:
+                 await message.channel.send(f"@{username}: Usage: !clear <group_name>")
+            return
+
+        # !volume [0-100] (Targeting SONG group specifically)
+        if cmd_key == "volume":
+            try:
+                # Find SONG group channel
+                categories = self.config_manager.get_audio_categories()
+                target_group = "SONG"
+                channel_id = categories.get(target_group, {}).get("audio_channel", 0)
+                
+                if len(args) < 2:
+                    curr_vol = pygame.mixer.Channel(channel_id).get_volume()
+                    await message.channel.send(f"@{username}: Current volume for group '{target_group}': {int(curr_vol * 100)}%")
+                    return
+                    
+                vol_arg = int(args[1])
+                if 0 <= vol_arg <= 100:
+                    new_vol = vol_arg / 100.0
+                    
+                    # Update specifically the channel for SONG
+                    pygame.mixer.Channel(channel_id).set_volume(new_vol)
+                    
+                    await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}%")
+                    print(f"Volume for group '{target_group}' (Channel {channel_id}) updated to {new_vol}")
+                else:
+                    await message.channel.send(f"@{username}: Volume must be between 0 and 100.")
+            except (ValueError, IndexError):
+                await message.channel.send(f"@{username}: Usage: !volume <0-100>")
+            except Exception as e:
+                print(f"Error setting volume: {e}")
+            return
 
     async def execute_system_command(self, message, username, sys_cmd, full_content):
         """Execute a system command based on its type and configuration"""
@@ -1551,6 +1930,78 @@ class TwitchBot(commands.Bot):
             await message.channel.send(
                 f"@{username} removed {points_amount:.2f} points from @{target_user}. New balance: {new_balance:.2f}"
             )
+        elif command_name == "!top" or command_type == "!top":
+            # Handle top command
+            users = self.currency_manager.users
+            # Sort users by points
+            sorted_users = sorted(users.items(), key=lambda x: x[1].get('points', 0), reverse=True)
+            top_5 = sorted_users[:5]
+            
+            if not top_5:
+                await message.channel.send(f"@{username}: No users found in currency system.")
+                return
+                
+            response = "Top 5 users: "
+            entries = []
+            for i, (uname, data) in enumerate(top_5):
+                points = data.get('points', 0)
+                entries.append(f"{i+1}. {uname} ({points:.0f})")
+            
+            await message.channel.send(response + " | ".join(entries))
+
+        elif command_name == "!give" or command_type == "!give":
+            # Handle give points command: !give @username amount
+            args = full_content.split(maxsplit=2)[1:]
+            if len(args) < 2:
+                await message.channel.send(f"@{username}: Usage: !give @username amount")
+                return
+                
+            target_user = args[0].lower().lstrip('@')
+            try:
+                amount = float(args[1])
+                amount = round(amount, 2)
+                if amount <= 0:
+                    await message.channel.send(f"@{username}: Amount must be greater than 0")
+                    return
+            except ValueError:
+                await message.channel.send(f"@{username}: Invalid amount format.")
+                return
+                
+            # Check if sender has enough points
+            sender_points = self.currency_manager.get_points(username)
+            if sender_points < amount:
+                await message.channel.send(f"@{username}: You don't have enough points ({sender_points:.2f})")
+                return
+                
+            # Perform transfer
+            self.currency_manager.remove_points(username, amount)
+            self.currency_manager.add_points(target_user, amount)
+            
+            await message.channel.send(f"@{username} gave {amount:.2f} points to @{target_user}!")
+
+        elif command_name == "!uptime" or command_type == "!uptime":
+            # Handle uptime command
+            if not self.is_live or not self.stream_start_time:
+                await message.channel.send(f"@{username}: Stream is currently offline.")
+                return
+                
+            try:
+                start_time = datetime.fromisoformat(self.stream_start_time.replace('Z', '+00:00'))
+                now = datetime.now(timezone.utc)
+                uptime = now - start_time
+                
+                hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                
+                parts = []
+                if hours > 0: parts.append(f"{hours}h")
+                if minutes > 0: parts.append(f"{minutes}m")
+                parts.append(f"{seconds}s")
+                
+                await message.channel.send(f"@{username}: Stream uptime: {' '.join(parts)}")
+            except Exception as e:
+                print(f"Error calculating uptime: {e}")
+                await message.channel.send(f"@{username}: Error calculating uptime.")
         else:
             # For any other system commands that might have custom responses
             response = sys_cmd.get("response", "")

@@ -25,6 +25,7 @@ from currency_tab import CurrencyTab
 from user_currency_tab import UserCurrencyTab
 from ranks_tab import RanksTab
 from sys_commands_tab import SysCommandsTab  # Import the new system commands tab
+from group_settings_tab import GroupSettingsTab  # Import the new group settings tab
 from currency_manager import CurrencyManager
 from PyQt5 import sip  # правильный импорт
 from PyQt5.QtCore import QMetaType
@@ -434,10 +435,17 @@ class CommandEditor(QMainWindow):
         self.tab_widget.addTab(self.ranks_tab, "Ranks")
         self.ranks_tab.load_ranks()
 
+        # Add Group Settings tab
+        self.group_settings_tab = GroupSettingsTab(parent=self)
+        self.tab_widget.addTab(self.group_settings_tab, "Group Settings")
+
         self.about_tab = AboutTab(parent=self)
         self.tab_widget.addTab(self.about_tab, "About")
         self.history_tab = self.create_history_tab()
         self.tab_widget.addTab(self.history_tab, "History")
+        
+        # Connect tab change signal
+        self.tab_widget.currentChanged.connect(self.on_tab_changed)
 
         # Create comprehensive backup tab
         self.backup_tab = self.create_comprehensive_backup_tab()
@@ -1408,6 +1416,10 @@ class CommandEditor(QMainWindow):
                 # Update commands in Twitch bot if it exists
                 if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
                     self.twitch_tab.bot.update_commands(self.commands)
+                    
+                # Refresh group settings tab if it's open or might need update
+                if hasattr(self, 'group_settings_tab'):
+                    self.group_settings_tab.refresh_groups()
                     
     def on_enabled_changed(self, state):
         self.update_command_field(state == Qt.Checked, 10)  # Corrected column index
@@ -2551,8 +2563,20 @@ class CommandEditor(QMainWindow):
         """Restore from a comprehensive backup (wrapper for the method)"""
         return self.restore_comprehensive_backup(backup_path)
 
+    def on_tab_changed(self, index):
+        """Handle tab changes to refresh data if needed"""
+        current_widget = self.tab_widget.widget(index)
+        if hasattr(self, 'group_settings_tab') and current_widget == self.group_settings_tab:
+            self.group_settings_tab.refresh_groups()
+
 if __name__ == "__main__":
-    app = QApplication([])
+    import sys
+    # Initialize the application
+    app = QApplication(sys.argv)
+    
+    # Create and show the main window
     window = CommandEditor()
     window.show()
-    app.exec_()  # Note: в PyQt5 используется exec_() вместо exec()
+    
+    # Start the event loop
+    sys.exit(app.exec_())

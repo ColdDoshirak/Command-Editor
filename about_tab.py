@@ -17,7 +17,7 @@ class UpdateCheckerThread(QThread):
     no_update = pyqtSignal()
     error_occurred = pyqtSignal(str)
     
-    def __init__(self, current_version, github_repo="colddoshirak/Command-Editor"):
+    def __init__(self, current_version, github_repo="ColdDoshirak/Command-Editor"):
         super().__init__()
         self.current_version = current_version
         self.github_repo = github_repo
@@ -152,7 +152,7 @@ class UpdateDialog(QDialog):
 class UpdateChecker:
     """Main update checker class"""
     
-    def __init__(self, parent=None, github_repo="colddoshirak/Command-Editor"):
+    def __init__(self, parent=None, github_repo="ColdDoshirak/Command-Editor"):
         self.parent = parent
         self.github_repo = github_repo
         self.current_version = "V1.1.6a"  # Default version, will be updated from about tab
@@ -280,7 +280,7 @@ class AboutTab(QWidget):
         
         <ul>
             <li>Twitch: <a href="https://twitch.tv/HotDoshirak">https://twitch.tv/HotDoshirak</a></li>
-            <li>GitHub: <a href="https://github.com/colddoshirak">https://github.com/colddoshirak</a></li>
+            <li>GitHub: <a href="https://github.com/ColdDoshirak/Command-Editor/tree/QueueTest">https://github.com/ColdDoshirak/Command-Editor/tree/QueueTest</a></li>
             <li>Donate: <a href="https://www.donationalerts.com/r/hotdoshirak1">https://www.donationalerts.com/r/hotdoshirak1</a></li>
         </ul>
         
@@ -312,6 +312,17 @@ class AboutTab(QWidget):
         meme_scroll.setWidget(meme_container)
         meme_layout.addWidget(meme_scroll)
         
+        # Vibe check label
+        vibe_label = QLabel("Oh my god, he vibecoded an app! You bastard!")
+        vibe_label.setAlignment(Qt.AlignCenter)
+        vibe_font = QFont()
+        vibe_font.setPointSize(14)
+        vibe_font.setBold(True)
+        vibe_font.setItalic(True)
+        vibe_label.setFont(vibe_font)
+        vibe_label.setStyleSheet("color: #E91E63; margin-top: 10px; margin-bottom: 5px;")
+        layout.addWidget(vibe_label)
+
         layout.addWidget(meme_group)
         
         return widget

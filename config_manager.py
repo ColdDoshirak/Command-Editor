@@ -432,6 +432,15 @@ class ConfigManager:
         
         self.save_config()
 
+    def get_audio_categories(self) -> Dict[str, Any]:
+        """Get audio categories configuration"""
+        return self.config.get('audio_categories', {})
+        
+    def save_audio_categories(self, categories: Dict[str, Any]) -> None:
+        """Save audio categories configuration"""
+        self.config['audio_categories'] = categories
+        self.save_config()
+
     def get_sound_interruption(self):
         """Get sound interruption setting"""
         return self.config.get('sound', {}).get('allow_interruption', True)
