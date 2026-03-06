@@ -135,14 +135,15 @@ class TwitchBot(commands.Bot):
             self.command_queues = {}  # {group_name: asyncio.Queue}
             self.queue_workers = {}   # {group_name: asyncio.Task}
             self.queue_processing = {} # {group_name: bool}
+            self.queue_semaphores = {}  # {group_name: asyncio.Semaphore} для ограничения размера очереди
 
             # Stream status
             self.is_live = False
             self.stream_start_time = None
             
-            # Start queue processing for enabled groups
+            # Инициализируем event loop, но НЕ запускаем workers пока loop не запущен
             self.loop = asyncio.get_event_loop()
-            self.init_queues()
+            # init_queues() вызывается в event_ready после запуска loop
 
         except Exception as e:
             print(f"CRITICAL ERROR in __init__: {e}")
@@ -183,10 +184,18 @@ class TwitchBot(commands.Bot):
         
         for group in groups:
             is_enabled = categories.get(group, {}).get("queue_enabled", False)
-            print(f"DEBUG: Group '{group}' queue_enabled: {is_enabled}")
+            max_size = categories.get(group, {}).get("max_queue_size", 0)
+            print(f"DEBUG: Group '{group}' queue_enabled: {is_enabled}, max_size: {max_size}")
+            
             if is_enabled:
+                # Создаем queue и semaphore если их еще нет
                 if group not in self.command_queues:
                     self.command_queues[group] = asyncio.Queue()
+                    # Semaphore для ограничения размера очереди (max_size=0 означает неограниченно)
+                    if max_size > 0:
+                        self.queue_semaphores[group] = asyncio.Semaphore(max_size)
+                    else:
+                        self.queue_semaphores[group] = None  # Нет ограничения
                     self.queue_processing[group] = True
                     print(f"Created new queue for group: {group}")
                 
@@ -212,24 +221,35 @@ class TwitchBot(commands.Bot):
     async def process_queue(self, group):
         """Sequential processing for a specific command group"""
         print(f"Starting queue worker for group: {group}")
-        while self.queue_processing.get(group, False):
-            try:
-                # Wait for next command in queue
-                queue_item = await self.command_queues[group].get()
-                message, cmd_data = queue_item
-                
-                # Execute the command
-                await self.execute_queued_command(message, cmd_data)
-                
-                # Mark as done
-                self.command_queues[group].task_done()
-                
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"Error in queue worker for {group}: {e}")
-                traceback.print_exc()
-                await asyncio.sleep(1)
+        semaphore = self.queue_semaphores.get(group)
+        try:
+            while self.queue_processing.get(group, False):
+                try:
+                    # Wait for next command in queue
+                    queue_item = await self.command_queues[group].get()
+                    message, cmd_data = queue_item
+                    
+                    try:
+                        # Execute the command
+                        await self.execute_queued_command(message, cmd_data)
+                    finally:
+                        # Mark as done - всегда вызываем task_done после get()
+                        self.command_queues[group].task_done()
+                        # Освобождаем semaphore после завершения обработки
+                        if semaphore is not None:
+                            semaphore.release()
+                        
+                except asyncio.CancelledError:
+                    # Python 3.8+ совместимая обработка отмены
+                    raise
+                except Exception as e:
+                    print(f"Error processing queue item for {group}: {e}")
+                    traceback.print_exc()
+                    await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            print(f"Queue worker for {group} cancelled")
+        finally:
+            print(f"Queue worker for {group} stopped")
 
     async def execute_queued_command(self, message, cmd):
         """Execute a single command from the queue and wait for completion if it has sound"""
@@ -240,38 +260,39 @@ class TwitchBot(commands.Bot):
         
         print(f"--- Starting execution of queued command: !{cmd_name} (Group: {group}) ---")
         
-        # 1. Handle Cost
-        cost = int(cmd.get("Cost", 0))
-        if cost > 0:
-            if not self.currency_manager.pay_for_command(username, cost):
-                await message.channel.send(f"@{username}, you don't have enough points ({cost}) for !{cmd['Command']}")
-                print(f"Execution cancelled: user {username} doesn't have enough points.")
-                return
+        try:
+            # 1. Handle Cost
+            cost = int(cmd.get("Cost", 0))
+            if cost > 0:
+                if not self.currency_manager.pay_for_command(username, cost):
+                    await message.channel.send(f"@{username}, you don't have enough points ({cost}) for !{cmd['Command']}")
+                    print(f"Execution cancelled: user {username} doesn't have enough points.")
+                    return
 
-        # 2. Handle Volume
-        cmd_volume = float(cmd.get("Volume", 1.0))
-        final_volume = self.volume * cmd_volume
+            # 2. Handle Volume
+            cmd_volume = int(cmd.get("Volume", 100))
+            final_volume = float(cmd_volume) / 100.0
 
-        # 3. Handle Sound
-        sound_file = cmd.get("SoundFile", "")
-        if sound_file:
-            categories = self.config_manager.get_audio_categories()
-            channel_id = categories.get(group, {}).get("audio_channel", 0)
-            
-            print(f"Playing queued sound: {sound_file} (Channel: {channel_id}, Volume: {final_volume})")
-            await self.play_sound_sequentially(sound_file, final_volume, channel_id)
+            # 3. Handle Sound
+            sound_file = cmd.get("SoundFile", "")
+            if sound_file:
+                categories = self.config_manager.get_audio_categories()
+                channel_id = categories.get(group, {}).get("audio_channel", 0)
+                
+                print(f"Playing queued sound: {sound_file} (Channel: {channel_id}, Volume: {final_volume})")
+                await self.play_sound_sequentially(sound_file, final_volume, channel_id)
 
-        # 4. Handle Response
-        response = cmd.get("Response", "")
-        if response:
-            await self.send_multiline_response(message.channel, response, username)
-            print(f"Sent response for queued command !{cmd_name}")
+            # 4. Handle Response
+            response = cmd.get("Response", "")
+            if response:
+                await self.send_multiline_response(message.channel, response, username)
+                print(f"Sent response for queued command !{cmd_name}")
 
-        print(f"--- Finished execution of queued command: !{cmd_name} ---")
+            print(f"--- Finished execution of queued command: !{cmd_name} ---")
 
-        # 5. Handle Count/Usage logic if needed? 
-        # (Assuming the original logic handled this elsewhere, but we might need to replicate it here)
-        # For simplicity, we'll stick to the core execution for now.
+        except Exception as e:
+            print(f"Error executing queued command !{cmd_name}: {e}")
+            traceback.print_exc()
 
     async def play_sound_sequentially(self, sound_file, volume, channel_id=0):
         """Play sound and wait for it to finish on the specified channel"""
@@ -281,26 +302,35 @@ class TwitchBot(commands.Bot):
 
         if sound_path.exists():
             try:
-                # Load sound
-                sound = pygame.mixer.Sound(str(sound_path))
-                sound.set_volume(volume)
+                # Выполняем блокирующие операции pygame в executor
+                def play_sound_blocking():
+                    # Load sound
+                    sound = pygame.mixer.Sound(str(sound_path))
+                    sound.set_volume(volume)
+                    
+                    # Select channel
+                    if channel_id > 0:
+                        channel = pygame.mixer.Channel(channel_id)
+                    else:
+                        channel = self.sound_channel
+                    
+                    print(f"--- PLAYING on channel {channel_id} (Internal: {channel}) ---")
+                    # Play on selected channel
+                    channel.play(sound)
+                    
+                    # Wait for playback to finish
+                    while channel.get_busy():
+                        # Используем time.sleep вместо asyncio.sleep для блокирующего контекста
+                        time.sleep(0.1)
+                    
+                    return True
                 
-                # Select channel
-                if channel_id > 0:
-                    channel = pygame.mixer.Channel(channel_id)
-                else:
-                    channel = self.sound_channel
-                
-                print(f"--- PLAYING on channel {channel_id} (Internal: {channel}) ---")
-                # Play on selected channel
-                channel.play(sound)
-                
-                # Wait for playback to finish
-                while channel.get_busy():
-                    await asyncio.sleep(0.1)
+                # Запускаем блокирующую функцию в executor
+                await self.loop.run_in_executor(None, play_sound_blocking)
                     
             except Exception as e:
                 print(f"Error playing queued sound {sound_file}: {e}")
+                traceback.print_exc()
         else:
             print(f"Sound file not found: {sound_path}")
 
@@ -598,18 +628,18 @@ class TwitchBot(commands.Bot):
                     print(f"Lazy initializing queue/worker for group: {group}")
                     self.init_queues()
 
-                # CHECK QUEUE LIMITS
-                max_size = categories.get(group, {}).get("max_queue_size", 0)
-                if max_size > 0 and self.command_queues[group].qsize() >= max_size:
-                    print(f"Queue full for group '{group}' (max {max_size}). Rejecting command.")
+                # CHECK QUEUE LIMITS using semaphore
+                semaphore = self.queue_semaphores.get(group)
+                if semaphore is not None and semaphore._value <= 0:
+                    print(f"Queue full for group '{group}' (max queue size reached). Rejecting command.")
                     
                     # Refund if points were deducted
                     if points_deducted and cost > 0:
                         self.currency_manager.add_points(username, cost)
                         self.currency_manager.save_users()
-                        await message.channel.send(f"@{username}: Queue for {group} is full ({max_size}). {cost} points refunded.")
+                        await message.channel.send(f"@{username}: Queue for {group} is full. {cost} points refunded.")
                     else:
-                        await message.channel.send(f"@{username}: Queue for {group} is full ({max_size}). Try again later.")
+                        await message.channel.send(f"@{username}: Queue for {group} is full. Try again later.")
                     return
 
                 # ENQUEUE COMMAND
@@ -624,8 +654,18 @@ class TwitchBot(commands.Bot):
                 if user_cd_sec > 0:
                     self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
                 
-                # Put in queue
-                await self.command_queues[group].put((message, cmd))
+                # Put in queue with semaphore acquisition
+                try:
+                    if semaphore is not None:
+                        await semaphore.acquire()
+                    await self.command_queues[group].put((message, cmd))
+                except Exception as e:
+                    print(f"Error enqueuing command: {e}")
+                    if points_deducted and cost > 0:
+                        self.currency_manager.add_points(username, cost)
+                        self.currency_manager.save_users()
+                        await message.channel.send(f"@{username}: Error adding to queue. {cost} points refunded.")
+                    return
                 
                 # Notify user it's enqueued
                 # await message.channel.send(f"@{username}: Command !{cmd['Command']} added to {group} queue.")
@@ -780,6 +820,24 @@ class TwitchBot(commands.Bot):
             print(f"CRITICAL ERROR in stop: {e}")
             import traceback
             traceback.print_exc()
+    
+    def reload_audio_categories(self):
+        """Reload audio categories from config and restart queue workers"""
+        print("Reloading audio categories...")
+        
+        # Stop all existing queue workers
+        for group, worker in list(self.queue_workers.items()):
+            print(f"Stopping queue worker for {group}")
+            self.queue_processing[group] = False
+            worker.cancel()
+        
+        # Clear workers dict
+        self.queue_workers.clear()
+        
+        # Reinitialize queues with new settings
+        self.init_queues()
+        
+        print("Audio categories reloaded successfully")
     
     def play_sound(self, filepath, volume=100, channel_id=0):
         """Проигрывание звукового файла с учетом настроек прерывания и громкости
@@ -1724,14 +1782,25 @@ class TwitchBot(commands.Bot):
             if target_group:
                 if target_group in self.command_queues:
                     q = self.command_queues[target_group]
+                    # Используем get_nowait() без task_done(), так как элементы не будут обрабатываться
+                    # Просто сбрасываем очередь
                     count = 0
-                    while not q.empty():
+                    while True:
                         try:
                             q.get_nowait()
-                            q.task_done()
                             count += 1
                         except asyncio.QueueEmpty:
                             break
+                    # Освобождаем semaphore если он есть
+                    semaphore = self.queue_semaphores.get(target_group)
+                    if semaphore is not None:
+                        # Возвращаем все захваченные семафоры обратно
+                        for _ in range(count):
+                            try:
+                                semaphore.release()
+                            except RuntimeError:
+                                # Семафор не был захвачен
+                                pass
                     await message.channel.send(f"@{username}: Cleared {count} commands from '{target_group}' queue.")
                 else:
                     await message.channel.send(f"@{username}: Queue group '{target_group}' not found.")
