@@ -441,6 +441,24 @@ class ConfigManager:
         self.config['audio_categories'] = categories
         self.save_config()
 
+    def set_group_volume(self, group: str, volume: float) -> None:
+        """Set volume for a specific group in audio categories configuration"""
+        if 'audio_categories' not in self.config:
+            self.config['audio_categories'] = {}
+        
+        group_key = group.upper()
+        if group_key not in self.config['audio_categories']:
+            self.config['audio_categories'][group_key] = {}
+        
+        self.config['audio_categories'][group_key]['volume'] = volume
+        self.save_config()
+
+    def get_group_volume(self, group: str) -> float:
+        """Get volume for a specific group from audio categories configuration"""
+        group_key = group.upper()
+        categories = self.config.get('audio_categories', {})
+        return categories.get(group_key, {}).get('volume', 0.5)
+
     def get_sound_interruption(self):
         """Get sound interruption setting"""
         return self.config.get('sound', {}).get('allow_interruption', True)

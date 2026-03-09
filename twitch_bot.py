@@ -130,6 +130,9 @@ class TwitchBot(commands.Bot):
             # Для отслеживания кулдаунов команд
             self.global_cooldowns = {}  # {команда: время_использования}
             self.user_cooldowns = {}    # {команда: {пользователь: время_использования}}
+            
+            # Отслеживание активных звуков по каналам для изменения громкости во время воспроизведения
+            self.active_sounds = {}  # {channel_id: sound_object}
 
             # Command queue initialization
             self.command_queues = {}  # {group_name: asyncio.Queue}
@@ -271,7 +274,14 @@ class TwitchBot(commands.Bot):
 
             # 2. Handle Volume
             cmd_volume = int(cmd.get("Volume", 100))
-            final_volume = float(cmd_volume) / 100.0
+            
+            # Check if there's a saved group volume that should override the command volume
+            # Only use group volume if command volume is default (100) or not explicitly set
+            group_volume = self.config_manager.get_group_volume(group)
+            if group_volume > 0:
+                final_volume = group_volume
+            else:
+                final_volume = float(cmd_volume) / 100.0
 
             # 3. Handle Sound
             sound_file = cmd.get("SoundFile", "")
@@ -318,10 +328,22 @@ class TwitchBot(commands.Bot):
                     # Play on selected channel
                     channel.play(sound)
                     
+                    # Track active sound for real-time volume control
+                    if channel_id > 0:
+                        self.active_sounds[channel_id] = sound
+                    else:
+                        self.active_sounds[0] = sound
+                    
                     # Wait for playback to finish
                     while channel.get_busy():
                         # Используем time.sleep вместо asyncio.sleep для блокирующего контекста
                         time.sleep(0.1)
+                    
+                    # Clean up active sound tracking
+                    if channel_id > 0:
+                        self.active_sounds.pop(channel_id, None)
+                    else:
+                        self.active_sounds.pop(0, None)
                     
                     return True
                 
@@ -1693,13 +1715,22 @@ class TwitchBot(commands.Bot):
         
         # !queue [group]
         if cmd_key == "queue":
-            target_group = args[1].upper() if len(args) > 1 else None
+            target_group = args[1] if len(args) > 1 else None
             
             if target_group:
-                # Show specific group queue
-                if target_group in self.command_queues:
-                    q_size = self.command_queues[target_group].qsize()
-                    await message.channel.send(f"@{username}: Queue '{target_group}' has {q_size} pending commands.")
+                # Case-insensitive search for the group
+                target_group_normalized = target_group.upper()
+                found_group = None
+                
+                # Search for the group in command_queues (case-insensitive)
+                for grp in self.command_queues:
+                    if grp.upper() == target_group_normalized:
+                        found_group = grp
+                        break
+                
+                if found_group:
+                    q_size = self.command_queues[found_group].qsize()
+                    await message.channel.send(f"@{username}: Queue '{found_group}' has {q_size} pending commands.")
                 else:
                     await message.channel.send(f"@{username}: Queue group '{target_group}' not found.")
             else:
@@ -1753,26 +1784,12 @@ class TwitchBot(commands.Bot):
                  else:
                       await message.channel.send(f"@{username}: Group '{target_group}' not found.")
             else:
-                # No group specified = stop ALL busy channels
-                stopped_count = 0
-                
-                # Stop main channel
+                # No group specified = stop only the current sound on main channel
                 if self.sound_channel.get_busy():
                     self.sound_channel.stop()
-                    stopped_count += 1
-                
-                # Stop all other channels (up to 32)
-                num_channels = pygame.mixer.get_num_channels()
-                for i in range(1, num_channels): # Start from 1 as 0 is main
-                     chan = pygame.mixer.Channel(i)
-                     if chan.get_busy():
-                         chan.stop()
-                         stopped_count += 1
-                
-                if stopped_count > 0:
-                     await message.channel.send(f"@{username}: Skipped all playing sounds ({stopped_count} channels).")
+                    await message.channel.send(f"@{username}: Skipped current sound.")
                 else:
-                     await message.channel.send(f"@{username}: No sounds are currently playing.")
+                    await message.channel.send(f"@{username}: No sound is currently playing.")
             return
 
         # !clear [group]
@@ -1808,32 +1825,63 @@ class TwitchBot(commands.Bot):
                  await message.channel.send(f"@{username}: Usage: !clear <group_name>")
             return
 
-        # !volume [0-100] (Targeting SONG group specifically)
+        # !volume [group] [0-100] (Targeting specific group or default group)
         if cmd_key == "volume":
             try:
-                # Find SONG group channel
                 categories = self.config_manager.get_audio_categories()
-                target_group = "SONG"
-                channel_id = categories.get(target_group, {}).get("audio_channel", 0)
                 
-                if len(args) < 2:
-                    curr_vol = pygame.mixer.Channel(channel_id).get_volume()
-                    await message.channel.send(f"@{username}: Current volume for group '{target_group}': {int(curr_vol * 100)}%")
+                # Parse arguments: !volume [group] [volume]
+                # If only one argument, it's volume for default group (SONG)
+                # If two arguments, first is group, second is volume
+                if len(args) == 1:
+                    # No group specified, use default group SONG
+                    target_group = "SONG"
+                    vol_arg = int(args[0])
+                elif len(args) == 2:
+                    # Group and volume specified
+                    target_group = args[0].upper()
+                    vol_arg = int(args[1])
+                else:
+                    await message.channel.send(f"@{username}: Usage: !volume [group] <0-100>")
                     return
-                    
-                vol_arg = int(args[1])
-                if 0 <= vol_arg <= 100:
-                    new_vol = vol_arg / 100.0
-                    
-                    # Update specifically the channel for SONG
-                    pygame.mixer.Channel(channel_id).set_volume(new_vol)
-                    
+                
+                # Validate volume
+                if not (0 <= vol_arg <= 100):
+                    await message.channel.send(f"@{username}: Volume must be between 0 and 100.")
+                    return
+                
+                # Find the group's channel
+                if target_group not in categories:
+                    await message.channel.send(f"@{username}: Group '{target_group}' not found in audio categories.")
+                    return
+                
+                channel_id = categories.get(target_group, {}).get("audio_channel", 0)
+                new_vol = vol_arg / 100.0
+                
+                # Get the channel and update its volume
+                target_channel = pygame.mixer.Channel(channel_id)
+                
+                # Apply volume change to currently playing sound if any
+                # This allows real-time volume adjustment during playback
+                if channel_id in self.active_sounds:
+                    try:
+                        self.active_sounds[channel_id].set_volume(new_vol)
+                        await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (applied to current track)")
+                        print(f"Volume for group '{target_group}' updated to {new_vol} (applied to active sound)")
+                    except Exception as vol_error:
+                        print(f"Warning: Could not apply volume to active sound: {vol_error}")
+                        await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (will apply to next track)")
+                else:
+                    # No active sound, just set volume for next track
+                    target_channel.set_volume(new_vol)
                     await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}%")
                     print(f"Volume for group '{target_group}' (Channel {channel_id}) updated to {new_vol}")
-                else:
-                    await message.channel.send(f"@{username}: Volume must be between 0 and 100.")
+                
+                # Save the volume to config so it persists for future tracks
+                self.config_manager.set_group_volume(target_group, new_vol)
+                
             except (ValueError, IndexError):
-                await message.channel.send(f"@{username}: Usage: !volume <0-100>")
+                await message.channel.send(f"@{username}: Usage: !volume [group] <0-100>")
             except Exception as e:
                 print(f"Error setting volume: {e}")
             return
