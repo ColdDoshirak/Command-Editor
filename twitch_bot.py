@@ -1830,12 +1830,17 @@ class TwitchBot(commands.Bot):
             try:
                 categories = self.config_manager.get_audio_categories()
                 
+                # Get default group from system command config if available
+                default_group = "SONG"  # Fallback default
+                if sys_cmd and "default_group" in sys_cmd:
+                    default_group = sys_cmd["default_group"]
+                
                 # Parse arguments: !volume [group] [volume]
-                # If only one argument, it's volume for default group (SONG)
+                # If only one argument, it's volume for default group
                 # If two arguments, first is group, second is volume
                 if len(args) == 1:
-                    # No group specified, use default group SONG
-                    target_group = "SONG"
+                    # No group specified, use default group from config
+                    target_group = default_group
                     vol_arg = int(args[0])
                 elif len(args) == 2:
                     # Group and volume specified

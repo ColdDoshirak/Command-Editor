@@ -134,6 +134,20 @@ class SysCommandsTab(QWidget):
                 "is_original": True
             },
             {
+                "command": "!volume",
+                "permission": "Moderator",
+                "response": "",
+                "enabled": True,
+                "info": "Set volume for audio group (usage: !volume [GROUP] <0-100>)",
+                "group": "SYSTEM",
+                "cooldown": 0,
+                "user_cooldown": 0,
+                "cost": 0,
+                "usage": "Chat",
+                "default_group": "SONG",  # Default group for volume command
+                "is_original": True
+            },
+            {
                 "command": "!random",
                 "permission": "Everyone",
                 "response": "",
@@ -166,6 +180,9 @@ class SysCommandsTab(QWidget):
             "Type", "Original Name", "Command", "Permission", "Info", "Group",
             "Cooldown", "UserCooldown", "Cost", "Usage", "Enabled"
         ])
+        
+        # Track if table needs default_group column (for !volume command)
+        self.has_default_group_column = False
 
         # Set column resize modes
         header = self.table.horizontalHeader()
@@ -242,11 +259,16 @@ class SysCommandsTab(QWidget):
         self.usage_combo = QComboBox()
         self.usage_combo.addItems(["SC", "Chat", "Both"])
         self.enabled_check = QCheckBox("Enabled")
-
+ 
         # Random group setting (only for !random commands)
         self.random_group_label = QLabel("Random Group:")
         self.random_group_edit = QLineEdit()
         self.random_group_edit.setPlaceholderText("GENERAL")
+        
+        # Default group setting (only for !volume commands)
+        self.default_group_label = QLabel("Default Group:")
+        self.default_group_edit = QLineEdit()
+        self.default_group_edit.setPlaceholderText("SONG")
 
         # Show picked command setting (only for !random commands)
         self.show_picked_command_check = QCheckBox("Show picked command")
@@ -269,6 +291,7 @@ class SysCommandsTab(QWidget):
         self.random_group_edit.textChanged.connect(lambda: self.on_detail_field_changed("random_group", self.random_group_edit.text()))
         self.show_picked_command_check.stateChanged.connect(lambda: self.on_detail_field_changed("show_picked_command", self.show_picked_command_check.isChecked()))
         self.picked_command_response_edit.textChanged.connect(lambda: self.on_detail_field_changed("picked_command_response", self.picked_command_response_edit.text()))
+        self.default_group_edit.textChanged.connect(lambda: self.on_detail_field_changed("default_group", self.default_group_edit.text()))
 
         right_column.addWidget(QLabel("Cooldown:"))
         right_column.addWidget(self.cooldown_spin)
@@ -283,6 +306,10 @@ class SysCommandsTab(QWidget):
         # Add random group setting
         right_column.addWidget(self.random_group_label)
         right_column.addWidget(self.random_group_edit)
+        
+        # Add default group setting
+        right_column.addWidget(self.default_group_label)
+        right_column.addWidget(self.default_group_edit)
 
         # Add show picked command setting
         right_column.addWidget(self.show_picked_command_check)
@@ -569,6 +596,11 @@ class SysCommandsTab(QWidget):
             self.picked_command_response_label.setVisible(is_random_command)
             self.picked_command_response_edit.setVisible(is_random_command)
 
+            # Show/hide default group field only for !volume commands
+            is_volume_command = cmd["command"] == "!volume" or cmd.get("command_name", "").startswith("!volume")
+            self.default_group_label.setVisible(is_volume_command)
+            self.default_group_edit.setVisible(is_volume_command)
+
             if is_random_command:
                 self.random_group_edit.blockSignals(True)
                 self.random_group_edit.setText(cmd.get("random_group", "GENERAL"))
@@ -581,6 +613,11 @@ class SysCommandsTab(QWidget):
                 self.picked_command_response_edit.blockSignals(True)
                 self.picked_command_response_edit.setText(cmd.get("picked_command_response", "Picked {command}."))
                 self.picked_command_response_edit.blockSignals(False)
+
+            if is_volume_command:
+                self.default_group_edit.blockSignals(True)
+                self.default_group_edit.setText(cmd.get("default_group", "SONG"))
+                self.default_group_edit.blockSignals(False)
 
     def on_detail_field_changed(self, field_name, value):
         """Handle changes to detail fields"""
