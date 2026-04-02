@@ -266,6 +266,10 @@ class TwitchTab(QWidget):
         self.bot_thread = threading.Thread(target=self.run_bot, daemon=True)
         self.bot_thread.start()
 
+        # Save the channel to config for future use
+        # This ensures the last authorized channel is remembered
+        self.save_settings()
+
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
         self.send_button.setEnabled(True)

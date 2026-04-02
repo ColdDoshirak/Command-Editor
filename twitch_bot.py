@@ -160,36 +160,52 @@ class TwitchBot(commands.Bot):
     
     def update_commands(self, commands_list):
         """Вызывается из CommandEditor после каждой правки таблицы"""
+        old_commands_count = len(self._commands_list)
         self._commands_list = commands_list or []
-        self.init_queues() # Re-initialize queues to pick up new groups
+        print(f"DEBUG: update_commands called. Old count: {old_commands_count}, New count: {len(self._commands_list)}")
+        self.init_queues()  # Re-initialize queues to pick up new groups
 
     def init_queues(self):
-        """Initialize queues for all command groups"""
+        """Initialize queues for all command groups that have queue_enabled=true.
+        
+        IMPORTANT: This method now initializes queues based on audio_categories settings,
+        not just from the commands list. This ensures queues are created even if:
+        1. Commands list is empty during initial bot startup
+        2. Commands are loaded later via update_commands()
+        3. User enables queue for a group that has no commands yet
+        """
         print(f"DEBUG: init_queues called. Commands count: {len(self._commands_list)}")
+        
+        # Get groups from commands list
         groups = set()
         for cmd in self._commands_list:
             groups.add(cmd.get("Group", "GENERAL"))
         
+        # ALSO add groups from audio_categories that have queue_enabled
+        # This is critical for initialization when commands list is empty
         categories = self.config_manager.get_audio_categories()
-        print(f"DEBUG: Categories loaded: {list(categories.keys())}")
+        for category_name in categories:
+            groups.add(category_name)
         
+        print(f"DEBUG: Categories loaded: {list(categories.keys())}")
+
         # Try to get the right loop
         current_loop = None
         try:
             current_loop = asyncio.get_event_loop()
         except RuntimeError:
             pass
-            
+
         if not current_loop:
             current_loop = getattr(self, 'loop', None)
 
         print(f"DEBUG: init_queues groups: {groups}. Loop: {current_loop} (Running: {current_loop.is_running() if current_loop else 'N/A'})")
-        
+
         for group in groups:
             is_enabled = categories.get(group, {}).get("queue_enabled", False)
             max_size = categories.get(group, {}).get("max_queue_size", 0)
             print(f"DEBUG: Group '{group}' queue_enabled: {is_enabled}, max_size: {max_size}")
-            
+
             if is_enabled:
                 # Создаем queue и semaphore если их еще нет
                 if group not in self.command_queues:
@@ -201,7 +217,7 @@ class TwitchBot(commands.Bot):
                         self.queue_semaphores[group] = None  # Нет ограничения
                     self.queue_processing[group] = True
                     print(f"Created new queue for group: {group}")
-                
+
                 # Start/Check worker
                 if current_loop and current_loop.is_running():
                     if group not in self.queue_workers or self.queue_workers[group].done():
@@ -317,39 +333,41 @@ class TwitchBot(commands.Bot):
                     # Load sound
                     sound = pygame.mixer.Sound(str(sound_path))
                     sound.set_volume(volume)
-                    
+
                     # Select channel
                     if channel_id > 0:
                         channel = pygame.mixer.Channel(channel_id)
                     else:
                         channel = self.sound_channel
-                    
+
                     print(f"--- PLAYING on channel {channel_id} (Internal: {channel}) ---")
                     # Play on selected channel
                     channel.play(sound)
-                    
+
                     # Track active sound for real-time volume control
+                    # IMPORTANT: Store the sound object, not the channel!
+                    # This allows !volume to change volume during playback
                     if channel_id > 0:
                         self.active_sounds[channel_id] = sound
                     else:
                         self.active_sounds[0] = sound
-                    
+
                     # Wait for playback to finish
                     while channel.get_busy():
                         # Используем time.sleep вместо asyncio.sleep для блокирующего контекста
                         time.sleep(0.1)
-                    
+
                     # Clean up active sound tracking
                     if channel_id > 0:
                         self.active_sounds.pop(channel_id, None)
                     else:
                         self.active_sounds.pop(0, None)
-                    
+
                     return True
-                
+
                 # Запускаем блокирующую функцию в executor
                 await self.loop.run_in_executor(None, play_sound_blocking)
-                    
+
             except Exception as e:
                 print(f"Error playing queued sound {sound_file}: {e}")
                 traceback.print_exc()
@@ -640,7 +658,7 @@ class TwitchBot(commands.Bot):
             
             # Команда считается выполненной если либо был отправлен ответ,
             # либо успешно проигран звук, либо оба действия
-            
+
             # Check if this group has queueing enabled
             group = cmd.get("Group", "GENERAL")
             categories = self.config_manager.get_audio_categories()
@@ -648,6 +666,11 @@ class TwitchBot(commands.Bot):
                 # Ensure queue and worker are initialized
                 if group not in self.command_queues or group not in self.queue_workers or self.queue_workers[group].done():
                     print(f"Lazy initializing queue/worker for group: {group}")
+                    # Temporarily add this group to _commands_list to ensure it gets initialized
+                    # This handles the case where commands are loaded after bot startup
+                    if not any(c.get("Group") == group for c in self._commands_list):
+                        print(f"DEBUG: Adding group '{group}' to commands list for initialization")
+                        self._commands_list.append({"Command": "_temp", "Group": group, "Enabled": True})
                     self.init_queues()
 
                 # CHECK QUEUE LIMITS using semaphore
@@ -881,7 +904,7 @@ class TwitchBot(commands.Bot):
                 if channel.get_busy():
                     allow_interrupt = getattr(self, 'allow_sound_interruption', False)
                     print(f"Checking interruption in play_sound. Allowed: {allow_interrupt}")
-                    
+
                     if allow_interrupt:
                         print("Interrupting sound on shared channel...")
                         channel.fadeout(100)
@@ -903,8 +926,14 @@ class TwitchBot(commands.Bot):
             # Воспроизводим на выбранном канале
             channel.play(snd)
             print(f"Playing sound: {filepath} on channel {channel_id}")
-            return True  # Звук успешно запущен
             
+            # Track active sound for real-time volume control
+            # IMPORTANT: Store the sound object, not the channel!
+            # This allows !volume to change volume during playback
+            self.active_sounds[channel_id] = snd
+            
+            return True  # Звук успешно запущен
+
         except Exception as e:
             print(f"CRITICAL ERROR in play_sound: {e}")
             traceback.print_exc()
@@ -1829,12 +1858,12 @@ class TwitchBot(commands.Bot):
         if cmd_key == "volume":
             try:
                 categories = self.config_manager.get_audio_categories()
-                
+
                 # Get default group from system command config if available
                 default_group = "SONG"  # Fallback default
                 if sys_cmd and "default_group" in sys_cmd:
                     default_group = sys_cmd["default_group"]
-                
+
                 # Parse arguments: !volume [group] [volume]
                 # If only one argument, it's volume for default group
                 # If two arguments, first is group, second is volume
@@ -1849,42 +1878,41 @@ class TwitchBot(commands.Bot):
                 else:
                     await message.channel.send(f"@{username}: Usage: !volume [group] <0-100>")
                     return
-                
+
                 # Validate volume
                 if not (0 <= vol_arg <= 100):
                     await message.channel.send(f"@{username}: Volume must be between 0 and 100.")
                     return
-                
+
                 # Find the group's channel
                 if target_group not in categories:
                     await message.channel.send(f"@{username}: Group '{target_group}' not found in audio categories.")
                     return
-                
+
                 channel_id = categories.get(target_group, {}).get("audio_channel", 0)
                 new_vol = vol_arg / 100.0
-                
-                # Get the channel and update its volume
-                target_channel = pygame.mixer.Channel(channel_id)
-                
+
                 # Apply volume change to currently playing sound if any
                 # This allows real-time volume adjustment during playback
                 if channel_id in self.active_sounds:
                     try:
-                        self.active_sounds[channel_id].set_volume(new_vol)
+                        # active_sounds now contains Sound objects, not Channel objects
+                        sound_obj = self.active_sounds[channel_id]
+                        sound_obj.set_volume(new_vol)
                         await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (applied to current track)")
                         print(f"Volume for group '{target_group}' updated to {new_vol} (applied to active sound)")
                     except Exception as vol_error:
                         print(f"Warning: Could not apply volume to active sound: {vol_error}")
                         await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (will apply to next track)")
                 else:
-                    # No active sound, just set volume for next track
-                    target_channel.set_volume(new_vol)
-                    await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}%")
-                    print(f"Volume for group '{target_group}' (Channel {channel_id}) updated to {new_vol}")
-                
+                    # No active sound - volume is already saved to config for next track
+                    # No need to set channel volume as it will be set when sound plays
+                    await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (will apply to next track)")
+                    print(f"Volume for group '{target_group}' saved to config (no active sound)")
+
                 # Save the volume to config so it persists for future tracks
                 self.config_manager.set_group_volume(target_group, new_vol)
-                
+
             except (ValueError, IndexError):
                 await message.channel.send(f"@{username}: Usage: !volume [group] <0-100>")
             except Exception as e:
