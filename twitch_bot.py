@@ -3,7 +3,8 @@ import json
 import os
 import time
 import pygame
-import concurrent.futures  # Добавляем необходимый импорт
+import concurrent.futures
+import threading
 from twitchio.ext import commands
 from twitchio.ext.commands import errors
 from config_manager import ConfigManager
@@ -45,6 +46,8 @@ class TwitchBot(commands.Bot):
 
         # Инициализируем остальные параметры
         try:
+            self.initialized_event = asyncio.Event()
+            self.active_sounds_lock = threading.Lock()
             # Загружаем настройки прерывания звуков СРАЗУ при инициализации
             self.allow_sound_interruption = self.config_manager.get_sound_interruption()
             self.show_interruption_message = self.config_manager.get_interruption_message()
@@ -347,10 +350,11 @@ class TwitchBot(commands.Bot):
                     # Track active sound for real-time volume control
                     # IMPORTANT: Store the sound object, not the channel!
                     # This allows !volume to change volume during playback
-                    if channel_id > 0:
-                        self.active_sounds[channel_id] = sound
-                    else:
-                        self.active_sounds[0] = sound
+                    with self.active_sounds_lock:
+                        if channel_id > 0:
+                            self.active_sounds[channel_id] = sound
+                        else:
+                            self.active_sounds[0] = sound
 
                     # Wait for playback to finish
                     while channel.get_busy():
@@ -358,10 +362,11 @@ class TwitchBot(commands.Bot):
                         time.sleep(0.1)
 
                     # Clean up active sound tracking
-                    if channel_id > 0:
-                        self.active_sounds.pop(channel_id, None)
-                    else:
-                        self.active_sounds.pop(0, None)
+                    with self.active_sounds_lock:
+                        if channel_id > 0:
+                            self.active_sounds.pop(channel_id, None)
+                        else:
+                            self.active_sounds.pop(0, None)
 
                     return True
 
@@ -412,7 +417,10 @@ class TwitchBot(commands.Bot):
             # Start queue workers now that we have a running loop
             print("Initializing command queues and workers...")
             self.init_queues()
-            
+
+            # Unblock waiting event_message coro routines
+            self.initialized_event.set()
+
         except Exception as e:
             print(f"CRITICAL ERROR in event_ready: {e}")
             import traceback; traceback.print_exc()
@@ -453,11 +461,14 @@ class TwitchBot(commands.Bot):
         # Игнорируем эхо собственного бота
         if message.echo:
             return
-            
+
+        # Wait for bot to be initialized
+        await self.initialized_event.wait()
+
         # Выводим сообщение в UI
         if self.message_callback:
             self.message_callback(f"{message.author.name}: {message.content}")
-            
+
         # Получаем только первое слово в нижнем регистре как ключ команды
         content = message.content.strip()
         if not content.startswith("!"):
@@ -839,7 +850,10 @@ class TwitchBot(commands.Bot):
         try:
             print("Stopping Twitch bot...")
             self.is_running = False
-            
+
+            # Unblock any waiting event_message coroutines
+            self.initialized_event.set()
+
             # Отключаемся от канала
             if hasattr(self, 'loop') and self.loop:
                 # Cancel the reconnect and connection tasks first if they exist
@@ -930,7 +944,8 @@ class TwitchBot(commands.Bot):
             # Track active sound for real-time volume control
             # IMPORTANT: Store the sound object, not the channel!
             # This allows !volume to change volume during playback
-            self.active_sounds[channel_id] = snd
+            with self.active_sounds_lock:
+                self.active_sounds[channel_id] = snd
             
             return True  # Звук успешно запущен
 
@@ -1301,6 +1316,9 @@ class TwitchBot(commands.Bot):
     async def _reconnect(self):
         """Attempt to reconnect"""
         try:
+            # Block event_message during reconnection
+            self.initialized_event.clear()
+
             # IMPROVED CHECK FOR ACTIVE CONNECTION: If we have a working WebSocket and channels, abort reconnect
             if (hasattr(self, '_ws') and self._ws and hasattr(self._ws, 'socket') and 
                     self._ws.socket and not self._ws.socket.closed and 
@@ -1413,6 +1431,7 @@ class TwitchBot(commands.Bot):
                             print(f"Error updating stream status after reconnection: {stream_error}")
                                 
                         # Successfully connected, exit method
+                        self.initialized_event.set()
                         return
                     else:
                         # If no connected channels after join, raise exception
@@ -1894,21 +1913,22 @@ class TwitchBot(commands.Bot):
 
                 # Apply volume change to currently playing sound if any
                 # This allows real-time volume adjustment during playback
-                if channel_id in self.active_sounds:
-                    try:
-                        # active_sounds now contains Sound objects, not Channel objects
-                        sound_obj = self.active_sounds[channel_id]
-                        sound_obj.set_volume(new_vol)
-                        await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (applied to current track)")
-                        print(f"Volume for group '{target_group}' updated to {new_vol} (applied to active sound)")
-                    except Exception as vol_error:
-                        print(f"Warning: Could not apply volume to active sound: {vol_error}")
+                with self.active_sounds_lock:
+                    if channel_id in self.active_sounds:
+                        try:
+                            # active_sounds now contains Sound objects, not Channel objects
+                            sound_obj = self.active_sounds[channel_id]
+                            sound_obj.set_volume(new_vol)
+                            await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (applied to current track)")
+                            print(f"Volume for group '{target_group}' updated to {new_vol} (applied to active sound)")
+                        except Exception as vol_error:
+                            print(f"Warning: Could not apply volume to active sound: {vol_error}")
+                            await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (will apply to next track)")
+                    else:
+                        # No active sound - volume is already saved to config for next track
+                        # No need to set channel volume as it will be set when sound plays
                         await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (will apply to next track)")
-                else:
-                    # No active sound - volume is already saved to config for next track
-                    # No need to set channel volume as it will be set when sound plays
-                    await message.channel.send(f"@{username}: Volume for group '{target_group}' set to {vol_arg}% (will apply to next track)")
-                    print(f"Volume for group '{target_group}' saved to config (no active sound)")
+                        print(f"Volume for group '{target_group}' saved to config (no active sound)")
 
                 # Save the volume to config so it persists for future tracks
                 self.config_manager.set_group_volume(target_group, new_vol)
