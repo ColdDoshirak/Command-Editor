@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import copy
 from pathlib import Path
 import shutil
 from datetime import datetime
@@ -175,10 +176,12 @@ class ConfigManager:
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
             
             # Save the config - УБЕДИМСЯ, что токены Twitch не сохраняются в основной файл
-            config_to_save = self.config.copy()
+            config_to_save = copy.deepcopy(self.config)
             if 'twitch' in config_to_save:
-                config_to_save['twitch'] = {k: v for k, v in config_to_save['twitch'].items() 
+                print(f"DEBUG save_config: Before filter - config_to_save['twitch'] = {config_to_save['twitch']}")
+                config_to_save['twitch'] = {k: v for k, v in config_to_save['twitch'].items()
                                          if k not in ('access_token', 'client_id', 'refresh_token')}
+                print(f"DEBUG save_config: After filter - config_to_save['twitch'] = {config_to_save['twitch']}")
             
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config_to_save, f, indent=4)
@@ -286,13 +289,16 @@ class ConfigManager:
     def get_twitch_config(self) -> Dict[str, str]:
         """Get Twitch configuration"""
         result = self.twitch_config.copy()  # Начинаем с токенов
-        
+
         # Добавляем channel из основной конфигурации
         if 'twitch' in self.config and 'channel' in self.config['twitch']:
             result['channel'] = self.config['twitch']['channel']
+            print(f"DEBUG get_twitch_config: channel from config['twitch'] = '{result['channel']}'")
         else:
             result['channel'] = ''
-            
+            print(f"DEBUG get_twitch_config: channel NOT found in config['twitch'], using empty string")
+            print(f"DEBUG get_twitch_config: self.config['twitch'] = {self.config.get('twitch', 'NOT FOUND')}")
+
         return result
         
     def set_twitch_config(self, access_token=None, client_id=None, channel=None) -> None:
@@ -316,9 +322,11 @@ class ConfigManager:
         
     def set_twitch_channel(self, channel: str) -> None:
         """Set only the Twitch channel without affecting tokens"""
+        print(f"DEBUG set_twitch_channel: channel='{channel}'")
         if 'twitch' not in self.config:
             self.config['twitch'] = {}
         self.config['twitch']['channel'] = channel
+        print(f"DEBUG set_twitch_channel: config['twitch'] = {self.config['twitch']}")
         self.save_config()
         
     # Остальные методы класса...

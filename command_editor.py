@@ -417,7 +417,7 @@ class CommandEditor(QMainWindow):
         self.sys_commands_tab = SysCommandsTab(parent=self)
         self.tab_widget.addTab(self.sys_commands_tab, "Sys.Commands")
 
-        self.twitch_tab = TwitchTab(parent=self, commands_data=self.commands)
+        self.twitch_tab = TwitchTab(parent=self, commands_data=self.commands, config_manager=self.config_manager)
         self.tab_widget.addTab(self.twitch_tab, "Twitch")
 
 

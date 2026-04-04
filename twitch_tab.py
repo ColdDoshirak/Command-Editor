@@ -31,7 +31,7 @@ class ChatSignalHandler(QObject):
     moderators_signal = pyqtSignal(list)  # Новый сигнал для списка модераторов
 
 class TwitchTab(QWidget):
-    def __init__(self, parent=None, commands_data=None):
+    def __init__(self, parent=None, commands_data=None, config_manager=None):
         super().__init__(parent)
         self.parent = parent
         self.commands_data = commands_data or []
@@ -49,7 +49,8 @@ class TwitchTab(QWidget):
         self.signal_handler.currency_updated.connect(self.update_currency)
         self.signal_handler.moderators_signal.connect(self.update_moderators_list)  # Подключаем новый сигнал
 
-        self.config_manager = ConfigManager()
+        # Use the shared config_manager from parent if provided, otherwise create own instance
+        self.config_manager = config_manager if config_manager is not None else ConfigManager()
         self.initUI()
         self.load_settings()
 
@@ -219,7 +220,9 @@ class TwitchTab(QWidget):
 
     def load_settings(self):
         cfg = self.config_manager.get_twitch_config()
-        self.channel_input.setText(cfg.get('channel',''))
+        channel = cfg.get('channel','')
+        print(f"DEBUG load_settings: channel from config = '{channel}'")
+        self.channel_input.setText(channel)
         if cfg.get('access_token'):
             self.auth_status.setText("Authenticated")
             self.auth_status.setStyleSheet("color: green;")
@@ -233,8 +236,10 @@ class TwitchTab(QWidget):
     def save_settings(self):
         try:
             channel = self.channel_input.text().strip()
+            print(f"DEBUG save_settings: channel='{channel}'")
             self.config_manager.set_twitch_channel(channel)
         except Exception as e:
+            print(f"DEBUG save_settings: Error - {e}")
             QMessageBox.warning(self, "Error", str(e))
 
     def show_auth_dialog(self):
@@ -259,7 +264,8 @@ class TwitchTab(QWidget):
             'message_callback': self.signal_handler.chat_signal.emit,
             'currency_manager': self.parent.currency_manager,
             'commands_data': self.commands_data.copy() if self.commands_data else [],
-            'signal_handler': self.signal_handler
+            'signal_handler': self.signal_handler,
+            'config_manager': self.config_manager
         }
         self.bot = None  # Will be created in the run_bot thread
 
@@ -290,7 +296,8 @@ class TwitchTab(QWidget):
             self.bot = TwitchBot(
                 channel=channel,
                 message_callback=self.bot_params['message_callback'],
-                currency_manager=self.bot_params['currency_manager']
+                currency_manager=self.bot_params['currency_manager'],
+                config_manager=self.bot_params['config_manager']
             )
             if self.bot_params['commands_data']:
                 self.bot.update_commands(self.bot_params['commands_data'])
