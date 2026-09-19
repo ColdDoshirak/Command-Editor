@@ -346,6 +346,28 @@ class TwitchTab(QWidget):
             if not loop.is_closed():
                 loop.close()
 
+    def reload_bot_audio_categories(self):
+        """Apply new group/audio settings to the running bot without a restart.
+
+        The bot lives in its own thread with its own event loop, so we schedule
+        the (synchronous) reload onto that loop via run_coroutine_threadsafe.
+        Safe to call from the GUI thread.
+        """
+        bot = self.bot
+        if not bot or not hasattr(bot, "reload_audio_categories"):
+            return
+        loop = getattr(bot, "loop", None)
+        if not loop or loop.is_closed():
+            return
+        try:
+            # reload_audio_categories is a coroutine; schedule it on the bot's
+            # event-loop thread (the bot runs in its own thread/loop).
+            asyncio.run_coroutine_threadsafe(
+                bot.reload_audio_categories(), loop
+            )
+        except RuntimeError as e:
+            print(f"Could not reload audio categories on bot loop: {e}")
+
     def disconnect(self):
         self.stop_viewer_updates()
         if self.bot:

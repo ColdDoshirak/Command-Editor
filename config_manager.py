@@ -6,7 +6,6 @@ from pathlib import Path
 import shutil
 from datetime import datetime
 from typing import Dict, Any
-import traceback
 
 class ConfigManager:
     def __init__(self):
@@ -166,22 +165,15 @@ class ConfigManager:
             
             # Create backup before saving
             self._create_backup()
-            
-            # Debug print for stack trace
-            stack_trace = traceback.extract_stack()
-            caller = stack_trace[-2]  # Предпоследний элемент - это вызывающий метод
-            print(f"Saving config from {caller.name} at {caller.filename}:{caller.lineno}")
-            
+
             # Ensure the directory exists
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
             
             # Save the config - УБЕДИМСЯ, что токены Twitch не сохраняются в основной файл
             config_to_save = copy.deepcopy(self.config)
             if 'twitch' in config_to_save:
-                print(f"DEBUG save_config: Before filter - config_to_save['twitch'] = {config_to_save['twitch']}")
                 config_to_save['twitch'] = {k: v for k, v in config_to_save['twitch'].items()
                                          if k not in ('access_token', 'client_id', 'refresh_token')}
-                print(f"DEBUG save_config: After filter - config_to_save['twitch'] = {config_to_save['twitch']}")
             
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config_to_save, f, indent=4)
@@ -198,12 +190,7 @@ class ConfigManager:
                 # Update only provided fields
                 for key, value in twitch_config.items():
                     self.twitch_config[key] = value
-            
-            # Debug print
-            stack_trace = traceback.extract_stack()
-            caller = stack_trace[-2]
-            print(f"Saving twitch config from {caller.name} at {caller.filename}:{caller.lineno}. Token present: {'Yes' if self.twitch_config.get('access_token') else 'No'}")
-            
+
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.twitch_file), exist_ok=True)
             
@@ -293,11 +280,8 @@ class ConfigManager:
         # Добавляем channel из основной конфигурации
         if 'twitch' in self.config and 'channel' in self.config['twitch']:
             result['channel'] = self.config['twitch']['channel']
-            print(f"DEBUG get_twitch_config: channel from config['twitch'] = '{result['channel']}'")
         else:
             result['channel'] = ''
-            print(f"DEBUG get_twitch_config: channel NOT found in config['twitch'], using empty string")
-            print(f"DEBUG get_twitch_config: self.config['twitch'] = {self.config.get('twitch', 'NOT FOUND')}")
 
         return result
         
@@ -322,11 +306,9 @@ class ConfigManager:
         
     def set_twitch_channel(self, channel: str) -> None:
         """Set only the Twitch channel without affecting tokens"""
-        print(f"DEBUG set_twitch_channel: channel='{channel}'")
         if 'twitch' not in self.config:
             self.config['twitch'] = {}
         self.config['twitch']['channel'] = channel
-        print(f"DEBUG set_twitch_channel: config['twitch'] = {self.config['twitch']}")
         self.save_config()
         
     # Остальные методы класса...
@@ -466,6 +448,33 @@ class ConfigManager:
         group_key = group.upper()
         categories = self.config.get('audio_categories', {})
         return categories.get(group_key, {}).get('volume', 0.5)
+
+    # ------------------------------------------------------------------
+    # Optional queue persistence (opt-in per group via 'persist_queue')
+    # ------------------------------------------------------------------
+    def get_persist_queue_groups(self) -> list:
+        """Return list of group names that have queue persistence enabled."""
+        cats = self.config.get('audio_categories', {})
+        return [g for g, v in cats.items() if isinstance(v, dict) and v.get('persist_queue', False)]
+
+    def load_persisted_queue(self, group: str) -> list:
+        """Load persisted queue items for a group. Returns list of (author, content, cmd_dict)."""
+        data = self.config.get('queue_persistence', {})
+        items = data.get(group.upper(), [])
+        return items
+
+    def save_persisted_queue(self, group: str, items: list) -> None:
+        """Persist queue items for a group. items: list of (author, content, cmd_dict)."""
+        if 'queue_persistence' not in self.config:
+            self.config['queue_persistence'] = {}
+        group_key = group.upper()
+        if items:
+            self.config['queue_persistence'][group_key] = [
+                {'author': a, 'content': c, 'cmd': cmd} for (a, c, cmd) in items
+            ]
+        else:
+            self.config['queue_persistence'].pop(group_key, None)
+        self.save_config()
 
     def get_sound_interruption(self):
         """Get sound interruption setting"""

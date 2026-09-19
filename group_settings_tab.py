@@ -13,8 +13,8 @@ class GroupSettingsTab(QWidget):
 
         # Table for group settings
         self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Group Name", "Queue Enabled", "Max Queue Size", "Audio Channel"])
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["Group Name", "Queue Enabled", "Max Queue Size", "Audio Channel", "Persist Queue"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.table)
 
@@ -95,6 +95,20 @@ class GroupSettingsTab(QWidget):
             # Store channel spinbox reference
             self.table.item(i, 0).setData(Qt.UserRole + 2, channel_spin)
 
+            # Persist Queue checkbox (opt-in: keep this group's queue across restarts)
+            persist_check = QCheckBox()
+            persist_check.setChecked(categories.get(group, {}).get("persist_queue", False))
+            persist_check.setToolTip("Keep this group's queue across restarts (opt-in)")
+
+            persist_widget = QWidget()
+            persist_layout = QHBoxLayout(persist_widget)
+            persist_layout.addWidget(persist_check)
+            persist_layout.setAlignment(Qt.AlignCenter)
+            persist_layout.setContentsMargins(0, 0, 0, 0)
+
+            self.table.setCellWidget(i, 4, persist_widget)
+            self.table.item(i, 0).setData(Qt.UserRole + 3, persist_check)
+
     def save_settings(self):
         categories = self.config_manager.get_audio_categories()
         
@@ -103,18 +117,19 @@ class GroupSettingsTab(QWidget):
             check = self.table.item(i, 0).data(Qt.UserRole)
             spin = self.table.item(i, 0).data(Qt.UserRole + 1)
             channel_spin = self.table.item(i, 0).data(Qt.UserRole + 2)
-            
+            persist_check = self.table.item(i, 0).data(Qt.UserRole + 3)
+
             if group not in categories:
                 categories[group] = {}
-            
+
             categories[group]["queue_enabled"] = check.isChecked()
             categories[group]["max_queue_size"] = spin.value()
             categories[group]["audio_channel"] = channel_spin.value()
+            categories[group]["persist_queue"] = persist_check.isChecked() if persist_check else False
             
         self.config_manager.save_audio_categories(categories)
         QMessageBox.information(self, "Success", "Group settings saved successfully!")
-        
-        # Notify bot if running
-        if hasattr(self.parent, 'twitch_tab') and self.parent.twitch_tab.bot:
-            # We will implement this update method in TwitchBot later
-            pass
+
+        # Apply changes to the running bot without a restart (no-op if not connected)
+        if hasattr(self.parent, "twitch_tab") and self.parent.twitch_tab:
+            self.parent.twitch_tab.reload_bot_audio_categories()
