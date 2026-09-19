@@ -29,6 +29,7 @@ from harness import cleanup_repo_dir  # noqa: E402
 TEST_MODULES = [
     ("green", "test_queue_regressions"),
     ("red", "test_queue_bugs"),
+    ("stress", "test_queue_stress"),
 ]
 
 
@@ -74,7 +75,7 @@ def main():
     args = [a for a in sys.argv[1:]]
     tag_filter = None
     name_filter = None
-    if args and args[0] in ("red", "green"):
+    if args and args[0] in ("red", "green", "stress"):
         tag_filter = args[0]
         args = args[1:]
     if args and args[0] == "-k":
