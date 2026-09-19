@@ -191,7 +191,14 @@ async def test_loop_not_blocked_by_connection_check():
 
 
 async def test_skip_does_not_corrupt_unfinished_tasks():
-    """[B15-adjacent] After !queue listing, the queue must stay consistent."""
+    """[B15-adjacent] A !queue listing must not mutate the queue.
+
+    The old code drained the queue (get_nowait + task_done) and re-enqueued,
+    which both mutated the internal unfinished_tasks counter and yielded
+    control between get/put, letting the worker interleave. The fix makes the
+    listing a plain read of the internal deque, so the queue state (size and
+    internal counter) must be byte-for-byte identical before and after.
+    """
     tmp = new_tmpdir()
     try:
         for name in ("s1.mp3", "s2.mp3"):
@@ -209,12 +216,25 @@ async def test_skip_does_not_corrupt_unfinished_tasks():
         await bot.event_message(FakeMessage("bob", "!s2", ch))
         await wait_until(lambda: len(_mixer().Channel(1).play_log) >= 1, timeout=3)
 
-        await bot.event_message(FakeMessage("mod", "!queue SONG", ch))
         q = bot.command_queues[SONG]
-        # unfinished_tasks must equal the number of unprocessed items (1).
-        assert q.qsize() == 1, "queue size wrong after listing"
-        assert q._unfinished_tasks == 1, (
-            "unfinished_tasks corrupted: %d" % q._unfinished_tasks
+        size_before = q.qsize()
+        unfinished_before = q._unfinished_tasks
+        # Snapshot the pending items so we can confirm the listing didn't
+        # reorder, drop, or duplicate anything.
+        items_before = [id(it) for it in list(q._queue)]
+
+        await bot.event_message(FakeMessage("mod", "!queue SONG", ch))
+
+        assert q.qsize() == size_before, (
+            "queue size changed by listing: %d -> %d"
+            % (size_before, q.qsize())
+        )
+        assert q._unfinished_tasks == unfinished_before, (
+            "unfinished_tasks corrupted by listing: %d -> %d"
+            % (unfinished_before, q._unfinished_tasks)
+        )
+        assert [id(it) for it in list(q._queue)] == items_before, (
+            "listing reordered/dropped/duplicated queue items"
         )
         await _stop_bot(bot)
     finally:

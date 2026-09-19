@@ -184,10 +184,32 @@ class TwitchBot(commands.Bot):
     def commands(self):
         return self._commands_list
     
+    def _normalize_group(self, group):
+        """Return the canonical group name from audio_categories (case-insensitive).
+
+        Commands may carry 'song' while the category is 'SONG'; without this
+        mapping the command silently falls back to the shared channel 0.
+        """
+        if not group:
+            return group
+        categories = self.config_manager.get_audio_categories()
+        if group in categories:
+            return group
+        for name in categories:
+            if str(name).upper() == str(group).upper():
+                return name
+        return group
+
     def update_commands(self, commands_list):
         """Вызывается из CommandEditor после каждой правки таблицы"""
         old_commands_count = len(self._commands_list)
         self._commands_list = commands_list or []
+        # Normalize group names to the canonical audio_categories keys so that
+        # 'song' / 'Song' / 'SONG' all resolve to the same category.
+        for cmd in self._commands_list:
+            g = cmd.get("Group")
+            if g:
+                cmd["Group"] = self._normalize_group(g)
         print(f"DEBUG: update_commands called. Old count: {old_commands_count}, New count: {len(self._commands_list)}")
         self.init_queues()  # Re-initialize queues to pick up new groups
 
@@ -357,17 +379,13 @@ class TwitchBot(commands.Bot):
         group = cmd.get("Group", "GENERAL")
         
         print(f"--- Starting execution of queued command: !{cmd_name} (Group: {group}) ---")
-        
-        try:
-            # 1. Handle Cost
-            cost = int(cmd.get("Cost", 0))
-            if cost > 0:
-                if not self.currency_manager.pay_for_command(username, cost):
-                    await message.channel.send(f"@{username}, you don't have enough points ({cost}) for !{cmd['Command']}")
-                    print(f"Execution cancelled: user {username} doesn't have enough points.")
-                    return
 
-            # 2. Handle Volume
+        try:
+            # NOTE: Cost is NOT charged here. The command was already charged in
+            # the main handler (event_message) at enqueue time. Charging again
+            # here would double-charge, and would re-charge items restored from
+            # persistence (which were paid in a previous session).
+            # 1. Handle Volume
             cmd_volume = int(cmd.get("Volume", 100))
             
             # Check if there's a saved group volume that should override the command volume
@@ -1868,26 +1886,17 @@ class TwitchBot(commands.Bot):
                     if q_size == 0:
                         await message.channel.send(f"@{username}: Queue '{found_group}' is empty.")
                     else:
-                        # Snapshot the pending items to show who/what is waiting.
-                        # Drain with get_nowait() (each increments the internal
-                        # unfinished_tasks counter, so call task_done() to keep
-                        # the queue consistent), format, then re-enqueue in the
-                        # same order. No await between drain and re-queue, so the
-                        # worker cannot interleave and steal an item.
-                        pending = []
-                        while True:
-                            try:
-                                pending.append(q.get_nowait())
-                                q.task_done()
-                            except asyncio.QueueEmpty:
-                                break
+                        # Read the pending items directly from the internal deque
+                        # (same approach as _persist_queue_snapshot) WITHOUT
+                        # draining. Draining + re-enqueuing mutates the queue's
+                        # internal unfinished_tasks counter and yields control
+                        # between get/put, letting the worker interleave and
+                        # corrupt the count. A plain read is race-free.
                         lines = []
-                        for pos, (msg, cmd_data) in enumerate(pending, start=1):
-                            author = msg.author.name if msg is not None else "?"
+                        for pos, (msg, cmd_data) in enumerate(list(q._queue), start=1):
+                            author = msg.author.name if (msg is not None and getattr(msg, "author", None)) else "?"
                             cname = cmd_data.get("Command", "?") if cmd_data else "?"
                             lines.append(f"{pos}. {author} — !{cname}")
-                        for item in pending:
-                            await q.put(item)
                         await message.channel.send(
                             f"@{username}: Queue '{found_group}' ({q_size} pending):\n" + "\n".join(lines)
                         )
