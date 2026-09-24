@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import copy
+import threading
 from pathlib import Path
 import shutil
 from datetime import datetime
@@ -62,6 +63,16 @@ class ConfigManager:
         
         # Load moderators config (отдельный вызов)
         self.moderators_config = self.load_moderators_config()
+        
+        # B4: одна блокировка на все мутации self.config + запись в файл.
+        # Конфиг пишут два потока: UI (тумблеры/спинбоксы) и бот (!volume,
+        # save_persisted_queue). Без лока переплетённые json.dump портили
+        # config.json. RLock: set_* методы сами вызывают save_config.
+        self._lock = threading.RLock()
+        # B4: бэкап конфига не при каждом сохранении, а не чаще раза в минуту
+        # (раньше каждый тумблер = новая копия config_*.json).
+        self._last_config_backup = 0.0
+        self._config_backup_interval = 60.0
         
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from file"""
@@ -149,55 +160,70 @@ class ConfigManager:
             return moderators_config
     
     def save_config(self, config=None):
-        """Save configuration to file"""
+        """Save configuration to file (thread-safe, atomic write)."""
         try:
-            if config is not None:
-                # Вместо полной замены конфигурации, обновляем только переданные поля
-                for key, value in config.items():
-                    if key in self.config:
-                        if isinstance(value, dict) and isinstance(self.config[key], dict):
-                            # Для вложенных словарей делаем рекурсивное обновление
-                            self._update_nested_dict(self.config[key], value)
+            with self._lock:
+                if config is not None:
+                    # Вместо полной замены конфигурации, обновляем только переданные поля
+                    for key, value in config.items():
+                        if key in self.config:
+                            if isinstance(value, dict) and isinstance(self.config[key], dict):
+                                # Для вложенных словарей делаем рекурсивное обновление
+                                self._update_nested_dict(self.config[key], value)
+                            else:
+                                self.config[key] = value
                         else:
                             self.config[key] = value
-                    else:
-                        self.config[key] = value
-            
-            # Create backup before saving
-            self._create_backup()
 
-            # Ensure the directory exists
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-            
-            # Save the config - УБЕДИМСЯ, что токены Twitch не сохраняются в основной файл
-            config_to_save = copy.deepcopy(self.config)
-            if 'twitch' in config_to_save:
-                config_to_save['twitch'] = {k: v for k, v in config_to_save['twitch'].items()
-                                         if k not in ('access_token', 'client_id', 'refresh_token')}
-            
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(config_to_save, f, indent=4)
-                
+                # Create backup before saving (не чаще раза в минуту, B4)
+                self._create_backup()
+
+                # Ensure the directory exists
+                os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+
+                # Save the config - УБЕДИМСЯ, что токены Twitch не сохраняются в основной файл
+                config_to_save = copy.deepcopy(self.config)
+                if 'twitch' in config_to_save:
+                    config_to_save['twitch'] = {k: v for k, v in config_to_save['twitch'].items()
+                                             if k not in ('access_token', 'client_id', 'refresh_token')}
+
+                # B4: атомарная запись — пишем во временный файл в той же
+                # директории и os.replace(). Частичная/рваная запись config.json
+                # становится невозможной: читатель видит либо старый, либо
+                # новый файл целиком.
+                tmp_file = self.config_file.with_suffix('.json.tmp')
+                with open(tmp_file, 'w', encoding='utf-8') as f:
+                    json.dump(config_to_save, f, indent=4)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_file, self.config_file)
+
             return True
         except Exception as e:
             print(f"Error saving config: {e}")
             return False
     
+    def _atomic_write_json(self, path, data, ensure_ascii=True):
+        """B4: атомарная запись JSON — tmp-файл в той же директории +
+        os.replace(). Читатель никогда не увидит рваный/полузаписанный файл."""
+        path = Path(path)
+        os.makedirs(os.path.dirname(str(path)), exist_ok=True)
+        tmp_file = path.with_suffix(path.suffix + '.tmp')
+        with open(tmp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=ensure_ascii)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, path)
+
     def save_twitch_config_file(self, twitch_config=None):
         """Save Twitch configuration to separate file"""
         try:
-            if twitch_config is not None:
-                # Update only provided fields
-                for key, value in twitch_config.items():
-                    self.twitch_config[key] = value
-
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.twitch_file), exist_ok=True)
-            
-            # Save to separate file
-            with open(self.twitch_file, 'w', encoding='utf-8') as f:
-                json.dump(self.twitch_config, f, indent=4)
-                
+            with self._lock:
+                if twitch_config is not None:
+                    # Update only provided fields
+                    for key, value in twitch_config.items():
+                        self.twitch_config[key] = value
+                self._atomic_write_json(self.twitch_file, self.twitch_config)
             return True
         except Exception as e:
             print(f"Error saving twitch config: {e}")
@@ -206,18 +232,13 @@ class ConfigManager:
     def save_moderators_config_file(self, moderators_config=None):
         """Save moderators configuration to separate file"""
         try:
-            if moderators_config is not None:
-                # Update only provided fields
-                for key, value in moderators_config.items():
-                    self.moderators_config[key] = value
-            
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.moderators_file), exist_ok=True)
-            
-            # Save to separate file
-            with open(self.moderators_file, 'w', encoding='utf-8') as f:
-                json.dump(self.moderators_config, f, indent=4, ensure_ascii=False)
-                
+            with self._lock:
+                if moderators_config is not None:
+                    # Update only provided fields
+                    for key, value in moderators_config.items():
+                        self.moderators_config[key] = value
+                self._atomic_write_json(self.moderators_file, self.moderators_config,
+                                        ensure_ascii=False)
             return True
         except Exception as e:
             print(f"Error saving moderators config: {e}")
@@ -227,8 +248,9 @@ class ConfigManager:
         """Save system commands to a separate file"""
         try:
             system_commands_file = self.program_dir / 'system_commands.json'
-            with open(system_commands_file, 'w', encoding='utf-8') as f:
-                json.dump(commands, f, indent=4, ensure_ascii=False)
+            with self._lock:
+                self._atomic_write_json(system_commands_file, commands,
+                                        ensure_ascii=False)
             return True
         except Exception as e:
             print(f"Error saving system commands: {e}")
@@ -255,7 +277,18 @@ class ConfigManager:
                 original[key] = value
             
     def _create_backup(self):
+        """Создать бэкап config.json.
+
+        B4: вызывается из save_config под self._lock и не чаще раза в
+        минуту — раньше каждая правка тумблера создавала новую копию.
+        """
         try:
+            import time as _time
+            now = _time.time()
+            if now - self._last_config_backup < self._config_backup_interval:
+                return
+            self._last_config_backup = now
+
             if not self.backup_dir.exists():
                 self.backup_dir.mkdir(parents=True)
                 
@@ -371,8 +404,8 @@ class ConfigManager:
         
     def save_commands(self, commands):
         try:
-            with open(self.commands_file, 'w', encoding='utf-8') as f:
-                json.dump(commands, f, indent=4)
+            with self._lock:
+                self._atomic_write_json(self.commands_file, commands)
             return True
         except Exception as e:
             print(f"Error saving commands: {e}")

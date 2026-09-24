@@ -30,6 +30,8 @@ TEST_MODULES = [
     ("green", "test_queue_regressions"),
     ("red", "test_queue_bugs"),
     ("stress", "test_queue_stress"),
+    ("reliability", "test_reliability"),
+    ("reliability", "test_reliability_config"),
 ]
 
 
@@ -75,7 +77,7 @@ def main():
     args = [a for a in sys.argv[1:]]
     tag_filter = None
     name_filter = None
-    if args and args[0] in ("red", "green", "stress"):
+    if args and args[0] in ("red", "green", "stress", "reliability"):
         tag_filter = args[0]
         args = args[1:]
     if args and args[0] == "-k":

@@ -202,3 +202,26 @@ def new_tmpdir():
 
 def drop_tmpdir(tmpdir):
     shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def make_real_currency(tmpdir):
+    """Real CurrencyManager with all paths redirected to tmpdir.
+
+    The real class derives data_dir from its own file location, so we
+    construct it, then re-point every path into the sandbox and reload.
+    This is what lets the reliability suite exercise the REAL locking,
+    validation, checksum and backup logic (not the FakeCurrencyManager).
+    """
+    from pathlib import Path
+    from currency_manager import CurrencyManager
+
+    d = Path(tmpdir)
+    (d / "backups" / "currency").mkdir(parents=True, exist_ok=True)
+    cm = CurrencyManager()
+    cm.data_dir = d
+    cm.users_file = d / "users_currency.json"
+    cm.currency_file = d / "users_currency.json"
+    cm.backup_dir = d / "backups" / "currency"
+    cm.users = {}
+    cm.load_data()
+    return cm

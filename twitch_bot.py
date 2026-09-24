@@ -772,11 +772,11 @@ class TwitchBot(commands.Bot):
                 # Ensure queue and worker are initialized
                 if group not in self.command_queues or group not in self.queue_workers or self.queue_workers[group].done():
                     print(f"Lazy initializing queue/worker for group: {group}")
-                    # Temporarily add this group to _commands_list to ensure it gets initialized
-                    # This handles the case where commands are loaded after bot startup
-                    if not any(c.get("Group") == group for c in self._commands_list):
-                        print(f"DEBUG: Adding group '{group}' to commands list for initialization")
-                        self._commands_list.append({"Command": "_temp", "Group": group, "Enabled": True})
+                    # init_queues() создаёт очереди для ВСЕХ queue_enabled групп из
+                    # config_manager.get_audio_categories(), поэтому группа покрывается
+                    # даже если в _commands_list сейчас нет команды с такой группой.
+                    # (Раньше сюда дописывалась фейковая команда '_temp' в _commands_list —
+                    # это загрязняло общий список UI и портило commands.json. Убрано, B3.)
                     self.init_queues()
 
                 # CHECK QUEUE LIMITS using semaphore
@@ -1312,33 +1312,44 @@ class TwitchBot(commands.Bot):
                         if hasattr(self, '_ws') and self._ws and self._ws.socket and not self._ws.socket.closed:
                             # Если есть подключенные каналы, считаем что соединение активно
                             if len(self.connected_channels) > 0:
-                                # Но проверяем это отправкой PING
-                                ping_future = asyncio.run_coroutine_threadsafe(
-                                    self._ws.send("PING :tmi.twitch.tv"),
-                                    self.loop
-                                )
-                                # Ожидаем завершения отправки PING в течение 3 секунд
+                                # Но проверяем это отправкой PING.
+                                # Мы уже выполняемся внутри loop бота, поэтому
+                                # отправляем PING напрямую через await.
+                                # (Раньше здесь был
+                                # run_coroutine_threadsafe(...).result(timeout=3)
+                                # из того же loop: loop-поток ждал корутину,
+                                # которую должен запустить сам же loop —
+                                # самодедлок на 3 с каждые 10 с, из-за которого
+                                # очередь звуков и !skip/!volume буксовали.)
                                 try:
-                                    ping_future.result(timeout=3)
+                                    await asyncio.wait_for(
+                                        self._ws.send("PING :tmi.twitch.tv"),
+                                        timeout=3
+                                    )
                                     # Если PING отправлен успешно, соединение живо
                                     connection_alive = True
                                     last_successful_check = time.time()
                                     connection_check_failures = 0  # Сбрасываем счётчик неудач
-                                except (concurrent.futures.TimeoutError, RuntimeError) as e:
+                                except Exception as e:
                                     print(f"PING check failed: {e}")
                                     connection_check_failures += 1
                     except Exception as ws_error:
                         print(f"WebSocket check error: {ws_error}")
                         connection_check_failures += 1
                     
-                    # 2. Проверка API Twitch (но не блокируем на ошибках API)
+                    # 2. Проверка API Twitch (но не блокируем на ошибках API).
+                    # Синхронный requests.get выполняется в executor, чтобы
+                    # не блокировать loop (до 3 с на таймаут).
                     try:
                         if self._helix_headers:
-                            response = requests.get(
-                                "https://api.twitch.tv/helix/users",
-                                headers=self._helix_headers,
-                                params={"login": self.channel},
-                                timeout=3  # Короткий таймаут
+                            response = await self.loop.run_in_executor(
+                                None,
+                                lambda: requests.get(
+                                    "https://api.twitch.tv/helix/users",
+                                    headers=self._helix_headers,
+                                    params={"login": self.channel},
+                                    timeout=3  # Короткий таймаут
+                                ),
                             )
                             
                             # Если API доступен и ответ успешен, это хороший признак

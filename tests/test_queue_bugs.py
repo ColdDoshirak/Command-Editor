@@ -3,6 +3,7 @@
 Each test asserts the CORRECT behavior; the current code violates it.
 After Phase 1 fixes these must turn green. Py3.8 compatible.
 """
+import asyncio
 import os
 import sys
 import time
@@ -237,5 +238,72 @@ async def test_skip_does_not_corrupt_unfinished_tasks():
             "listing reordered/dropped/duplicated queue items"
         )
         await _stop_bot(bot)
+    finally:
+        drop_tmpdir(tmp)
+
+
+class _FakeSocket(object):
+    closed = False
+
+
+class _FakeWS(object):
+    """Stands in for the bot's websocket so the PING path in
+    _check_connection is exercised without a real Twitch connection."""
+
+    def __init__(self):
+        self.socket = _FakeSocket()
+
+    async def send(self, msg):
+        await asyncio.sleep(0.01)
+        return None
+
+
+async def test_connection_check_does_not_block_event_loop():
+    """[B2] _check_connection must not block the event loop.
+
+    The current code does `run_coroutine_threadsafe(self._ws.send(...),
+    self.loop).result(timeout=3)` from inside the loop's own thread — a
+    classic self-deadlock: the loop thread waits for a coroutine that only
+    that same loop can run, so it stalls ~3s every 10s. While stalled, the
+    queue worker's `await asyncio.sleep(0.1)` completion poll (and !skip /
+    !volume / chat handling) freezes, which is why audio problems appear
+    only AFTER connecting to Twitch.
+
+    Correct behavior: a 100ms ticker keeps ticking at ~100ms cadence while
+    _check_connection runs. Fails today (max gap ~3s), passes after the fix.
+    """
+    tmp = new_tmpdir()
+    try:
+        bot, cm, cur = make_bot(tmp, [])
+        bot._ws = _FakeWS()
+        bot.connected_channels = ["testchan"]
+        bot.is_running = True
+
+        gaps = []
+        last = time.monotonic()
+        # The PING self-deadlock fires on the check's first cycle: sleep(10)
+        # then a ~3s block (t=10..13). Run past that window so the ticker
+        # resumes and records the stall gap.
+        stop = time.monotonic() + 14.0
+        check_task = asyncio.ensure_future(bot._check_connection())
+        try:
+            while time.monotonic() < stop:
+                now = time.monotonic()
+                gaps.append(now - last)
+                last = now
+                await asyncio.sleep(0.1)
+        finally:
+            check_task.cancel()
+            try:
+                await check_task
+            except BaseException:
+                pass
+
+        max_gap = max(gaps)
+        assert max_gap < 1.0, (
+            "event loop blocked for %.2fs while _check_connection ran "
+            "(self-deadlock in PING check); audio queue stalls this long "
+            "every ~10s after connecting" % max_gap
+        )
     finally:
         drop_tmpdir(tmp)
