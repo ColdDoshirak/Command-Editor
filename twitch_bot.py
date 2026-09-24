@@ -112,6 +112,10 @@ class TwitchBot(commands.Bot):
             self.connection_check_task = None
             self.reconnect_attempts = 0
             self.max_reconnect_attempts = 5
+            # B7: фоновая проверка статуса стрима в loop бота — UI больше
+            # не блокируется на future.result(timeout=5) каждые 10-300 с.
+            self.stream_status_task = None
+            self.stream_status_interval = 30
             
             # Отслеживание пользователей
             self.active_users = set([channel.lower()])  # Инициализируем с владельцем канала
@@ -287,6 +291,13 @@ class TwitchBot(commands.Bot):
                     print(f"Cancelling worker for group: {group}")
                     self.queue_workers[group].cancel()
                     del self.queue_workers[group]
+                # B9: воркер отменён — если он обрабатывал элемент, его permit
+                # не будет освобождён (release живёт в finally process_queue,
+                # а CancelledError из get() проходит мимо него). Сбрасываем
+                # семафор на max_size, иначе группа навсегда «переполнена».
+                max_size = categories.get(group, {}).get('max_queue_size', 0)
+                if max_size > 0:
+                    self.queue_semaphores[group] = asyncio.Semaphore(max_size)
 
     def _persist_queue_snapshot(self, group):
         """Save the current in-memory queue for a group to config (only if the
@@ -308,7 +319,10 @@ class TwitchBot(commands.Bot):
             for msg, cmd in list(q._queue):
                 author = msg.author.name if (msg is not None and getattr(msg, 'author', None)) else ''
                 content = msg.content if (msg is not None and getattr(msg, 'content', None)) else ''
-                items.append((author, content, cmd))
+                # B8: помечаем, что команда уже оплачена (списана в
+                # event_message при постановке в очередь). После рестарта
+                # execute_queued_command не должен списывать повторно.
+                items.append((author, content, cmd, True))
             self.config_manager.save_persisted_queue(group, items)
         except Exception as e:
             print(f"Error persisting queue snapshot for {group}: {e}")
@@ -316,7 +330,15 @@ class TwitchBot(commands.Bot):
     def _restore_persisted_queue(self, group):
         """Rehydrate a group's queue from config on startup (only if the group
         has persistence enabled). Items are wrapped in a lightweight message
-        stand-in so the worker can execute them without a live Twitch message."""
+        stand-in so the worker can execute them without a live Twitch message.
+
+        B8: each restored item carries already_deducted=True (it was charged
+        at enqueue time, before the restart) so the worker does not charge
+        it again. B9: the semaphore is reset to max_size before restoring so
+        (a) restored items are counted against the queue limit and (b) permits
+        that were held by an item the old worker never finished do not leak
+        and permanently "fill" the group.
+        """
         try:
             categories = self.config_manager.get_audio_categories()
             if not categories.get(group, {}).get('persist_queue', False):
@@ -327,11 +349,26 @@ class TwitchBot(commands.Bot):
             q = self.command_queues.get(group)
             if q is None:
                 return
-            for it in items:
-                author = it.get('author', '')
-                content = it.get('content', '')
-                cmd = it.get('cmd', {})
-                q.put_nowait((_PersistedMessage(author, content), cmd))
+
+            # B9: reset the semaphore to its full capacity before restoring.
+            # The queue is empty at this point (we just created it), so a
+            # fresh semaphore is correct; any permits that a previous
+            # worker's in-flight item never released are reclaimed here.
+            # Each restored item conceptually "holds" one permit (it was
+            # acquired by event_message before the restart), so the
+            # semaphore starts with max_size - len(items) permits.
+            max_size = categories.get(group, {}).get('max_queue_size', 0)
+            if max_size > 0:
+                if len(items) > max_size:
+                    print(f"Persisted queue for {group} has {len(items)} items "
+                          f"> max {max_size}; dropping {len(items) - max_size}")
+                    items = items[:max_size]
+                self.queue_semaphores[group] = asyncio.Semaphore(max_size - len(items))
+
+            for (author, content, cmd, already_deducted) in items:
+                msg = _PersistedMessage(author, content)
+                msg.already_deducted = already_deducted
+                q.put_nowait((msg, cmd))
             print(f"Restored {len(items)} persisted queue items for group {group}")
         except Exception as e:
             print(f"Error restoring persisted queue for {group}: {e}")
@@ -346,6 +383,11 @@ class TwitchBot(commands.Bot):
                     # Wait for next command in queue
                     queue_item = await self.command_queues[group].get()
                     message, cmd_data = queue_item
+                    # B9: permit уже занят (event_message сделал acquire до
+                    # put). Отметка нужна, чтобы освободить его при отмене
+                    # ВО ВРЕМЯ обработки — раньше CancelledError пролетал
+                    # мимо finally и permit зависал навсегда.
+                    acquired = True
 
                     try:
                         # Execute the command
@@ -358,9 +400,15 @@ class TwitchBot(commands.Bot):
                             semaphore.release()
                         # Persist remaining queue items (opt-in per group)
                         self._persist_queue_snapshot(group)
+                        # finally отработал — permit уже освобождён,
+                        # except-ветка ниже освобождать повторно не должна.
+                        acquired = False
 
                 except asyncio.CancelledError:
-                    # Python 3.8+ совместимая обработка отмены
+                    # B9: отмена ДО finally (например, в get()) — освобождаем
+                    # permit, иначе группа навсегда «переполнена».
+                    if acquired and semaphore is not None:
+                        semaphore.release()
                     raise
                 except Exception as e:
                     print(f"Error processing queue item for {group}: {e}")
@@ -508,6 +556,11 @@ class TwitchBot(commands.Bot):
             # Запускаем периодическую проверку соединения, если не запущена
             if not self.connection_check_task or self.connection_check_task.done():
                 self.connection_check_task = asyncio.create_task(self._check_connection())
+
+            # B7: фоновая проверка статуса стрима в loop бота. UI-поток больше
+            # не делает future.result(timeout=5) — статус приходит по сигналу.
+            if not self.stream_status_task or self.stream_status_task.done():
+                self.stream_status_task = asyncio.create_task(self._stream_status_loop())
             
             # Start queue workers now that we have a running loop
             print("Initializing command queues and workers...")
@@ -779,19 +832,9 @@ class TwitchBot(commands.Bot):
                     # это загрязняло общий список UI и портило commands.json. Убрано, B3.)
                     self.init_queues()
 
-                # CHECK QUEUE LIMITS using semaphore
+                # B9: проверка лимита перенесена в блок acquire ниже — между проверкой
+                # и acquire() event loop не переключается, гонка закрыта.
                 semaphore = self.queue_semaphores.get(group)
-                if semaphore is not None and semaphore._value <= 0:
-                    print(f"Queue full for group '{group}' (max queue size reached). Rejecting command.")
-                    
-                    # Refund if points were deducted
-                    if points_deducted and cost > 0:
-                        self.currency_manager.add_points(username, cost)
-                        self.currency_manager.save_users()
-                        await message.channel.send(f"@{username}: Queue for {group} is full. {cost} points refunded.")
-                    else:
-                        await message.channel.send(f"@{username}: Queue for {group} is full. Try again later.")
-                    return
 
                 # ENQUEUE COMMAND
                 print(f"Enqueuing command '{cmd_key}' to group '{group}'")
@@ -805,9 +848,28 @@ class TwitchBot(commands.Bot):
                 if user_cd_sec > 0:
                     self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
                 
-                # Put in queue with semaphore acquisition
+                # Put in queue with semaphore acquisition.
+                # B9: раньше между проверкой лимита и acquire() event loop
+                # мог переключиться на другой event_message, и тот занимал
+                # последний permit — команда вешалась на acquire() ВЕЧНО
+                # (ни ответа, ни возврата очков). Теперь проверка и acquire
+                # стоят в одном тике без промежуточных await: при
+                # _value > 0 asyncio.Semaphore.acquire() возвращает True
+                # синхронно (без yield), так что гонка невозможна, а при
+                # _value <= 0 команда мгновенно отклоняется с возвратом
+                # очков. Таймаут не нужен: acquire вызывается ТОЛЬКО когда
+                # permit гарантированно свободен.
                 try:
                     if semaphore is not None:
+                        if semaphore._value <= 0:
+                            print(f"Queue full for group '{group}' (max queue size reached). Rejecting command.")
+                            if points_deducted and cost > 0:
+                                self.currency_manager.add_points(username, cost)
+                                self.currency_manager.save_users()
+                                await message.channel.send(f"@{username}: Queue for {group} is full. {cost} points refunded.")
+                            else:
+                                await message.channel.send(f"@{username}: Queue for {group} is full. Try again later.")
+                            return
                         await semaphore.acquire()
                     await self.command_queues[group].put((message, cmd))
                 except Exception as e:
@@ -956,6 +1018,9 @@ class TwitchBot(commands.Bot):
                     self.reconnect_task.cancel()
                 if self.connection_check_task and not self.connection_check_task.done():
                     self.connection_check_task.cancel()
+                # B7: фоновая проверка статуса стрима
+                if getattr(self, 'stream_status_task', None) and not self.stream_status_task.done():
+                    self.stream_status_task.cancel()
                 
                 # Now disconnect
                 try:
@@ -996,6 +1061,15 @@ class TwitchBot(commands.Bot):
 
         # Clear workers dict
         self.queue_workers.clear()
+
+        # B9: воркеры отменены — занятые ими permit'ы не будут освобождены.
+        # Сбрасываем семафоры на max_size, иначе группы с занятым permit'ом
+        # навсегда «переполнены» после перезагрузки категорий.
+        categories = self.config_manager.get_audio_categories()
+        for group in list(self.queue_semaphores):
+            max_size = categories.get(group, {}).get('max_queue_size', 0)
+            if max_size > 0:
+                self.queue_semaphores[group] = asyncio.Semaphore(max_size)
 
         # Reinitialize queues with new settings
         self.init_queues()
@@ -1059,18 +1133,27 @@ class TwitchBot(commands.Bot):
             return False  # В случае ошибки
 
     async def get_all_viewers(self) -> list:
-        """Get chatters via Helix API /chat/chatters"""
+        """Get chatters via Helix API /chat/chatters.
+
+        B7: синхронный requests.get — в executor, не блокируем loop бота
+        (раньше каждый опрос зрителей держал loop до 5 с, из-за чего
+        буксовали очередь и !skip/!volume).
+        """
         viewers = []
         if self.broadcaster_id and self.moderator_id:
             try:
-                resp = requests.get(
-                    "https://api.twitch.tv/helix/chat/chatters",
-                    headers=self._helix_headers,
-                    params={
-                        "broadcaster_id": self.broadcaster_id,
-                        "moderator_id": self.moderator_id
-                    },
-                    timeout=5
+                loop = asyncio.get_event_loop()
+                resp = await loop.run_in_executor(
+                    None,
+                    lambda: requests.get(
+                        "https://api.twitch.tv/helix/chat/chatters",
+                        headers=self._helix_headers,
+                        params={
+                            "broadcaster_id": self.broadcaster_id,
+                            "moderator_id": self.moderator_id
+                        },
+                        timeout=5
+                    ),
                 )
                 data = resp.json()
                 for user in data.get("data", []):
@@ -1083,28 +1166,57 @@ class TwitchBot(commands.Bot):
         self.all_viewers = viewers
         return viewers
 
+    async def _stream_status_loop(self):
+        """B7: фоновая проверка статуса стрима в loop бота.
+
+        Раньше UI-поток сам вызывал check_if_live через
+        run_coroutine_threadsafe(...).result(timeout=5) — интерфейс
+        блокировался на время запроса к Helix. Теперь статус обновляется
+        здесь, в loop, и сообщается UI по stream_status_signal.
+        """
+        while self.is_running:
+            try:
+                is_live = await self.check_if_live()
+                self.is_live = is_live
+                if hasattr(self, 'signal_handler') and self.signal_handler:
+                    self.signal_handler.stream_status_signal.emit(is_live)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"Error in stream status loop: {e}")
+            await asyncio.sleep(self.stream_status_interval)
+
     async def check_if_live(self, *args) -> bool:
-        """Проверяем, идет ли стрим в текущий момент через Helix API."""
+        """Проверяем, идет ли стрим в текущий момент через Helix API.
+
+        B7: синхронный requests.get выполняется в executor, чтобы НЕ
+        блокировать loop бота (раньше каждый запрос держал loop до 5 с,
+        из-за чего буксовали очередь и !skip/!volume).
+        """
         try:
             if not self.broadcaster_id or not self._helix_headers:
                 print("Cannot check stream status: missing broadcaster_id or API headers")
                 return False
-                
-            # Запрашиваем данные о стриме
-            response = requests.get(
-                "https://api.twitch.tv/helix/streams",
-                headers=self._helix_headers,
-                params={"user_id": self.broadcaster_id},
-                timeout=5
+
+            # Запрашиваем данные о стриме (в executor, не блокируем loop)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: requests.get(
+                    "https://api.twitch.tv/helix/streams",
+                    headers=self._helix_headers,
+                    params={"user_id": self.broadcaster_id},
+                    timeout=5
+                ),
             )
-            
+
             # Если запрос успешен
             if response.status_code == 200:
                 data = response.json()
                 stream_info = data.get("data", [])
                 # Если есть данные, значит стрим идёт
                 is_live = len(stream_info) > 0
-                
+
                 if is_live:
                     self.stream_start_time = stream_info[0].get("started_at")
                 else:
@@ -1114,15 +1226,13 @@ class TwitchBot(commands.Bot):
                 if is_live != self.is_live:
                     status_msg = "LIVE" if is_live else "OFFLINE"
                     print(f"Stream status changed to: {status_msg}")
-                    
-                    # Убрали отправку сообщения в чат при начале стрима
-                    
+
                 return is_live
             else:
                 print(f"Error checking stream status: API returned {response.status_code}")
                 # В случае ошибки API сохраняем текущий статус
                 return self.is_live
-                
+
         except Exception as e:
             print(f"Error checking stream status: {e}")
             # В случае ошибки сохраняем текущий статус

@@ -120,6 +120,17 @@ def make_config_manager(tmpdir, audio_categories=None, sound_dir=None):
         "audio_categories": audio_categories if audio_categories is not None else {},
         "sound": {"volume": 1.0, "sound_dir": sound_dir if sound_dir is not None else tmpdir},
     }
+    # Simulate a real restart: the bot's persisted queue must survive the
+    # config rewrite (queue_persistence is written by the bot, not the UI).
+    existing = os.path.join(tmpdir, "config.json")
+    if os.path.exists(existing):
+        try:
+            with open(existing, "r", encoding="utf-8") as f:
+                old = json.load(f)
+            if "queue_persistence" in old:
+                cfg["queue_persistence"] = old["queue_persistence"]
+        except Exception:
+            pass
     with open(os.path.join(tmpdir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(cfg, f)
 

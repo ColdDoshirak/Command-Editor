@@ -477,10 +477,16 @@ class ConfigManager:
         self.save_config()
 
     def get_group_volume(self, group: str) -> float:
-        """Get volume for a specific group from audio categories configuration"""
+        """Get volume for a specific group from audio categories configuration.
+
+        B6: default is 0, NOT 0.5. A value of 0 means "use the command's own
+        Volume column". The old 0.5 default silently overrode every queued
+        command's Volume with 50%, so the Volume column was ignored in the
+        queue path (while the non-queued path respected it).
+        """
         group_key = group.upper()
         categories = self.config.get('audio_categories', {})
-        return categories.get(group_key, {}).get('volume', 0.5)
+        return categories.get(group_key, {}).get('volume', 0)
 
     # ------------------------------------------------------------------
     # Optional queue persistence (opt-in per group via 'persist_queue')
@@ -491,19 +497,40 @@ class ConfigManager:
         return [g for g, v in cats.items() if isinstance(v, dict) and v.get('persist_queue', False)]
 
     def load_persisted_queue(self, group: str) -> list:
-        """Load persisted queue items for a group. Returns list of (author, content, cmd_dict)."""
+        """Load persisted queue items for a group.
+
+        Returns list of (author, content, cmd_dict, already_deducted).
+        B8: already_deducted is True for items persisted by the bot (they
+        were charged at enqueue time). Old 3-field entries default to True
+        as well — they were written by a version that also charged at
+        enqueue, so re-charging them would be a double charge.
+        """
         data = self.config.get('queue_persistence', {})
         items = data.get(group.upper(), [])
-        return items
+        out = []
+        for it in items:
+            out.append((
+                it.get('author', ''),
+                it.get('content', ''),
+                it.get('cmd', {}),
+                bool(it.get('already_deducted', True)),
+            ))
+        return out
 
     def save_persisted_queue(self, group: str, items: list) -> None:
-        """Persist queue items for a group. items: list of (author, content, cmd_dict)."""
+        """Persist queue items for a group.
+
+        items: list of (author, content, cmd_dict) or
+        (author, content, cmd_dict, already_deducted).
+        """
         if 'queue_persistence' not in self.config:
             self.config['queue_persistence'] = {}
         group_key = group.upper()
         if items:
             self.config['queue_persistence'][group_key] = [
-                {'author': a, 'content': c, 'cmd': cmd} for (a, c, cmd) in items
+                {'author': a, 'content': c, 'cmd': cmd,
+                 'already_deducted': bool(ded)}
+                for (a, c, cmd, *ded) in items
             ]
         else:
             self.config['queue_persistence'].pop(group_key, None)
