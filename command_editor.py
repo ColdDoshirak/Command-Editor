@@ -26,6 +26,7 @@ from user_currency_tab import UserCurrencyTab
 from ranks_tab import RanksTab
 from sys_commands_tab import SysCommandsTab  # Import the new system commands tab
 from group_settings_tab import GroupSettingsTab  # Import the new group settings tab
+from queue_control_tab import QueueControlTab  # Live queue management tab
 from currency_manager import CurrencyManager
 from PyQt5 import sip  # правильный импорт
 from PyQt5.QtCore import QMetaType
@@ -438,6 +439,10 @@ class CommandEditor(QMainWindow):
         # Add Group Settings tab
         self.group_settings_tab = GroupSettingsTab(parent=self)
         self.tab_widget.addTab(self.group_settings_tab, "Group Settings")
+
+        # Add Queue Control tab (live queue management)
+        self.queue_control_tab = QueueControlTab(parent=self)
+        self.tab_widget.addTab(self.queue_control_tab, "Queue Control")
 
         self.about_tab = AboutTab(parent=self)
         self.tab_widget.addTab(self.about_tab, "About")

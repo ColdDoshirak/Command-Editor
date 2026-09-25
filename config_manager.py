@@ -23,7 +23,19 @@ class ConfigManager:
         self.commands_file = self.program_dir / 'commands.json'
         self.moderators_file = self.program_dir / 'moderators.json'  # Отдельный файл для модераторов
         self.backup_dir = self.program_dir / 'backups'
-        
+
+        # B4: одна блокировка на все мутации self.config + запись в файл.
+        # Конфиг пишут два потока: UI (тумблеры/спинбоксы) и бот (!volume,
+        # save_persisted_queue). Без лока переплетённые json.dump портили
+        # config.json. RLock: set_* методы сами вызывают save_config.
+        # ВАЖНО: создаётся ДО load_config() — при первом запуске load_config
+        # сам вызывает save_config, и без лока падает с AttributeError.
+        self._lock = threading.RLock()
+        # B4: бэкап конфига не при каждом сохранении, а не чаще раза в минуту
+        # (раньше каждый тумблер = новая копия config_*.json).
+        self._last_config_backup = 0.0
+        self._config_backup_interval = 60.0
+
         # Default configuration
         self.default_config = {
             'format_version': '2.0',
@@ -59,20 +71,16 @@ class ConfigManager:
         self.config = self.load_config()
         
         # Load Twitch config (отдельный вызов)
+        # Инициализируем значениями по умолчанию ДО load_*: при первом
+        # запуске load_twitch_config сам вызывает save_twitch_config_file,
+        # а load_moderators_config читает self.twitch_config — без
+        # предзаполненных атрибутов оба падают с AttributeError.
+        self.twitch_config = self.default_twitch.copy()
+        self.moderators_config = self.default_moderators.copy()
         self.twitch_config = self.load_twitch_config()
         
         # Load moderators config (отдельный вызов)
         self.moderators_config = self.load_moderators_config()
-        
-        # B4: одна блокировка на все мутации self.config + запись в файл.
-        # Конфиг пишут два потока: UI (тумблеры/спинбоксы) и бот (!volume,
-        # save_persisted_queue). Без лока переплетённые json.dump портили
-        # config.json. RLock: set_* методы сами вызывают save_config.
-        self._lock = threading.RLock()
-        # B4: бэкап конфига не при каждом сохранении, а не чаще раза в минуту
-        # (раньше каждый тумблер = новая копия config_*.json).
-        self._last_config_backup = 0.0
-        self._config_backup_interval = 60.0
         
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from file"""

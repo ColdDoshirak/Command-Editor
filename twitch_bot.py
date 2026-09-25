@@ -169,6 +169,10 @@ class TwitchBot(commands.Bot):
             self.queue_workers = {}   # {group_name: asyncio.Task}
             self.queue_processing = {} # {group_name: bool}
             self.queue_semaphores = {}  # {group_name: asyncio.Semaphore} для ограничения размера очереди
+            # Queue Control tab: группы, на которых пауза (set) + флаг skip
+            self.queue_paused = set()
+            self.queue_skip_requested = set()
+            self._queue_reorder_lock = None  # asyncio.Lock, лениво в loop
 
             # Stream status
             self.is_live = False
@@ -379,10 +383,30 @@ class TwitchBot(commands.Bot):
         semaphore = self.queue_semaphores.get(group)
         try:
             while self.queue_processing.get(group, False):
+                # Queue Control tab: пауза — worker ждёт, не вытаскивая из очереди
+                if group in self.queue_paused:
+                    await asyncio.sleep(0.2)
+                    continue
                 try:
                     # Wait for next command in queue
                     queue_item = await self.command_queues[group].get()
+                    # Пауза наступила, пока ждали get(): возвращаем элемент
+                    # в очередь и не выполняем (иначе «пауза» всё равно
+                    # отработала бы уже вынутый элемент).
+                    if group in self.queue_paused:
+                        self.command_queues[group].put_nowait(queue_item)
+                        continue
                     message, cmd_data = queue_item
+                    # Skip Current: если на группу запрошен skip — пропускаем
+                    # текущий элемент без выполнения (permit всё равно отдаём).
+                    if group in self.queue_skip_requested:
+                        self.queue_skip_requested.discard(group)
+                        print(f"Queue: skipping current item for group {group}")
+                        self.command_queues[group].task_done()
+                        if semaphore is not None:
+                            semaphore.release()
+                        self._persist_queue_snapshot(group)
+                        continue
                     # B9: permit уже занят (event_message сделал acquire до
                     # put). Отметка нужна, чтобы освободить его при отмене
                     # ВО ВРЕМЯ обработки — раньше CancelledError пролетал
@@ -418,6 +442,66 @@ class TwitchBot(commands.Bot):
             print(f"Queue worker for {group} cancelled")
         finally:
             print(f"Queue worker for {group} stopped")
+
+    # ------------------------------------------------------------------
+    # Queue Control tab: синхронные хелперы, вызываемые из UI-потока через
+    # loop.call_soon_threadsafe. Выполняются В loop бота, т.е. атомарно
+    # относительно worker'а (event loop однопоточный).
+    # ------------------------------------------------------------------
+    def _ui_skip_next(self, group):
+        """Запросить пропуск ТЕКУЩЕГО элемента очереди группы."""
+        if group in self.command_queues:
+            self.queue_skip_requested.add(group)
+
+    def _ui_clear_queue(self, group):
+        """Очистить очередь группы. Освобождаем permits для каждого
+        удалённого элемента (permit занят с момента enqueue)."""
+        q = self.command_queues.get(group)
+        if q is None:
+            return
+        semaphore = self.queue_semaphores.get(group)
+        removed = 0
+        while True:
+            try:
+                q.get_nowait()
+            except Exception:
+                break
+            removed += 1
+            if semaphore is not None:
+                semaphore.release()
+        print(f"Queue Control: cleared {removed} items from group {group}")
+        self._persist_queue_snapshot(group)
+
+    def _ui_reorder_queue(self, group, order):
+        """Переупорядочить очередь группы по списку имён команд (без '!').
+        Лишние/неизвестные элементы дописываются в конец."""
+        q = self.command_queues.get(group)
+        if q is None:
+            return
+        items = []
+        while True:
+            try:
+                items.append(q.get_nowait())
+            except Exception:
+                break
+        # lookup: имя команды (без '!') -> список элементов
+        by_name = {}
+        for it in items:
+            name = str(it[1].get('Command', '')).lstrip('!')
+            by_name.setdefault(name, []).append(it)
+        new_items = []
+        for name in order:
+            name = str(name).lstrip('!')
+            bucket = by_name.get(name)
+            if bucket:
+                new_items.append(bucket.pop(0))
+        # неизвестные/лишние — в конец
+        for bucket in by_name.values():
+            new_items.extend(bucket)
+        for it in new_items:
+            q.put_nowait(it)
+        print(f"Queue Control: reordered {len(new_items)} items in group {group}")
+        self._persist_queue_snapshot(group)
 
     async def execute_queued_command(self, message, cmd):
         """Execute a single command from the queue and wait for completion if it has sound"""
