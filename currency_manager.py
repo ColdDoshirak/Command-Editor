@@ -70,7 +70,7 @@ class CurrencyManager:
         # Загружаем данные
         self.load_data()
 
-        self.users_lock = threading.Lock()  # Блокировка для безопасности потоков
+        self.users_lock = threading.RLock()  # Реентерабельный: add_points держит лок и вызывает save_users через check_rank_promotion
 
         # Initialize data integrity tracking
         self.data_checksum = None
@@ -217,15 +217,22 @@ class CurrencyManager:
         # Проверяем флаг отложенного сохранения
         if not force and not self._save_pending:
             return True
-            
+
         try:
             # Убедимся, что директория существует
             os.makedirs(os.path.dirname(str(self.users_file)), exist_ok=True)
-            
+
+            # Снимаем снапшот словаря ПОД лок, чтобы параллельные мутации
+            # (pay_for_command / add_points) не дали рваный/промежуточный
+            # словарь во время json.dump. Без этого два потока (бот + UI)
+            # могли записать файл вразнобой и потерять баллы.
+            with self.users_lock:
+                snapshot = json.dumps(self.users, indent=4, ensure_ascii=False)
+
             with open(self.users_file, 'w', encoding='utf-8') as f:
-                json.dump(self.users, f, indent=4, ensure_ascii=False)
+                f.write(snapshot)
             print(f"Пользователи сохранены в {self.users_file}")
-            
+
             # Сбрасываем флаг отложенного сохранения
             self._save_pending = False
             return True
@@ -234,7 +241,7 @@ class CurrencyManager:
             import traceback
             traceback.print_exc()
             return False
-    
+
     # Метод для совместимости с currency_file
     def save_currency_users(self, force=False):
         """Alias для save_users() для совместимости"""
@@ -336,11 +343,12 @@ class CurrencyManager:
         if not hasattr(self, 'users') or self.users is None:
             self.users = {}
             
-        self.users[username] = {
-            'points': points,
-            'hours': hours,
-            'last_seen': time.time()
-        }
+        with self.users_lock:
+            self.users[username] = {
+                'points': points,
+                'hours': hours,
+                'last_seen': time.time()
+            }
         
         # Save changes
         self.save_users(force=True)
@@ -352,17 +360,18 @@ class CurrencyManager:
         if not hasattr(self, 'users') or self.users is None:
             self.users = {}
             
-        if username not in self.users:
-            return False
-            
-        if points is not None:
-            self.users[username]['points'] = points
-            
-        if hours is not None:
-            self.users[username]['hours'] = hours
-            
-        # Update last seen timestamp
-        self.users[username]['last_seen'] = time.time()
+        with self.users_lock:
+            if username not in self.users:
+                return False
+                
+            if points is not None:
+                self.users[username]['points'] = points
+                
+            if hours is not None:
+                self.users[username]['hours'] = hours
+                
+            # Update last seen timestamp
+            self.users[username]['last_seen'] = time.time()
         
         # Save changes
         self.save_users(force=True)
@@ -375,14 +384,15 @@ class CurrencyManager:
         if not hasattr(self, 'users') or self.users is None:
             return False
             
-        if username in self.users:
-            del self.users[username]
-            
-            # Save changes
-            self.save_users(force=True)
-            return True
-            
-        return False
+        with self.users_lock:
+            if username in self.users:
+                del self.users[username]
+            else:
+                return False
+        
+        # Save changes
+        self.save_users(force=True)
+        return True
     
     def add_points(self, username, amount):
         """Add points to a user"""
@@ -434,14 +444,15 @@ class CurrencyManager:
     def set_points(self, username, amount):
         """Set points for a user to a specific amount"""
         username = username.lower()
-        if username not in self.users:
-            self.users[username] = {
-                'points': 0,
-                'hours': 0,
-                'last_seen': time.time()
-            }
-        self.users[username]['points'] = amount
-        self.users[username]['last_seen'] = time.time()
+        with self.users_lock:
+            if username not in self.users:
+                self.users[username] = {
+                    'points': 0,
+                    'hours': 0,
+                    'last_seen': time.time()
+                }
+            self.users[username]['points'] = amount
+            self.users[username]['last_seen'] = time.time()
         self.save_users(force=True)
     
     def remove_points(self, username, amount):
@@ -480,12 +491,17 @@ class CurrencyManager:
     
     def add_hours(self, username, hours):
         """Добавить часы пользователю"""
-        if username not in self.users:
-            self.add_user(username)
-        
-        self.users[username]['hours'] += hours
-        if self.settings.get('rank_type') == 'Hours':
-            self.check_rank_promotion(username)
+        username = username.lower()
+        with self.users_lock:
+            if username not in self.users:
+                self.users[username] = {
+                    'points': 0,
+                    'hours': 0,
+                    'last_seen': time.time()
+                }
+            self.users[username]['hours'] += hours
+            if self.settings.get('rank_type') == 'Hours':
+                self.check_rank_promotion(username)
         self.save_users(force=True)
         return True
     
@@ -614,17 +630,18 @@ class CurrencyManager:
         """Массовое обновление очков для пользователей"""
         updated_count = 0
         
-        for username, data in self.users.items():
-            if filter_func is None or filter_func(username, data):
-                if action == "add":
-                    data['points'] += amount
-                elif action == "set":
-                    data['points'] = amount
-                elif action == "reset":
-                    data['points'] = 0
-                
-                updated_count += 1
-                self.check_rank_promotion(username)
+        with self.users_lock:
+            for username, data in list(self.users.items()):
+                if filter_func is None or filter_func(username, data):
+                    if action == "add":
+                        data['points'] += amount
+                    elif action == "set":
+                        data['points'] = amount
+                    elif action == "reset":
+                        data['points'] = 0
+                    
+                    updated_count += 1
+                    self.check_rank_promotion(username)
         
         if updated_count > 0:
             self.save_users(force=True)
@@ -643,16 +660,29 @@ class CurrencyManager:
         """Снять плату за команду с пользователя"""
         if cost <= 0:
             return True
-        
-        if username not in self.users:
-            self.add_user(username)
-        
-        if self.users[username]['points'] >= cost:
-            self.users[username]['points'] -= cost
-            self.save_users(force=True)
-            return True
-        
-        return False
+
+        # Чтение-проверка-списание выполняем АТОМАРНО под users_lock.
+        # Раньше это делалось без лока, а add_points (UI-поток) — с локом:
+        # read-modify-write из бот-потока пересекался с начислением из UI и
+        # терял обновления (потеря баллов).
+        with self.users_lock:
+            if username not in self.users:
+                self.users[username] = {
+                    'points': 0,
+                    'hours': 0,
+                    'last_seen': time.time()
+                }
+
+            if self.users[username]['points'] >= cost:
+                self.users[username]['points'] = self._format_points(
+                    self.users[username]['points'] - cost
+                )
+                # Сохраняем сразу (RLock реентерабелен — вызов под лок безопасен),
+                # чтобы списание не зависело от того, вызовет ли бот save_users.
+                self.save_users(force=True)
+                return True
+
+            return False
     
     def update_last_seen(self, username):
         """Update last_seen timestamp for a user without adding points"""
@@ -662,13 +692,15 @@ class CurrencyManager:
         if not hasattr(self, 'users') or self.users is None:
             self.users = self.get_all_users()
         
-        if username not in self.users:            self.users[username] = {
-                'points': 0,
-                'hours': 0,
-                'last_seen': time.time()
-            }
-        else:
-            self.users[username]['last_seen'] = time.time()
+        with self.users_lock:
+            if username not in self.users:
+                self.users[username] = {
+                    'points': 0,
+                    'hours': 0,
+                    'last_seen': time.time()
+                }
+            else:
+                self.users[username]['last_seen'] = time.time()
     
     def get_all_users(self):
         """Метод для совместимости с обращениями к get_all_users"""
@@ -859,24 +891,26 @@ class CurrencyManager:
     def get_points(self, username):
         """Получить количество поинтов пользователя"""
         username = username.lower()
-        if username not in self.users:
-            self.users[username] = {
-                'points': 0,
-                'hours': 0,
-                'last_seen': time.time()
-            }
-        return self.users[username]['points']
+        with self.users_lock:
+            if username not in self.users:
+                self.users[username] = {
+                    'points': 0,
+                    'hours': 0,
+                    'last_seen': time.time()
+                }
+            return self.users[username]['points']
         
     def get_hours(self, username):
         """Получить количество часов пользователя"""
         username = username.lower()
-        if username not in self.users:
-            self.users[username] = {
-                'points': 0,
-                'hours': 0,
-                'last_seen': time.time()
-            }
-        return self.users[username].get('hours', 0)
+        with self.users_lock:
+            if username not in self.users:
+                self.users[username] = {
+                    'points': 0,
+                    'hours': 0,
+                    'last_seen': time.time()
+                }
+            return self.users[username].get('hours', 0)
         
     def get_rank(self, username):
         """Получить ранг пользователя"""
