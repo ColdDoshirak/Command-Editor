@@ -402,7 +402,9 @@ class TwitchBot(commands.Bot):
                     if group in self.queue_skip_requested:
                         self.queue_skip_requested.discard(group)
                         print(f"Queue: skipping current item for group {group}")
-                        self.command_queues[group].task_done()
+                        # NOTE: task_done() НЕ вызываем — элемент уже отмечен
+                        # done в finally предыдущей итерации (или при get()).
+                        # Повторный task_done() рвёт unfinished_tasks.
                         if semaphore is not None:
                             semaphore.release()
                         self._persist_queue_snapshot(group)
@@ -411,6 +413,10 @@ class TwitchBot(commands.Bot):
                     # put). Отметка нужна, чтобы освободить его при отмене
                     # ВО ВРЕМЯ обработки — раньше CancelledError пролетал
                     # мимо finally и permit зависал навсегда.
+                    # Инициализируем ДО try: если CancelledError придёт в
+                    # get() (выше), except-ветка ниже прочитает acquired —
+                    # без инициализации это UnboundLocalError и смерть воркера.
+                    acquired = False
                     acquired = True
 
                     try:
@@ -452,6 +458,45 @@ class TwitchBot(commands.Bot):
         """Запросить пропуск ТЕКУЩЕГО элемента очереди группы."""
         if group in self.command_queues:
             self.queue_skip_requested.add(group)
+
+    def remove_from_queue_by_name(self, group, name):
+        """Убрать из очереди группы конкретную команду по имени (без «!»),
+        регистронезависимо. Освобождает permit семафора и останавливает
+        звук группы, если играет. Вызывается из UI-потока через
+        loop.call_soon_threadsafe (атомарно относительно воркера).
+        Возвращает True, если элемент найден и удалён."""
+        q = self.command_queues.get(group)
+        if q is None or not name:
+            return False
+        target = str(name).lstrip('!').strip().lower()
+        # asyncio.Queue не имеет remove() — работаем с внутренним deque
+        # напрямую (то же, что снапшоты и _ui_clear_queue).
+        for item in list(q._queue):
+            cmd = item[1] if len(item) > 1 else {}
+            if str(cmd.get('Command', '')).lstrip('!').strip().lower() == target:
+                q._queue.remove(item)
+                sem = self.queue_semaphores.get(group)
+                if sem is not None:
+                    sem.release()
+                self._stop_group_sound(group)
+                self._persist_queue_snapshot(group)
+                return True
+        return False
+
+    def _stop_group_sound(self, group):
+        """Остановить звук группы (dedicated-канал или общий 0)."""
+        try:
+            categories = self.config_manager.get_audio_categories()
+            cat = categories.get(group, {})
+            channel_id = cat.get('audio_channel', 0)
+            if channel_id and channel_id > 0:
+                ch = pygame.mixer.Channel(channel_id)
+                if ch.get_busy():
+                    ch.stop()
+            elif self.sound_channel is not None and self.sound_channel.get_busy():
+                self.sound_channel.stop()
+        except Exception as e:
+            print(f"Error stopping group sound for {group}: {e}")
 
     def _ui_clear_queue(self, group):
         """Очистить очередь группы. Освобождаем permits для каждого
@@ -2128,38 +2173,46 @@ class TwitchBot(commands.Bot):
              await message.channel.send(f"@{username}: You don't have permission to use this command.")
              return
 
-        # !skip [group] (stops sound effectively)
+        # !skip [name] — по имени команды убрать её из очереди (и остановить
+        # звук группы, если играет); без аргумента — остановить текущий звук.
         if cmd_key == "skip":
-            # If a group is specified, stop that group's assigned channel
-            target_group = args[1].upper() if len(args) > 1 else None
-            
-            if target_group:
-                 categories = self.config_manager.get_audio_categories()
-                 
-                 # Check if this group exists in config
-                 if target_group in categories or any(cmd.get("Group") == target_group for cmd in getattr(self, "_commands_list", [])):
-                     channel_id = categories.get(target_group, {}).get("audio_channel", 0)
-                     
-                     if channel_id > 0:
-                         # Dedicated channel
-                         target_chan = pygame.mixer.Channel(channel_id)
-                         if target_chan.get_busy():
-                             target_chan.stop()
-                             await message.channel.send(f"@{username}: Skipped sound for group '{target_group}' (Channel {channel_id}).")
-                         else:
-                             await message.channel.send(f"@{username}: No sound playing on channel {channel_id} (group '{target_group}').")
-                     else:
-                         # Shared channel (0)
-                         if self.sound_channel.get_busy():
-                             self.sound_channel.stop()
-                             await message.channel.send(f"@{username}: Skipped sound on main channel (for group '{target_group}').")
-                         else:
-                             await message.channel.send(f"@{username}: No sound playing on main channel.")
-                 else:
-                      await message.channel.send(f"@{username}: Group '{target_group}' not found.")
+            def _find_group(name):
+                for g in self.command_queues:
+                    if g.upper() == name.upper():
+                        return g
+                return None
+
+            if len(args) > 1:
+                target_name = args[1]
+                # Ищем группу, в очереди которой есть такая команда
+                target_group = None
+                for g in self.command_queues:
+                    q = self.command_queues[g]
+                    for item in list(q._queue):
+                        cmd = item[1] if len(item) > 1 else {}
+                        if str(cmd.get('Command', '')).lstrip('!').strip().lower() == target_name.lstrip('!').strip().lower():
+                            target_group = g
+                            break
+                    if target_group:
+                        break
+                if target_group is None:
+                    # Команда не в очередях — попробуем трактовать как группу
+                    target_group = _find_group(target_name)
+                    if target_group is None:
+                        await message.channel.send(f"@{username}: '{target_name}' not found in any queue.")
+                        return
+                    # Это группа: останавливаем её звук
+                    self._stop_group_sound(target_group)
+                    await message.channel.send(f"@{username}: Stopped sound for group '{target_group}'.")
+                    return
+                removed = self.remove_from_queue_by_name(target_group, target_name)
+                if removed:
+                    await message.channel.send(f"@{username}: Removed '!{target_name.lstrip('!')}' from queue '{target_group}'.")
+                else:
+                    await message.channel.send(f"@{username}: '!{target_name.lstrip('!')}' not found in queue '{target_group}'.")
             else:
-                # No group specified = stop only the current sound on main channel
-                if self.sound_channel.get_busy():
+                # Без аргумента — остановить текущий звук на основном канале
+                if self.sound_channel is not None and self.sound_channel.get_busy():
                     self.sound_channel.stop()
                     await message.channel.send(f"@{username}: Skipped current sound.")
                 else:
