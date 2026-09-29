@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
                            QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
                            QFileDialog, QMessageBox, QSlider, QGroupBox, QTabWidget,
-                           QDialog, QHeaderView, QMenu, QScrollArea, QTextEdit)
+                           QDialog, QHeaderView, QMenu, QScrollArea, QTextEdit, QFrame)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
 import PyQt5.QtCore as QtCore
 from PyQt5.QtGui import QPixmap, QFont, QTextCursor  # Add QTextCursor here
@@ -147,6 +147,8 @@ class CommandEditor(QMainWindow):
         self.themed_commands_view = None
         self.themed_twitch_view = None
         self.themed_tab_views = {}
+        self.settings_tab = None  # permanent Settings tab (auto-save + sound)
+        self._settings_tab_in_bar = False
         
         # Load settings BEFORE creating widgets
         self.allow_sound_interruption = self.config_manager.get_sound_interruption()
@@ -422,11 +424,18 @@ class CommandEditor(QMainWindow):
 
         auto_save_group.setLayout(auto_save_layout)
         right_column.addWidget(auto_save_group)
+
+        # Permanent Settings tab: re-parents the two sound-interruption toggles and
+        # the Auto-Save group out of the classic right column into a
+        # standalone tab (visible in every theme). Same widgets, same signals
+        # — no state duplication. The volume slider stays in the classic column.
+        self._build_settings_tab(auto_save_group)
         
         # Add columns to details layout
         details_layout.addLayout(left_column)
         details_layout.addLayout(middle_column)
         details_layout.addLayout(right_column)
+        self._right_column_layout = right_column  # kept for settings re-parent
         details_group.setLayout(details_layout)
         main_layout.addWidget(details_group)
         
@@ -480,6 +489,11 @@ class CommandEditor(QMainWindow):
         # Create comprehensive backup tab
         self.backup_tab = self.create_comprehensive_backup_tab()
         self.tab_widget.addTab(self.backup_tab, "Backups")
+
+        # Settings tab: permanent in every theme (classic, sidebar, spreadsheet).
+        # Always the last tab so its index is stable at 11 for the sidebar nav.
+        self.tab_widget.addTab(self.settings_tab, "Settings")
+        self.settings_tab.setVisible(True)
         
         # Load saved commands and configuration
         self.load_saved_data()
@@ -2606,6 +2620,76 @@ class CommandEditor(QMainWindow):
     # ------------------------------------------------------------------
     # Theme switching
     # ------------------------------------------------------------------
+    def _build_settings_tab(self, auto_save_group):
+        """Create the permanent Settings tab.
+
+        It re-parents the classic right-column widgets (the two
+        sound-interruption toggles and the Auto-Save group) into a standalone
+        tab so the settings are reachable in every theme (classic, sidebar,
+        spreadsheet). The widgets are the SAME instances, so signals and state
+        are shared and nothing is duplicated. The volume slider stays in the
+        classic Commands column (it is not part of the Settings tab).
+        """
+        tab = QWidget()
+        tab.setObjectName("settingsTab")
+        outer = QVBoxLayout(tab)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        container = QWidget()
+        v = QVBoxLayout(container)
+        v.setContentsMargins(28, 24, 28, 24)
+        v.setSpacing(18)
+
+        # Sound card
+        sound_card = QGroupBox("Sound")
+        sv = QVBoxLayout(sound_card)
+        sv.setContentsMargins(16, 18, 16, 14)
+        sv.setSpacing(10)
+        v.addWidget(sound_card)
+
+        # Auto-Save card (the groupbox already carries its 3 rows)
+        v.addWidget(auto_save_group)
+        v.addStretch(1)
+
+        scroll.setWidget(container)
+        outer.addWidget(scroll)
+
+        self.settings_tab = tab
+        # Remember each moved widget together with the container it lives in
+        # when the tab is active, so _rebuild_settings_tab can re-parent it
+        # into the right place (not the bare tab, which would orphan it from
+        # its card's layout). The volume slider/label stay in the classic
+        # column permanently — they were never shown in themed mode.
+        self._settings_widgets = [
+            (self.allow_interruption_check, sound_card),
+            (self.show_interruption_message_check, sound_card),
+            (auto_save_group, container),
+        ]
+
+    def _rebuild_settings_tab(self):
+        """Keep the Settings tab populated in every theme.
+
+        The Settings tab is permanent (visible in classic, sidebar and
+        spreadsheet). Its widgets (the two sound-interruption toggles and the
+        Auto-Save group) always live in the tab's containers; in the classic
+        theme the Commands right column keeps only the volume slider, so the
+        settings are not duplicated.
+        """
+        if self.settings_tab is None:
+            return
+        self.settings_tab.setVisible(True)
+        self._settings_tab_in_bar = True
+        for w, cont in self._settings_widgets:
+            w.setParent(cont)
+            lay = cont.layout()
+            if lay is not None and lay.indexOf(w) < 0:
+                lay.addWidget(w)
+            w.show()
+
     def apply_theme(self, theme_name):
         """Apply a UI theme: classic (native), sidebar, or spreadsheet."""
         if theme_name not in _theme.THEMES:
@@ -2647,6 +2731,7 @@ class CommandEditor(QMainWindow):
         self._rebuild_commands_view()
         self._rebuild_twitch_view()
         self._rebuild_generic_tab_views()
+        self._rebuild_settings_tab()
 
         # Вернуть пользователя на ту вкладку, где он был (rebuild-функции
         # делают removeTab/insertTab и setCurrentIndex(0), сбивая выбор —

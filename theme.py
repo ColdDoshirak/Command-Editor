@@ -418,6 +418,18 @@ def make_icon(name, color, size=17):
         p.drawEllipse(QRectF(3.5, 3.5, s - 7, s - 7))
         p.drawPoint(QPointF(s / 2, 7))
         p.drawLine(QPointF(s / 2, 9.5), QPointF(s / 2, 13))
+    elif name == "gear":
+        # settings cog: center hub + 8 spokes
+        cx, cy = s / 2, s / 2
+        p.drawEllipse(QRectF(cx - 2.2, cy - 2.2, 4.4, 4.4))
+        import math
+        for i in range(8):
+            ang = i * math.pi / 4
+            x1 = cx + 4.2 * math.cos(ang)
+            y1 = cy + 4.2 * math.sin(ang)
+            x2 = cx + 6.3 * math.cos(ang)
+            y2 = cy + 6.3 * math.sin(ang)
+            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
     p.end()
     return QIcon(pm)
 
@@ -529,6 +541,7 @@ class SidebarNav(QFrame):
             (9, "History", "lines"),
             (10, "Backups", "shield"),
             (8, "About", "info"),
+            (11, "Settings", "gear"),
         ]),
     ]
 
