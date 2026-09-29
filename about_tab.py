@@ -284,7 +284,7 @@ class AboutTab(QWidget):
             <li>Donate: <a href="https://www.donationalerts.com/r/hotdoshirak1">https://www.donationalerts.com/r/hotdoshirak1</a></li>
         </ul>
         
-        <p>Made in 2025 with ai lol</p>
+        <p>Made in 2026 with ai lol</p>
         """
         
         text_browser.setHtml(about_text)
@@ -313,7 +313,7 @@ class AboutTab(QWidget):
         meme_layout.addWidget(meme_scroll)
         
         # Vibe check label
-        vibe_label = QLabel("Oh my god, he vibecoded an app! You bastard!")
+        vibe_label = QLabel("It's almost scary how good I am")
         vibe_label.setAlignment(Qt.AlignCenter)
         vibe_font = QFont()
         vibe_font.setPointSize(14)
@@ -498,7 +498,7 @@ class AboutTab(QWidget):
         
         <p><b>Application:</b> Twitch Bot Command Editor</p>
         <p><b>Version:</b> {self.current_version}</p>
-        <p><b>Release Date:</b> 2025-12-08</p>
+        <p><b>Release Date:</b> 2026-09-29</p>
         <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
         
