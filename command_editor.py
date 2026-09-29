@@ -31,6 +31,7 @@ from currency_manager import CurrencyManager
 from PyQt5 import sip  # правильный импорт
 from PyQt5.QtCore import QMetaType
 import webbrowser
+from app_log import setup_logging, install_print_bridge
 
 # Вместо sip.registerMetaType используем:
 QMetaType.type("QTextCursor")
@@ -130,6 +131,15 @@ class CommandEditor(QMainWindow):
         
         # Initialize config manager
         self.config_manager = ConfigManager()
+
+        # Лог работы программы: command_editor.log рядом с config.json.
+        # Перезаписывается при каждом запуске, ограничен по размеру,
+        # токены/секреты маскируются (app_log._SensitiveDataFilter).
+        try:
+            setup_logging(self.config_manager.program_dir)
+            install_print_bridge()
+        except Exception as _e:
+            print("Logging setup failed (continuing without logs): %s" % _e)
         
         # Load settings BEFORE creating widgets
         self.allow_sound_interruption = self.config_manager.get_sound_interruption()

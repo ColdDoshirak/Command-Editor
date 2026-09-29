@@ -58,6 +58,13 @@ def _draw_icon(kind, size=32, color=(60, 60, 60)):
         # крестик
         p.drawLine(QPointF(x0, y0), QPointF(x1, y1))
         p.drawLine(QPointF(x1, y0), QPointF(x0, y1))
+    elif kind == "remove":
+        # круг с минусом (удалить один элемент из очереди)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        r = (x1 - x0) / 2.0
+        p.drawEllipse(QPointF(cx, cy), r, r)
+        p.drawLine(QPointF(cx - r * 0.55, cy), QPointF(cx + r * 0.55, cy))
     elif kind == "refresh":
         # дуга со стрелкой
         p.setPen(pen)
@@ -128,6 +135,13 @@ class QueueControlTab(QWidget):
         self.clear_btn.setFixedSize(44, 44)
         self.clear_btn.clicked.connect(self.clear_queue)
         ctrl_row.addWidget(self.clear_btn)
+
+        # Remove selected: убрать выбранный в списке трек из очереди
+        self.remove_btn = QPushButton(_draw_icon("remove"), "")
+        self.remove_btn.setToolTip("Remove selected command from queue")
+        self.remove_btn.setFixedSize(44, 44)
+        self.remove_btn.clicked.connect(self.remove_selected)
+        ctrl_row.addWidget(self.remove_btn)
         ctrl_row.addStretch(1)
         layout.addLayout(ctrl_row)
 
@@ -261,6 +275,25 @@ class QueueControlTab(QWidget):
         if loop is None or loop.is_closed():
             return
         loop.call_soon_threadsafe(bot._ui_clear_queue, group)
+
+    def remove_selected(self):
+        """Убрать выбранный в списке трек из очереди (по имени команды)."""
+        bot = self._bot()
+        group = self.current_group()
+        if bot is None or not group:
+            return
+        item = self.queue_list.currentItem()
+        if item is None:
+            return
+        # "1. !cmd | by user" -> cmd
+        try:
+            name = item.text().split('. !', 1)[1].split(' | by ', 1)[0]
+        except (IndexError, ValueError):
+            return
+        loop = getattr(bot, 'loop', None)
+        if loop is None or loop.is_closed():
+            return
+        loop.call_soon_threadsafe(bot.remove_from_queue_by_name, group, name)
 
     def _on_rows_moved(self, *args):
         # rowsMoved(source, dest, count) — пересчитываем порядок после drop
