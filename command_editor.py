@@ -2613,6 +2613,11 @@ class CommandEditor(QMainWindow):
         self.theme = theme_name
         self.config_manager.set_theme(theme_name)
 
+        # Запоминаем активную вкладку: rebuild-функции ниже сбрасывают
+        # индекс (removeTab/insertTab + setCurrentIndex(0)), в конце
+        # apply_theme вернём пользователя на его вкладку.
+        current_index = self.tab_widget.currentIndex() if self.tab_widget is not None else 0
+
         app = QApplication.instance()
         if app is not None:
             if theme_name == "classic":
@@ -2642,6 +2647,16 @@ class CommandEditor(QMainWindow):
         self._rebuild_commands_view()
         self._rebuild_twitch_view()
         self._rebuild_generic_tab_views()
+
+        # Вернуть пользователя на ту вкладку, где он был (rebuild-функции
+        # делают removeTab/insertTab и setCurrentIndex(0), сбивая выбор —
+        # при смене темы из About логично остаться на About).
+        try:
+            self.tab_widget.setCurrentIndex(current_index)
+            if self.sidebar_nav is not None:
+                self.sidebar_nav.highlight_tab(current_index)
+        except Exception:
+            pass
 
     def _update_sidebar(self, theme_name):
         """Show the persistent left nav rail in the sidebar theme, hide it
