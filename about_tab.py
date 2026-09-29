@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTextBrowser, 
                           QTabWidget, QScrollArea, QGroupBox, QHBoxLayout, 
-                          QPushButton, QFrame, QMessageBox, QDialog)
+                          QPushButton, QFrame, QMessageBox, QDialog, QComboBox)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QIcon
 import datetime
@@ -238,6 +238,25 @@ class AboutTab(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
         
+        # Theme switcher (Classic / Sidebar / Spreadsheet)
+        theme_row = QHBoxLayout()
+        theme_label = QLabel("Theme:")
+        theme_label.setStyleSheet("font-weight: 600;")
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Classic (native)", "classic")
+        self.theme_combo.addItem("Sidebar (Design 1)", "sidebar")
+        self.theme_combo.addItem("Spreadsheet (Design 9)", "spreadsheet")
+        current_theme = getattr(self.parent, "theme", "classic") if self.parent is not None else "classic"
+        for i in range(self.theme_combo.count()):
+            if self.theme_combo.itemData(i) == current_theme:
+                self.theme_combo.setCurrentIndex(i)
+                break
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        theme_row.addWidget(theme_label)
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch(1)
+        layout.addLayout(theme_row)
+        
         # Create tab widget for different sections
         tab_widget = QTabWidget()
         layout.addWidget(tab_widget)
@@ -253,6 +272,12 @@ class AboutTab(QWidget):
         # Add Version Info tab
         version_widget = self.create_version_tab()
         tab_widget.addTab(version_widget, "Version Info")
+
+    def _on_theme_changed(self, index):
+        """Switch the application theme when the combo changes."""
+        theme_name = self.theme_combo.itemData(index)
+        if theme_name and self.parent is not None and hasattr(self.parent, "set_theme"):
+            self.parent.set_theme(theme_name)
     
     def create_about_me_tab(self):
         """Create the About Me section"""
