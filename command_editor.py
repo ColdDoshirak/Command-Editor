@@ -31,6 +31,7 @@ from currency_manager import CurrencyManager
 from PyQt5 import sip  # правильный импорт
 from PyQt5.QtCore import QMetaType
 import webbrowser
+import theme as _theme
 from app_log import setup_logging, install_print_bridge
 
 # Вместо sip.registerMetaType используем:
@@ -141,6 +142,12 @@ class CommandEditor(QMainWindow):
         except Exception as _e:
             print("Logging setup failed (continuing without logs): %s" % _e)
         
+        # Theme state (classic / sidebar / spreadsheet)
+        self.theme = self.config_manager.get_theme()
+        self.themed_commands_view = None
+        self.themed_twitch_view = None
+        self.themed_tab_views = {}
+        
         # Load settings BEFORE creating widgets
         self.allow_sound_interruption = self.config_manager.get_sound_interruption()
         self.show_interruption_message = self.config_manager.get_interruption_message()
@@ -165,10 +172,18 @@ class CommandEditor(QMainWindow):
         
         # Create tab widget as the main container
         self.tab_widget = QTabWidget()
-        self.setCentralWidget(self.tab_widget)
+        # Central container: optional left nav rail (sidebar theme) + tab widget
+        self._central = QWidget()
+        self._central_layout = QHBoxLayout(self._central)
+        self._central_layout.setContentsMargins(0, 0, 0, 0)
+        self._central_layout.setSpacing(0)
+        self.sidebar_nav = None
+        self._central_layout.addWidget(self.tab_widget, 1)
+        self.setCentralWidget(self._central)
         
         # Create main tab for commands
         main_tab = QWidget()
+        self.main_tab = main_tab
         main_layout = QVBoxLayout()
         
         # Search functionality
@@ -518,19 +533,10 @@ class CommandEditor(QMainWindow):
             if self.currency_auto_save_enabled:
                 self.currency_auto_backup_timer.start(self.currency_backup_interval * 1000)
         
-        # Apply global scrollbar settings
-        app = QApplication.instance()
-        if app:
-            app.setStyleSheet("""
-            QScrollBar:vertical {
-                width: 16px;
-                background: rgba(0, 0, 0, 0.1);
-            }
-            QScrollBar:horizontal {
-                height: 16px;
-                background: rgba(0, 0, 0, 0.1);
-            }
-            """)        # Словарь загруженных звуков
+        # Apply the selected UI theme (classic / sidebar / spreadsheet)
+        self.apply_theme(self.theme)
+        
+        # Словарь загруженных звуков
         self.loaded_sounds = {}
         # Один канал для всех воспроизведений
         self.sound_channel = pygame.mixer.Channel(0)
@@ -599,6 +605,7 @@ class CommandEditor(QMainWindow):
             self.table.setItem(row, 13, QTableWidgetItem(str(cmd["Volume"])))
 
         self.table.blockSignals(False)  # Разблокируем сигналы
+        self.refresh_themed_commands()
         
     def populate_table(self):
         """Populate the table with commands"""
@@ -757,6 +764,7 @@ class CommandEditor(QMainWindow):
                 
                 # Save changes
                 self.save_commands()
+                self.refresh_themed_commands()
                 
         except Exception as e:
             print(f"Error updating command: {e}")
@@ -1055,6 +1063,7 @@ class CommandEditor(QMainWindow):
                     
                     # Update UI
                     self.update_table()
+                    self.refresh_themed_commands()
                     
                     # Update commands in Twitch tab if it exists
                     if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
@@ -1108,6 +1117,7 @@ class CommandEditor(QMainWindow):
         
         # Select the new command
         self.table.selectRow(self.table.rowCount() - 1)
+        self.refresh_themed_commands()
         
         # Update Twitch bot if running
         self.update_commands()
@@ -1135,6 +1145,7 @@ class CommandEditor(QMainWindow):
             
             # Remove row from table
             self.table.removeRow(current_row)
+            self.refresh_themed_commands()
             
             # Save changes
             self.save_commands()
@@ -1384,6 +1395,10 @@ class CommandEditor(QMainWindow):
             
             # Also update the volume label text to match the current command's volume
             self.volume_value_label.setText(f"{volume_value}%")
+
+            # Keep the themed Commands view (sidebar detail) in sync
+            if self.themed_commands_view is not None and hasattr(self.themed_commands_view, "select_from_table"):
+                self.themed_commands_view.select_from_table(row)
 
     def update_command_field(self, value, column):
         """Update a specific field in the table and command data"""
@@ -1767,6 +1782,7 @@ class CommandEditor(QMainWindow):
                     
             # Hide/show the row based on match
             self.table.setRowHidden(row, not match_found)  # Fixed: not_match_found -> not match_found
+        self.refresh_themed_commands()
 
     def create_history_tab(self):
         """Create the History tab for command backups"""
@@ -2583,6 +2599,237 @@ class CommandEditor(QMainWindow):
         current_widget = self.tab_widget.widget(index)
         if hasattr(self, 'group_settings_tab') and current_widget == self.group_settings_tab:
             self.group_settings_tab.refresh_groups()
+        # Keep the sidebar theme's nav highlight in sync
+        if self.theme == "sidebar" and self.themed_commands_view is not None:
+            self.themed_commands_view.highlight_tab(index)
+
+    # ------------------------------------------------------------------
+    # Theme switching
+    # ------------------------------------------------------------------
+    def apply_theme(self, theme_name):
+        """Apply a UI theme: classic (native), sidebar, or spreadsheet."""
+        if theme_name not in _theme.THEMES:
+            theme_name = "classic"
+        self.theme = theme_name
+        self.config_manager.set_theme(theme_name)
+
+        app = QApplication.instance()
+        if app is not None:
+            if theme_name == "classic":
+                app.setStyleSheet(_theme.qss_for("classic", {}))
+            else:
+                app.setStyleSheet(_theme.qss_for(theme_name, _theme.PALETTES[theme_name]))
+
+        # In the sidebar theme the left nav IS the navigation — hide the
+        # top tab bar so it doesn't duplicate it (content stays visible).
+        try:
+            self.tab_widget.tabBar().setVisible(theme_name != "sidebar")
+        except Exception:
+            pass
+
+        self._update_sidebar(theme_name)
+
+        # Fit all 11 tabs into the bar (avoid clipped labels)
+        try:
+            self.tab_widget.setUsesScrollButtons(True)
+            if theme_name != "classic":
+                self.tab_widget.tabBar().setElideMode(Qt.ElideRight)
+            else:
+                self.tab_widget.tabBar().setElideMode(Qt.ElideNone)
+        except Exception:
+            pass
+
+        self._rebuild_commands_view()
+        self._rebuild_twitch_view()
+        self._rebuild_generic_tab_views()
+
+    def _update_sidebar(self, theme_name):
+        """Show the persistent left nav rail in the sidebar theme, hide it
+        otherwise. The rail is a sibling of the tab widget in the central
+        container, so it stays visible on every tab."""
+        if theme_name == "sidebar":
+            if self.sidebar_nav is None:
+                self.sidebar_nav = _theme.SidebarNav(
+                    self, self.tab_widget, _theme.PALETTES["sidebar"])
+                self._central_layout.insertWidget(0, self.sidebar_nav, 0)
+            self.sidebar_nav.show()
+            self.sidebar_nav.highlight_tab(self.tab_widget.currentIndex())
+        else:
+            if self.sidebar_nav is not None:
+                self.sidebar_nav.hide()
+
+    def set_theme(self, theme_name):
+        """Public entry point for the theme switcher (About tab)."""
+        self.apply_theme(theme_name)
+
+    def _make_commands_view(self):
+        """Build the themed Commands view for the current theme."""
+        if self.theme == "sidebar":
+            return _theme.SidebarCommandsView(
+                self, self.main_tab, self.table, self.commands,
+                self.search_input,
+                on_add=self.add_command, on_remove=self.delete_command,
+                on_load=self.load_file, on_save=self.save_file,
+            )
+        return _theme.SpreadsheetCommandsView(
+            self, self.main_tab, self.table, self.commands,
+            self.search_input,
+            on_add=self.add_command, on_remove=self.delete_command,
+            on_load=self.load_file, on_save=self.save_file,
+        )
+
+    def _rebuild_commands_view(self):
+        """Swap the Commands tab content between classic and themed views."""
+        tab_widget = self.tab_widget
+        if tab_widget is None:
+            return
+        # The classic Commands tab is always index 0
+        cmd_idx = 0
+
+        if self.theme == "classic":
+            # Restore the original classic Commands tab if it was replaced
+            if self.themed_commands_view is not None:
+                idx = tab_widget.indexOf(self.themed_commands_view)
+                if idx >= 0:
+                    tab_widget.removeTab(idx)
+                self.themed_commands_view.setParent(None)
+                self.themed_commands_view.deleteLater()
+                self.themed_commands_view = None
+            # main_tab was unparented when a theme was applied; restore it
+            if tab_widget.indexOf(self.main_tab) < 0:
+                tab_widget.insertTab(0, self.main_tab, "Commands")
+            return
+
+        # (Re)create the themed view, destroying any previous one
+        first_apply = tab_widget.widget(cmd_idx) is self.main_tab
+        if self.themed_commands_view is not None:
+            idx = tab_widget.indexOf(self.themed_commands_view)
+            if idx >= 0:
+                tab_widget.removeTab(idx)
+            self.themed_commands_view.setParent(None)
+            self.themed_commands_view.deleteLater()
+            self.themed_commands_view = None
+        self.themed_commands_view = self._make_commands_view()
+        # Insert the themed view at the Commands position
+        if first_apply:
+            # Classic tab still occupies index 0: remove it, insert themed view
+            tab_widget.removeTab(cmd_idx)
+            tab_widget.insertTab(cmd_idx, self.themed_commands_view, "Commands")
+        else:
+            # A themed view already occupied index 0 (now shifted): insert at 0
+            tab_widget.insertTab(cmd_idx, self.themed_commands_view, "Commands")
+        tab_widget.setCurrentIndex(cmd_idx)
+        self.themed_commands_view.highlight_tab(cmd_idx)
+
+    def refresh_themed_commands(self):
+        """Refresh the themed Commands view after the data changed."""
+        if self.themed_commands_view is not None:
+            self.themed_commands_view.refresh()
+
+    def _make_twitch_view(self):
+        """Build the themed Twitch view for the current theme."""
+        if self.theme == "sidebar":
+            return _theme.SidebarTwitchView(self, self.tab_widget, self.twitch_tab)
+        return _theme.SpreadsheetTwitchView(self, self.tab_widget, self.twitch_tab)
+
+    def _rebuild_twitch_view(self):
+        """Swap the Twitch tab content between classic and themed views.
+
+        The themed view re-parents the original TwitchTab widgets into a new
+        layout; switching back to classic restores the original layout via
+        TwitchTab.restore_classic_layout().
+        """
+        tab_widget = self.tab_widget
+        if tab_widget is None or not hasattr(self, "twitch_tab"):
+            return
+        tw_idx = tab_widget.indexOf(self.twitch_tab)
+        if tw_idx < 0:
+            tw_idx = 2  # Twitch is the 3rd tab (0-indexed)
+
+        if self.theme == "classic":
+            if self.themed_twitch_view is not None:
+                idx = tab_widget.indexOf(self.themed_twitch_view)
+                if idx >= 0:
+                    tab_widget.removeTab(idx)
+                self.themed_twitch_view.setParent(None)
+                self.themed_twitch_view.deleteLater()
+                self.themed_twitch_view = None
+            if tab_widget.indexOf(self.twitch_tab) < 0:
+                self.twitch_tab.restore_classic_layout()
+                tab_widget.insertTab(tw_idx, self.twitch_tab, "Twitch")
+            return
+
+        # (Re)create the themed view, destroying any previous one
+        first_apply = tab_widget.widget(tw_idx) is self.twitch_tab
+        if self.themed_twitch_view is not None:
+            idx = tab_widget.indexOf(self.themed_twitch_view)
+            if idx >= 0:
+                tab_widget.removeTab(idx)
+            self.themed_twitch_view.setParent(None)
+            self.themed_twitch_view.deleteLater()
+            self.themed_twitch_view = None
+        self.themed_twitch_view = self._make_twitch_view()
+        if first_apply:
+            tab_widget.removeTab(tw_idx)
+            tab_widget.insertTab(tw_idx, self.themed_twitch_view, "Twitch")
+        else:
+            tab_widget.insertTab(tw_idx, self.themed_twitch_view, "Twitch")
+        tab_widget.setCurrentIndex(tw_idx)
+        self.themed_twitch_view.highlight_tab(tw_idx)
+
+    # Tabs (besides Commands and Twitch) that get the generic themed frame.
+    # name -> (attribute, title, subtitle, canonical_index)
+    _GENERIC_TABS = {
+        "Sys.Commands": ("sys_commands_tab", "Sys.Commands", "system commands", 1),
+        "Currency Settings": ("currency_tab", "Currency Settings", "economy", 3),
+        "Currency Users": ("user_currency_tab", "Currency Users", "economy", 4),
+        "Ranks": ("ranks_tab", "Ranks", "stream ranks", 5),
+        "Group Settings": ("group_settings_tab", "Group Settings", "audio queues", 6),
+        "Queue Control": ("queue_control_tab", "Queue Control", "live queue", 7),
+        "About": ("about_tab", "About", "info", 8),
+        "History": ("history_tab", "History", "command log", 9),
+        "Backups": ("backup_tab", "Backups", "safety", 10),
+    }
+
+    def _rebuild_generic_tab_views(self):
+        """Wrap (or unwrap) the 9 generic tabs in a themed frame, preserving
+        their positions in the tab bar."""
+        tab_widget = self.tab_widget
+        if tab_widget is None:
+            return
+
+        if self.theme == "classic":
+            for name, view in list(self.themed_tab_views.items()):
+                idx = tab_widget.indexOf(view)
+                if idx >= 0:
+                    tab_widget.removeTab(idx)
+                view.setParent(None)
+                view.deleteLater()
+            self.themed_tab_views = {}
+            # Re-insert the original tabs at their canonical positions
+            for name, (attr, _t, _s, cidx) in self._GENERIC_TABS.items():
+                orig = getattr(self, attr, None)
+                if orig is None:
+                    continue
+                if tab_widget.indexOf(orig) < 0:
+                    tab_widget.insertTab(min(cidx, tab_widget.count()), orig, name)
+            return
+
+        for name, (attr, title, subtitle, _cidx) in self._GENERIC_TABS.items():
+            orig = getattr(self, attr, None)
+            if orig is None:
+                continue
+            idx = tab_widget.indexOf(orig)
+            if idx < 0:
+                continue
+            tab_widget.removeTab(idx)
+            existing = self.themed_tab_views.pop(name, None)
+            if existing is not None:
+                existing.setParent(None)
+                existing.deleteLater()
+            view = _theme.ThemedTabView(self, tab_widget, orig, title, subtitle)
+            tab_widget.insertTab(idx, view, name)
+            self.themed_tab_views[name] = view
 
 if __name__ == "__main__":
     import sys

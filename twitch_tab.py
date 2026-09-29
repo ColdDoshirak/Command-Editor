@@ -56,12 +56,14 @@ class TwitchTab(QWidget):
 
     def initUI(self):
         layout = QVBoxLayout(self)
+        self._root_layout = layout
 
         # Authentication
         auth_group = QGroupBox("Authentication")
         auth_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         auth_layout = QGridLayout()
-        auth_layout.addWidget(QLabel("Status:"), 0, 0)
+        self._auth_status_label = QLabel("Status:")
+        auth_layout.addWidget(self._auth_status_label, 0, 0)
         self.auth_status = QLabel("Not authenticated")
         auth_layout.addWidget(self.auth_status, 0, 1)
         self.auth_button = QPushButton("Authenticate with Twitch")
@@ -72,12 +74,16 @@ class TwitchTab(QWidget):
         auth_layout.addWidget(self.token_button, 0, 3)
         auth_group.setLayout(auth_layout)
         layout.addWidget(auth_group)
+        # keep layout refs so themed views can restore the classic layout
+        self._auth_layout = auth_layout
+        self._auth_group = auth_group
 
         # Connection
         conn_group = QGroupBox("Connection Settings")
         conn_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         conn_layout = QHBoxLayout()
-        conn_layout.addWidget(QLabel("Channel:"))
+        self._conn_channel_label = QLabel("Channel:")
+        conn_layout.addWidget(self._conn_channel_label)
         self.channel_input = QLineEdit()
         conn_layout.addWidget(self.channel_input)
         self.connect_button = QPushButton("Connect")
@@ -92,6 +98,7 @@ class TwitchTab(QWidget):
         conn_layout.addWidget(self.check_connection_button)
         conn_group.setLayout(conn_layout)
         layout.addWidget(conn_group)
+        self._conn_layout = conn_layout
 
         # Chat & Viewers splitter
         splitter = QSplitter(Qt.Horizontal)
@@ -103,6 +110,7 @@ class TwitchTab(QWidget):
         self.chat_display.setReadOnly(True)
         chat_layout.addWidget(self.chat_display)
         input_layout = QHBoxLayout()
+        self._chat_input_layout = input_layout
         self.message_input = QLineEdit()
         self.message_input.returnPressed.connect(self.send_message)
         input_layout.addWidget(self.message_input)
@@ -113,6 +121,7 @@ class TwitchTab(QWidget):
         chat_layout.addLayout(input_layout)
         chat_group.setLayout(chat_layout)
         splitter.addWidget(chat_group)
+        self._chat_layout = chat_layout
 
         # Viewers
         viewer_group = QGroupBox("Viewers")
@@ -160,6 +169,7 @@ class TwitchTab(QWidget):
         moderator_controls_layout.addWidget(self.remove_moderator_button)
         
         moderators_layout.addLayout(moderator_controls_layout)
+        self._mod_controls_layout = moderator_controls_layout
         
         # Дополнительные кнопки
         additional_controls_layout = QHBoxLayout()
@@ -176,11 +186,13 @@ class TwitchTab(QWidget):
         additional_controls_layout.addWidget(self.refresh_moderators_button)
         
         moderators_layout.addLayout(additional_controls_layout)
+        self._mod_additional_layout = additional_controls_layout
         
         # Информационная надпись
         moderator_info = QLabel("Серые - API, зеленые - ручные, синие - оба, красные - исключены\nФайл moderators.json безопасен для показа на стриме")
         moderator_info.setStyleSheet("color: gray; font-size: 10px;")
         moderators_layout.addWidget(moderator_info)
+        self._mod_info = moderator_info
         
         moderators_tab.setLayout(moderators_layout)
         self.viewers_tabs.addTab(moderators_tab, "Moderators")
@@ -198,8 +210,12 @@ class TwitchTab(QWidget):
         self.last_update_label = QLabel("Last: Never")
         refresh_layout.addWidget(self.last_update_label)
         viewer_layout.addLayout(refresh_layout)
+        self._refresh_layout = refresh_layout
         viewer_group.setLayout(viewer_layout)
         splitter.addWidget(viewer_group)
+        self._viewer_layout = viewer_layout
+        self._viewer_group = viewer_group
+        self._splitter = splitter
 
         splitter.setSizes([700,300])
         layout.addWidget(splitter, 1)
@@ -217,6 +233,66 @@ class TwitchTab(QWidget):
         self.all_viewers_count = QLabel("All: 0")
         status_layout.addWidget(self.all_viewers_count)
         layout.addLayout(status_layout)
+        self._status_layout = status_layout
+
+    def restore_classic_layout(self):
+        """Rebuild the original classic layout from stored sub-layouts.
+
+        Themed views re-parent the widgets out of these layouts; this puts
+        them back so the classic tab looks exactly as before. The group boxes
+        and splitter never left the hierarchy — only the inner widgets moved.
+        """
+        if getattr(self, "_restoring", False):
+            return
+        self._restoring = True
+        try:
+            # Authentication
+            al = self._auth_layout
+            al.addWidget(self._auth_status_label, 0, 0)
+            al.addWidget(self.auth_status, 0, 1)
+            al.addWidget(self.auth_button, 0, 2)
+            al.addWidget(self.token_button, 0, 3)
+            # Connection
+            cl = self._conn_layout
+            cl.addWidget(self._conn_channel_label)
+            cl.addWidget(self.channel_input)
+            cl.addWidget(self.connect_button)
+            cl.addWidget(self.disconnect_button)
+            cl.addWidget(self.check_connection_button)
+            # Chat
+            self._chat_layout.addWidget(self.chat_display)
+            self._chat_input_layout.addWidget(self.message_input)
+            self._chat_input_layout.addWidget(self.send_button)
+            self._chat_layout.addLayout(self._chat_input_layout)
+            # Viewers
+            self._viewer_layout.addWidget(self.viewers_tabs)
+            self.viewers_tabs.tabBar().setVisible(True)
+            self._refresh_layout.addWidget(self.refresh_viewers_button)
+            self._refresh_layout.addWidget(self.update_frequency)
+            self._refresh_layout.addWidget(self.last_update_label)
+            self._viewer_layout.addLayout(self._refresh_layout)
+            # Moderators tab internals
+            mods_tab = self.viewers_tabs.widget(2)
+            ml = mods_tab.layout()
+            ml.addWidget(self.moderators_list_widget)
+            self._mod_controls_layout.addWidget(self.add_moderator_input)
+            self._mod_controls_layout.addWidget(self.add_moderator_button)
+            self._mod_controls_layout.addWidget(self.remove_moderator_button)
+            ml.addLayout(self._mod_controls_layout)
+            self._mod_additional_layout.addWidget(self.open_moderators_file_button)
+            self._mod_additional_layout.addWidget(self.refresh_moderators_button)
+            ml.addLayout(self._mod_additional_layout)
+            ml.addWidget(self._mod_info)
+            # Status bar
+            sl = self._status_layout
+            sl.addWidget(self.connection_status)
+            sl.addStretch()
+            sl.addWidget(self.stream_status)
+            sl.addStretch()
+            sl.addWidget(self.active_viewers_count)
+            sl.addWidget(self.all_viewers_count)
+        finally:
+            self._restoring = False
 
     def load_settings(self):
         cfg = self.config_manager.get_twitch_config()

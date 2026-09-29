@@ -372,6 +372,19 @@ class ConfigManager:
     def set_volume(self, volume):
         self.config['volume'] = max(0.0, min(1.0, volume))
         self.save_config()
+
+    def get_theme(self):
+        """Return the active UI theme name (classic/sidebar/spreadsheet)."""
+        t = self.config.get('theme', 'classic')
+        if t not in ('classic', 'sidebar', 'spreadsheet'):
+            return 'classic'
+        return t
+
+    def set_theme(self, theme):
+        if theme not in ('classic', 'sidebar', 'spreadsheet'):
+            theme = 'classic'
+        self.config['theme'] = theme
+        self.save_config()
         
     def get_auto_save(self):
         return self.config.get('auto_save', {'enabled': True, 'interval': 300})
