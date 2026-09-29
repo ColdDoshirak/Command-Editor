@@ -1,6 +1,6 @@
 from PyQt5 import sip
 from PyQt5.QtGui import QTextCursor, QColor
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer, Q_ARG
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTextEdit, QGroupBox, QMessageBox, QDialog, QListWidget, QSplitter,
@@ -346,6 +346,28 @@ class TwitchTab(QWidget):
             if not loop.is_closed():
                 loop.close()
 
+    def reload_bot_audio_categories(self):
+        """Apply new group/audio settings to the running bot without a restart.
+
+        The bot lives in its own thread with its own event loop, so we schedule
+        the (synchronous) reload onto that loop via run_coroutine_threadsafe.
+        Safe to call from the GUI thread.
+        """
+        bot = self.bot
+        if not bot or not hasattr(bot, "reload_audio_categories"):
+            return
+        loop = getattr(bot, "loop", None)
+        if not loop or loop.is_closed():
+            return
+        try:
+            # reload_audio_categories is a coroutine; schedule it on the bot's
+            # event-loop thread (the bot runs in its own thread/loop).
+            asyncio.run_coroutine_threadsafe(
+                bot.reload_audio_categories(), loop
+            )
+        except RuntimeError as e:
+            print(f"Could not reload audio categories on bot loop: {e}")
+
     def disconnect(self):
         self.stop_viewer_updates()
         if self.bot:
@@ -477,14 +499,15 @@ class TwitchTab(QWidget):
                 return
                 
             try:
-                # Проверяем статус стрима
+                # B7: НЕ блокируем UI-поток. Раньше здесь было
+                # future.result(timeout=5) — интерфейс зависал на время
+                # запроса к Helix. Теперь результат доставляется по
+                # add_done_callback, а статус стрима обновляется
+                # фоновой задачей бота (_stream_status_loop).
                 future = asyncio.run_coroutine_threadsafe(
                     self.bot.check_if_live(), self.bot.loop
                 )
-                is_live = future.result(timeout=5)
-                # Эмитим сигнал независимо от изменения
-                self.bot.is_live = is_live
-                self.signal_handler.stream_status_signal.emit(is_live)
+                future.add_done_callback(self._on_stream_status_done)
                 
                 # Периодически (каждые 10 минут) обновляем список модераторов
                 if hasattr(self, 'last_mod_check'):
@@ -510,45 +533,100 @@ class TwitchTab(QWidget):
                     
         self.last_update_label.setText(f"Last: {time.strftime('%H:%M:%S')}")
 
+    def _on_stream_status_done(self, future):
+        """B7: доставить результат проверки статуса стрима в UI-поток,
+        не блокируя его. Вызывается из callback-потока asyncio, поэтому
+        обновление виджетов — через QMetaObject.invokeMethod (очередь UI)."""
+        try:
+            exc = future.exception()
+            if exc is not None:
+                print(f"Stream status check failed: {exc}")
+                return
+            is_live = future.result()
+        except Exception as e:
+            print(f"Stream status callback error: {e}")
+            return
+        # QMetaObject.invokeMethod с Qt.QueuedConnection: выполняется в
+        # UI-потоке, не блокируя его.
+        from PyQt5.QtCore import QMetaObject, Qt
+        QMetaObject.invokeMethod(
+            self, "_apply_stream_status", Qt.QueuedConnection,
+            Q_ARG(bool, is_live),
+        )
+
+    def _apply_stream_status(self, is_live):
+        """B7: применить статус стрима в UI-потоке (вызывается через очередь)."""
+        if self.bot:
+            self.bot.is_live = is_live
+        self.signal_handler.stream_status_signal.emit(is_live)
+
     def refresh_viewers(self):
         if not self.bot:
             return
-            
+
         # Проверяем, что event loop еще жив
         if not hasattr(self.bot, 'loop') or not self.bot.loop or self.bot.loop.is_closed():
             self.signal_handler.chat_signal.emit("Cannot refresh viewers: connection is being established or lost")
             return
-            
+
         try:
+            # B7: НЕ блокируем UI-поток. Раньше здесь было
+            # future.result(timeout=10) — интерфейс зависал на время
+            # запроса к Helix. Теперь результат доставляется по
+            # add_done_callback (см. _on_viewers_done).
             future = asyncio.run_coroutine_threadsafe(
                 self.bot.get_all_viewers(), self.bot.loop
             )
-            viewers = future.result(timeout=10)
+            future.add_done_callback(self._on_viewers_done)
         except (RuntimeError, concurrent.futures.TimeoutError) as e:
             error_msg = f"Error refreshing viewers: {str(e)}"
             self.signal_handler.chat_signal.emit(error_msg)
             print(error_msg)
-            viewers = list(getattr(self.bot, 'active_users', []))
-        
+            self._apply_viewers(list(getattr(self.bot, 'active_users', [])))
+
+    def _on_viewers_done(self, future):
+        """B7: доставить список зрителей в UI без блокировки.
+
+        Вызывается из callback-потока asyncio (loop бота). Обновление
+        виджетов и process_currency_update выполняются здесь, а не в
+        UI-потоке — интерфейс не зависает.
+        """
+        try:
+            exc = future.exception()
+            if exc is not None:
+                print(f"Viewers refresh failed: {exc}")
+                self._apply_viewers(list(getattr(self.bot, 'active_users', [])))
+                return
+            viewers = future.result()
+        except Exception as e:
+            print(f"Viewers callback error: {e}")
+            self._apply_viewers(list(getattr(self.bot, 'active_users', [])))
+            return
+        self._apply_viewers(viewers)
+
+    def _apply_viewers(self, viewers):
+        """Обновить виджеты зрителей и начисления (B7: не блокирует UI)."""
         self.all_viewers_list.clear()
         for v in sorted(viewers):
             self.all_viewers_list.addItem(v)
         self.all_viewers_count.setText(f"All: {len(viewers)}")
-        
+
         # Создаем функцию для отправки сообщений только в окно программы
         def show_service_message(message):
-            # Используем сигнал для отправки сообщения в окно чата программы
+            # Используем сигнал для отправки сообщений только в окно программы
             if hasattr(self, 'signal_handler'):
                 self.signal_handler.chat_signal.emit(f"[POINTS] {message}")
-        
-        self.parent.currency_manager.process_currency_update(
-            is_live=self.currently_live,
-            active_viewers=self.active_users,
-            all_viewers=viewers,
-            chat_message_callback=show_service_message
-        )
 
-    @pyqtSlot(list)
+        try:
+            self.parent.currency_manager.process_currency_update(
+                is_live=self.currently_live,
+                active_viewers=self.active_users,
+                all_viewers=viewers,
+                chat_message_callback=show_service_message
+            )
+        except Exception as e:
+            print(f"Error in process_currency_update: {e}")
+
     def update_active_viewers(self, viewers):
         self.active_viewers_list.blockSignals(True)
         self.active_viewers_list.clear()
