@@ -2848,20 +2848,29 @@ class CommandEditor(QMainWindow):
 
         if self.theme == "classic":
             if self.themed_twitch_view is not None:
+                # Возвращаем заимствованные виджеты оригинала ДО удаления view,
+                # иначе deleteLater уничтожит их вместе с view (классика ломается).
+                self.themed_twitch_view._unparent_borrowed_widgets()
                 idx = tab_widget.indexOf(self.themed_twitch_view)
                 if idx >= 0:
                     tab_widget.removeTab(idx)
                 self.themed_twitch_view.setParent(None)
                 self.themed_twitch_view.deleteLater()
                 self.themed_twitch_view = None
+            # Всегда вызываем restore_classic_layout() при классике — не только
+            # когда вкладка была удалена. На старте apply_theme("classic")
+            # вызывается, но вкладка уже на месте, и без этого вызова layout
+            # остаётся в «сыром» состоянии initUI() (кривой вид).
+            self.twitch_tab.restore_classic_layout()
             if tab_widget.indexOf(self.twitch_tab) < 0:
-                self.twitch_tab.restore_classic_layout()
                 tab_widget.insertTab(tw_idx, self.twitch_tab, "Twitch")
             return
 
         # (Re)create the themed view, destroying any previous one
         first_apply = tab_widget.widget(tw_idx) is self.twitch_tab
         if self.themed_twitch_view is not None:
+            # Возвращаем заимствованные виджеты оригинала ДО удаления view.
+            self.themed_twitch_view._unparent_borrowed_widgets()
             idx = tab_widget.indexOf(self.themed_twitch_view)
             if idx >= 0:
                 tab_widget.removeTab(idx)

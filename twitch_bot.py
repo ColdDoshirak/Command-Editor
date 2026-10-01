@@ -209,7 +209,16 @@ class TwitchBot(commands.Bot):
         return group
 
     def update_commands(self, commands_list):
-        """Вызывается из CommandEditor после каждой правки таблицы"""
+        """Вызывается из CommandEditor после каждой правки таблицы.
+
+        КРИТИЧНО: вызывается из UI-потока (auto_save / правки таблицы), а
+        init_queues() создаёт asyncio.Queue/Semaphore и task-воркеров — это
+        должно выполняться ТОЛЬКО в loop бота. Раньше init_queues() шёл
+        напрямую в UI-потоке: asyncio.create_task() на loop другого потока
+        рвал UI (RuntimeError) — один из источников крашей. Теперь, если мы
+        не в loop бота, обновляем список команд здесь (просто присвоение), а
+        init_queues() выполняем в loop через run_coroutine_threadsafe.
+        """
         old_commands_count = len(self._commands_list)
         self._commands_list = commands_list or []
         # Normalize group names to the canonical audio_categories keys so that
@@ -219,7 +228,26 @@ class TwitchBot(commands.Bot):
             if g:
                 cmd["Group"] = self._normalize_group(g)
         print(f"DEBUG: update_commands called. Old count: {old_commands_count}, New count: {len(self._commands_list)}")
-        self.init_queues()  # Re-initialize queues to pick up new groups
+        # Re-initialize queues to pick up new groups — но только в loop бота.
+        try:
+            in_bot_loop = asyncio.get_running_loop() is self.loop
+        except RuntimeError:
+            in_bot_loop = False
+        if in_bot_loop:
+            self.init_queues()
+        else:
+            loop = getattr(self, "loop", None)
+            if loop is not None and not loop.is_closed():
+                try:
+                    asyncio.run_coroutine_threadsafe(self._init_queues_async(), loop)
+                except Exception as e:
+                    print(f"update_commands: failed to schedule init_queues in bot loop: {e}")
+            else:
+                print("update_commands: bot loop not running; queues will init on event_ready")
+
+    async def _init_queues_async(self):
+        """Обёртка для запуска init_queues() в loop бота (thread-safe)."""
+        self.init_queues()
 
     def init_queues(self):
         """Initialize queues for all command groups that have queue_enabled=true.
@@ -281,7 +309,12 @@ class TwitchBot(commands.Bot):
                 if current_loop and current_loop.is_running():
                     if group not in self.queue_workers or self.queue_workers[group].done():
                         print(f"Starting/Restarting queue worker task for group: {group}")
-                        self.queue_workers[group] = current_loop.create_task(self.process_queue(group))
+                        try:
+                            self.queue_workers[group] = current_loop.create_task(self.process_queue(group))
+                        except RuntimeError as e:
+                            # create_task() из чужого потока (UI) — не рвём UI,
+                            # воркер поднимется в event_ready.
+                            print(f"init_queues: cannot create worker for {group} outside its loop: {e}")
                     else:
                         print(f"Queue worker for group {group} is already running.")
                 else:
@@ -458,6 +491,22 @@ class TwitchBot(commands.Bot):
         """Запросить пропуск ТЕКУЩЕГО элемента очереди группы."""
         if group in self.command_queues:
             self.queue_skip_requested.add(group)
+
+    def _ui_toggle_pause(self, group):
+        """Переключить паузу группы (вызывается из UI-потока через
+        call_soon_threadsafe, т.е. выполняется в loop бота атомарно
+        относительно worker'а). При паузе останавливает звук группы,
+        который уже играет, — иначе «пауза» не действует на текущий трек."""
+        if not hasattr(self, "queue_paused"):
+            self.queue_paused = set()
+        if group in self.queue_paused:
+            self.queue_paused.discard(group)
+            print(f"Queue Control: RESUME group {group}")
+        else:
+            self.queue_paused.add(group)
+            self._stop_group_sound(group)
+            print(f"Queue Control: PAUSE group {group}")
+        self._persist_queue_snapshot(group)
 
     def remove_from_queue_by_name(self, group, name):
         """Убрать из очереди группы конкретную команду по имени (без «!»),

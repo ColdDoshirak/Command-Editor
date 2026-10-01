@@ -247,13 +247,13 @@ class QueueControlTab(QWidget):
         group = self.current_group()
         if bot is None or not group:
             return
-        if not hasattr(bot, 'queue_paused'):
-            bot.queue_paused = set()
-        paused = group in bot.queue_paused
-        if paused:
-            bot.queue_paused.discard(group)
-        else:
-            bot.queue_paused.add(group)
+        loop = getattr(bot, 'loop', None)
+        if loop is None or loop.is_closed():
+            return
+        # Переключаем паузу В loop бота (атомарно относительно worker'а) и
+        # останавливаем текущий звук группы. Раньше пауза менялась прямо в
+        # UI-потоке и не останавливала играющий трек — «пауза не работает».
+        loop.call_soon_threadsafe(bot._ui_toggle_pause, group)
         self.refresh_queue()
 
     def skip_current(self):
