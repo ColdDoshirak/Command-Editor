@@ -1,6 +1,6 @@
 from PyQt5 import sip
 from PyQt5.QtGui import QTextCursor, QColor
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer, Q_ARG
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTextEdit, QGroupBox, QMessageBox, QDialog, QListWidget, QSplitter,
@@ -27,6 +27,9 @@ class ChatSignalHandler(QObject):
     active_viewers_signal = pyqtSignal(list)
     all_viewers_signal = pyqtSignal(list)
     stream_status_signal = pyqtSignal(bool)
+    # 23.1: эмитится ботом (в его loop) после применения паузы группы —
+    # UI обновляет Queue Control только ПОСЛЕ реального изменения состояния.
+    queue_paused_changed = pyqtSignal(str)
     currency_updated = pyqtSignal()
     moderators_signal = pyqtSignal(list)  # Новый сигнал для списка модераторов
 
@@ -631,12 +634,6 @@ class TwitchTab(QWidget):
             return
         # Qt-сигнал с bool: queued-доставка в UI-поток, без invokeMethod.
         self.signal_handler.stream_status_signal.emit(bool(is_live))
-
-    def _apply_stream_status(self, is_live):
-        """B7: применить статус стрима в UI-потоке (вызывается через очередь)."""
-        if self.bot:
-            self.bot.is_live = is_live
-        self.signal_handler.stream_status_signal.emit(is_live)
 
     def refresh_viewers(self):
         if not self.bot:

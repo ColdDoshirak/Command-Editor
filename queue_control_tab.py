@@ -96,6 +96,12 @@ class QueueControlTab(QWidget):
         self.poll_timer.timeout.connect(self.refresh_queue)
         self.poll_timer.start()
 
+        # 23.1: обновляем UI только ПОСЛЕ того, как loop бота применит паузу
+        # (сигнал эмитится ботом из _ui_toggle_pause, queued-доставка в UI-поток).
+        tw = getattr(self.parent, 'twitch_tab', None)
+        if tw is not None and getattr(tw, 'signal_handler', None) is not None:
+            tw.signal_handler.queue_paused_changed.connect(self.refresh_queue)
+
     # ------------------------------------------------------------------
     # UI
     # ------------------------------------------------------------------
@@ -253,8 +259,9 @@ class QueueControlTab(QWidget):
         # Переключаем паузу В loop бота (атомарно относительно worker'а) и
         # останавливаем текущий звук группы. Раньше пауза менялась прямо в
         # UI-потоке и не останавливала играющий трек — «пауза не работает».
+        # 23.1: refresh_queue() здесь НЕ вызываем — UI обновится по сигналу
+        # queue_paused_changed, который бот эмитит уже ПОСЛЕ применения паузы.
         loop.call_soon_threadsafe(bot._ui_toggle_pause, group)
-        self.refresh_queue()
 
     def skip_current(self):
         bot = self._bot()

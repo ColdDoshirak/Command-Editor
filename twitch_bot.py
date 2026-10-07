@@ -309,12 +309,10 @@ class TwitchBot(commands.Bot):
                 if current_loop and current_loop.is_running():
                     if group not in self.queue_workers or self.queue_workers[group].done():
                         print(f"Starting/Restarting queue worker task for group: {group}")
-                        try:
-                            self.queue_workers[group] = current_loop.create_task(self.process_queue(group))
-                        except RuntimeError as e:
-                            # create_task() из чужого потока (UI) — не рвём UI,
-                            # воркер поднимется в event_ready.
-                            print(f"init_queues: cannot create worker for {group} outside its loop: {e}")
+                        # init_queues() гарантированно вызывается в loop бота
+                        # (event_ready / run_coroutine_threadsafe из update_commands),
+                        # поэтому create_task здесь легален без обёрток.
+                        self.queue_workers[group] = current_loop.create_task(self.process_queue(group))
                     else:
                         print(f"Queue worker for group {group} is already running.")
                 else:
@@ -497,8 +495,6 @@ class TwitchBot(commands.Bot):
         call_soon_threadsafe, т.е. выполняется в loop бота атомарно
         относительно worker'а). При паузе останавливает звук группы,
         который уже играет, — иначе «пауза» не действует на текущий трек."""
-        if not hasattr(self, "queue_paused"):
-            self.queue_paused = set()
         if group in self.queue_paused:
             self.queue_paused.discard(group)
             print(f"Queue Control: RESUME group {group}")
@@ -507,6 +503,11 @@ class TwitchBot(commands.Bot):
             self._stop_group_sound(group)
             print(f"Queue Control: PAUSE group {group}")
         self._persist_queue_snapshot(group)
+        # 23.1: сообщаем UI, что пауза ПРИМЕНЕНА (выполняемся в loop бота).
+        # UI-поток получит сигнал queued-доставкой и только тогда обновит
+        # Queue Control — без stale refresh.
+        if self.signal_handler is not None:
+            self.signal_handler.queue_paused_changed.emit(group)
 
     def remove_from_queue_by_name(self, group, name):
         """Убрать из очереди группы конкретную команду по имени (без «!»),

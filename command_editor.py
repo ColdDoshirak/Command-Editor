@@ -148,7 +148,6 @@ class CommandEditor(QMainWindow):
         self.themed_twitch_view = None
         self.themed_tab_views = {}
         self.settings_tab = None  # permanent Settings tab (auto-save + sound)
-        self._settings_tab_in_bar = False
         
         # Load settings BEFORE creating widgets
         self.allow_sound_interruption = self.config_manager.get_sound_interruption()
@@ -446,13 +445,16 @@ class CommandEditor(QMainWindow):
         self.history_manager = HistoryManager(max_backups=self.config_manager.get_max_backups())
         
         # Add tabs to tab widget
+        main_tab.setObjectName("commandsTab")
         self.tab_widget.addTab(main_tab, "Commands")
 
         # Add system commands tab right after Commands
         self.sys_commands_tab = SysCommandsTab(parent=self)
+        self.sys_commands_tab.setObjectName("sysCommandsTab")
         self.tab_widget.addTab(self.sys_commands_tab, "Sys.Commands")
 
         self.twitch_tab = TwitchTab(parent=self, commands_data=self.commands, config_manager=self.config_manager)
+        self.twitch_tab.setObjectName("twitchTab")
         self.tab_widget.addTab(self.twitch_tab, "Twitch")
 
 
@@ -463,24 +465,31 @@ class CommandEditor(QMainWindow):
             print("Currency settings loaded in CommandEditor")
 
         self.currency_tab = CurrencyTab(parent=self)
+        self.currency_tab.setObjectName("currencyTab")
         self.tab_widget.addTab(self.currency_tab, "Currency Settings")
         self.user_currency_tab = UserCurrencyTab(parent=self)
+        self.user_currency_tab.setObjectName("currencyUsersTab")
         self.tab_widget.addTab(self.user_currency_tab, "Currency Users")
         self.ranks_tab = RanksTab(parent=self)
+        self.ranks_tab.setObjectName("ranksTab")
         self.tab_widget.addTab(self.ranks_tab, "Ranks")
         self.ranks_tab.load_ranks()
 
         # Add Group Settings tab
         self.group_settings_tab = GroupSettingsTab(parent=self)
+        self.group_settings_tab.setObjectName("groupSettingsTab")
         self.tab_widget.addTab(self.group_settings_tab, "Group Settings")
 
         # Add Queue Control tab (live queue management)
         self.queue_control_tab = QueueControlTab(parent=self)
+        self.queue_control_tab.setObjectName("queueControlTab")
         self.tab_widget.addTab(self.queue_control_tab, "Queue Control")
 
         self.about_tab = AboutTab(parent=self)
+        self.about_tab.setObjectName("aboutTab")
         self.tab_widget.addTab(self.about_tab, "About")
         self.history_tab = self.create_history_tab()
+        self.history_tab.setObjectName("historyTab")
         self.tab_widget.addTab(self.history_tab, "History")
         
         # Connect tab change signal
@@ -488,6 +497,7 @@ class CommandEditor(QMainWindow):
 
         # Create comprehensive backup tab
         self.backup_tab = self.create_comprehensive_backup_tab()
+        self.backup_tab.setObjectName("backupTab")
         self.tab_widget.addTab(self.backup_tab, "Backups")
 
         # Settings tab: permanent in every theme (classic, sidebar, spreadsheet).
@@ -2682,7 +2692,6 @@ class CommandEditor(QMainWindow):
         if self.settings_tab is None:
             return
         self.settings_tab.setVisible(True)
-        self._settings_tab_in_bar = True
         for w, cont in self._settings_widgets:
             w.setParent(cont)
             lay = cont.layout()
@@ -2778,6 +2787,13 @@ class CommandEditor(QMainWindow):
             on_load=self.load_file, on_save=self.save_file,
         )
 
+    def _propagate_tab_object_name(self, themed_view, original_tab):
+        """22.1: themed view заменяет оригинал в tab bar, поэтому должен
+        наследовать его objectName — иначе SidebarNav не сможет резолвить
+        вкладку по имени (в темизированной теме оригинал не в бар)."""
+        if themed_view is not None and original_tab is not None:
+            themed_view.setObjectName(original_tab.objectName())
+
     def _rebuild_commands_view(self):
         """Swap the Commands tab content between classic and themed views."""
         tab_widget = self.tab_widget
@@ -2810,6 +2826,7 @@ class CommandEditor(QMainWindow):
             self.themed_commands_view.deleteLater()
             self.themed_commands_view = None
         self.themed_commands_view = self._make_commands_view()
+        self._propagate_tab_object_name(self.themed_commands_view, self.main_tab)
         # Insert the themed view at the Commands position
         if first_apply:
             # Classic tab still occupies index 0: remove it, insert themed view
@@ -2878,6 +2895,7 @@ class CommandEditor(QMainWindow):
             self.themed_twitch_view.deleteLater()
             self.themed_twitch_view = None
         self.themed_twitch_view = self._make_twitch_view()
+        self._propagate_tab_object_name(self.themed_twitch_view, self.twitch_tab)
         if first_apply:
             tab_widget.removeTab(tw_idx)
             tab_widget.insertTab(tw_idx, self.themed_twitch_view, "Twitch")
@@ -2937,6 +2955,7 @@ class CommandEditor(QMainWindow):
                 existing.setParent(None)
                 existing.deleteLater()
             view = _theme.ThemedTabView(self, tab_widget, orig, title, subtitle)
+            self._propagate_tab_object_name(view, orig)
             tab_widget.insertTab(idx, view, name)
             self.themed_tab_views[name] = view
 
