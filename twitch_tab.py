@@ -1,6 +1,6 @@
 from PyQt5 import sip
 from PyQt5.QtGui import QTextCursor, QColor
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer, Q_ARG
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTextEdit, QGroupBox, QMessageBox, QDialog, QListWidget, QSplitter,
@@ -27,6 +27,9 @@ class ChatSignalHandler(QObject):
     active_viewers_signal = pyqtSignal(list)
     all_viewers_signal = pyqtSignal(list)
     stream_status_signal = pyqtSignal(bool)
+    # 23.1: эмитится ботом (в его loop) после применения паузы группы —
+    # UI обновляет Queue Control только ПОСЛЕ реального изменения состояния.
+    queue_paused_changed = pyqtSignal(str)
     currency_updated = pyqtSignal()
     moderators_signal = pyqtSignal(list)  # Новый сигнал для списка модераторов
 
@@ -611,8 +614,15 @@ class TwitchTab(QWidget):
 
     def _on_stream_status_done(self, future):
         """B7: доставить результат проверки статуса стрима в UI-поток,
-        не блокируя его. Вызывается из callback-потока asyncio, поэтому
-        обновление виджетов — через QMetaObject.invokeMethod (очередь UI)."""
+        не блокируя его. Вызывается из callback-потока asyncio.
+
+        Раньше здесь был QMetaObject.invokeMethod(..., Q_ARG(bool, ...)) —
+        он падал с RuntimeError: QMetaObject.invokeMethod() call failed
+        (каждые ~30 с, фоновый loop статуса стрима). Причина: invokeMethod
+        не умеет доставлять Q_ARG(bool) в слот, объявленный через pyqtSlot
+        (Qt не регистрирует C++-метод для bool-аргумента). Теперь — обычный
+        Qt-сигнал: он сам делает queued-доставку в UI-поток, без invokeMethod.
+        """
         try:
             exc = future.exception()
             if exc is not None:
@@ -622,19 +632,8 @@ class TwitchTab(QWidget):
         except Exception as e:
             print(f"Stream status callback error: {e}")
             return
-        # QMetaObject.invokeMethod с Qt.QueuedConnection: выполняется в
-        # UI-потоке, не блокируя его.
-        from PyQt5.QtCore import QMetaObject, Qt
-        QMetaObject.invokeMethod(
-            self, "_apply_stream_status", Qt.QueuedConnection,
-            Q_ARG(bool, is_live),
-        )
-
-    def _apply_stream_status(self, is_live):
-        """B7: применить статус стрима в UI-потоке (вызывается через очередь)."""
-        if self.bot:
-            self.bot.is_live = is_live
-        self.signal_handler.stream_status_signal.emit(is_live)
+        # Qt-сигнал с bool: queued-доставка в UI-поток, без invokeMethod.
+        self.signal_handler.stream_status_signal.emit(bool(is_live))
 
     def refresh_viewers(self):
         if not self.bot:

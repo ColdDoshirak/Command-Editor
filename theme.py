@@ -522,26 +522,29 @@ class MasterDelegate(QStyledItemDelegate):
 class SidebarNav(QFrame):
     """Left navigation rail. NAV items map to main-tab indices."""
 
+    # 22.1: навигация резолвит вкладку по objectName, а не по жёсткому индексу.
+    # Любое изменение состава/порядка вкладок в command_editor.py больше не
+    # ломает кнопки: индекс вычисляется в _tab_index_by_name() на лету.
     NAV = [
         ("Manage", [
-            (0, "Commands", "lines"),
-            (7, "Queue Control", "chevron"),
-            (1, "Sys.Commands", "clock"),
-            (6, "Group Settings", "layers"),
+            ("commandsTab", "Commands", "lines"),
+            ("queueControlTab", "Queue Control", "chevron"),
+            ("sysCommandsTab", "Sys.Commands", "clock"),
+            ("groupSettingsTab", "Group Settings", "layers"),
         ]),
         ("Twitch", [
-            (2, "Twitch", "rect"),
-            (5, "Ranks", "star"),
+            ("twitchTab", "Twitch", "rect"),
+            ("ranksTab", "Ranks", "star"),
         ]),
         ("Economy", [
-            (3, "Currency", "coin"),
-            (4, "Users", "bars"),
+            ("currencyTab", "Currency", "coin"),
+            ("currencyUsersTab", "Users", "bars"),
         ]),
         ("System", [
-            (9, "History", "lines"),
-            (10, "Backups", "shield"),
-            (8, "About", "info"),
-            (11, "Settings", "gear"),
+            ("historyTab", "History", "lines"),
+            ("backupTab", "Backups", "shield"),
+            ("aboutTab", "About", "info"),
+            ("settingsTab", "Settings", "gear"),
         ]),
     ]
 
@@ -575,14 +578,14 @@ class SidebarNav(QFrame):
             lbl.setObjectName("navSection")
             lbl.setContentsMargins(10, 12, 0, 4)
             v.addWidget(lbl)
-            for idx, label, icon in items:
+            for name, label, icon in items:
                 b = QPushButton("  " + label)
                 b.setObjectName("navBtn")
                 b.setIcon(make_icon(icon, self.pal["text2"]))
                 b.setIconSize(QSize(17, 17))
                 b.setCursor(Qt.PointingHandCursor)
-                b.clicked.connect(lambda _=False, i=idx: self._go_tab(i))
-                self._nav_buttons[idx] = b
+                b.clicked.connect(lambda _=False, n=name: self._go_tab(n))
+                self._nav_buttons[name] = b
                 v.addWidget(b)
 
         v.addStretch(1)
@@ -594,13 +597,30 @@ class SidebarNav(QFrame):
         if self.tab_widget is not None:
             self.tab_widget.currentChanged.connect(self.highlight_tab)
 
-    def _go_tab(self, idx):
-        if self.tab_widget is not None and 0 <= idx < self.tab_widget.count():
+    def _tab_index_by_name(self, name):
+        """22.1: индекс вкладки по objectName (а не по жёсткому числу)."""
+        if self.tab_widget is None:
+            return -1
+        for i in range(self.tab_widget.count()):
+            w = self.tab_widget.widget(i)
+            if w is not None and w.objectName() == name:
+                return i
+        return -1
+
+    def _go_tab(self, name):
+        idx = self._tab_index_by_name(name)
+        if idx >= 0:
             self.tab_widget.setCurrentIndex(idx)
 
     def highlight_tab(self, idx):
-        for i, b in self._nav_buttons.items():
-            b.setObjectName("navBtnActive" if i == idx else "navBtn")
+        # 22.1: кнопки ключеваны по objectName — сверяем с objectName текущей
+        # вкладки, а не с числовым индексом.
+        if self.tab_widget is None:
+            return
+        current = self.tab_widget.widget(idx)
+        current_name = current.objectName() if current is not None else ""
+        for name, b in self._nav_buttons.items():
+            b.setObjectName("navBtnActive" if name == current_name else "navBtn")
             b.style().unpolish(b)
             b.style().polish(b)
 
@@ -665,10 +685,16 @@ class SidebarCommandsView(QWidget):
         h.addWidget(self.search_edit)
         save = QPushButton("Save")
         save.clicked.connect(self.on_save)
+        load = QPushButton("Load")
+        load.clicked.connect(self.on_load)
+        remove = QPushButton("Remove")
+        remove.clicked.connect(self.on_remove)
         new = QPushButton("+ New")
         new.setObjectName("primaryBtn")
         new.clicked.connect(self.on_add)
         h.addWidget(save)
+        h.addWidget(load)
+        h.addWidget(remove)
         h.addWidget(new)
         return bar
 
@@ -824,7 +850,15 @@ class SidebarCommandsView(QWidget):
             self._guard = False
             self._populate_detail(0)
 
-    def _on_search(self, _text):
+    def _on_search(self, text):
+        # Пишем в классическое поле поиска: оно триггерит filter_commands()
+        # (скрывает строки классической таблицы), а refresh() перерисовывает
+        # этот темизированный список. Раньше текст шёл только в _on_search и
+        # filter_commands читал пустое классическое поле — поиск не работал.
+        if self.editor is not None and getattr(self.editor, "search_input", None) is not None:
+            si = self.editor.search_input
+            if si.text() != text:
+                si.setText(text)
         if self.editor is not None and hasattr(self.editor, "filter_commands"):
             self.editor.filter_commands()
 
@@ -1025,7 +1059,15 @@ class SpreadsheetCommandsView(QWidget):
         h.addWidget(new)
         return bar
 
-    def _on_search(self, _text):
+    def _on_search(self, text):
+        # Пишем в классическое поле поиска: оно триггерит filter_commands()
+        # (скрывает строки классической таблицы), а refresh() перерисовывает
+        # этот темизированный список. Раньше текст шёл только в _on_search и
+        # filter_commands читал пустое классическое поле — поиск не работал.
+        if self.editor is not None and getattr(self.editor, "search_input", None) is not None:
+            si = self.editor.search_input
+            if si.text() != text:
+                si.setText(text)
         if self.editor is not None and hasattr(self.editor, "filter_commands"):
             self.editor.filter_commands()
 
@@ -1260,7 +1302,42 @@ class TwitchThemedBase(QWidget):
         self.active_viewers_count = twitch_tab.active_viewers_count
         self.all_viewers_count = twitch_tab.all_viewers_count
 
+
     # -- auth pill -------------------------------------------------------
+    def _unparent_borrowed_widgets(self):
+        """Вернуть заимствованные виджеты оригинального TwitchTab обратно
+        (setParent(None)), ПЕРЕД тем как темизированный view будет удалён.
+
+        КРИТИЧНО: темизированный view переродителит виджеты оригинального
+        TwitchTab (кнопки, чат, статусы, вьюверы) в себя. Если удалить view
+        (deleteLater), Qt уничтожит ВСЕ его дети — вместе с заимствованными
+        виджетами оригинала. Тогда restore_classic_layout() нечего
+        возвращать, и классический UI ломается (чинится только повторной
+        сменой темы). Поэтому перед удалением view возвращаем все дети,
+        которые принадлежат оригинальному TwitchTab, обратно в родительское
+        состояние — они переживут удаление view.
+        """
+        tt = self.twitch_tab
+        if tt is None:
+            return
+        # 23.2: принадлежность определяем по parent-chain: если цепочка
+        # родителей виджета доходит до оригинального twitch_tab (а не
+        # останавливается на self), виджет заимствован из оригинала и должен
+        # быть отвязан. Это покрывает и вложенные в сабфреймы виджеты
+        # (старая проверка `w.parent() is self` их пропускала).
+        # findChildren возвращает список (копию), итерация безопасна.
+        for w in self.findChildren(QWidget):
+            try:
+                p = w.parent()
+                while p is not None and p is not self:
+                    if p is tt:
+                        w.setParent(None)
+                        break
+                    p = p.parent()
+            except RuntimeError:
+                # Виджет уже уничтожен (C++-объект исчез) — пропускаем.
+                pass
+
     def _build_auth_pill(self):
         pill = QFrame()
         pill.setObjectName("authPill")

@@ -33,6 +33,10 @@ TEST_MODULES = [
     ("stress", "test_queue_stress"),
     ("reliability", "test_reliability"),
     ("reliability", "test_reliability_config"),
+    # PR #22/#23 review fixes. Bot-logic half runs under plain python3; the UI
+    # half needs PyQt5 and self-skips (no test_ functions) when it is absent.
+    ("pr23", "test_pr23_bot_logic"),
+    ("pr23", "test_ui_pr22_23"),
 ]
 
 
@@ -78,7 +82,7 @@ def main():
     args = [a for a in sys.argv[1:]]
     tag_filter = None
     name_filter = None
-    if args and args[0] in ("red", "green", "p1", "stress", "reliability"):
+    if args and args[0] in ("red", "green", "p1", "stress", "reliability", "pr23"):
         tag_filter = args[0]
         args = args[1:]
     if args and args[0] == "-k":
