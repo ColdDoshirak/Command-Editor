@@ -33,6 +33,8 @@ TEST_MODULES = [
     ("stress", "test_queue_stress"),
     ("reliability", "test_reliability"),
     ("reliability", "test_reliability_config"),
+    ("v2", "test_queue_v2"),
+    ("paths", "test_sound_paths"),
 ]
 
 

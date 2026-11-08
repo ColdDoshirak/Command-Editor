@@ -243,7 +243,12 @@ class CommandEditor(QMainWindow):
         self.auto_assign_btn = QPushButton("Auto-Assign Sounds")
         self.auto_assign_btn.clicked.connect(self.auto_assign_sounds)
         buttons_layout.addWidget(self.auto_assign_btn)
-        
+
+        self.fix_paths_btn = QPushButton("Fix Sound Paths")
+        self.fix_paths_btn.setToolTip("Sound folder moved? Find the files again and update all commands")
+        self.fix_paths_btn.clicked.connect(self.fix_sound_paths)
+        buttons_layout.addWidget(self.fix_paths_btn)
+
         main_layout.addLayout(buttons_layout)
         
         # Create command details group
@@ -545,7 +550,17 @@ class CommandEditor(QMainWindow):
         self.update_notification = UpdateNotificationWidget(self)
           # Auto-check for updates on startup (silent check)
         self.auto_check_updates()
-            
+
+        # Moved sound folder? Re-link from remembered folders / tell the user.
+        QTimer.singleShot(1500, self._startup_sound_check)
+
+    def _startup_sound_check(self):
+        try:
+            warn = self.config_manager.config.get('sound_check_on_start', True)
+            self.auto_relink_sounds(quiet=not warn)
+        except Exception as e:
+            print(f"Sound path check failed: {e}")
+
     def auto_check_updates(self):
         """Automatically check for updates on startup"""
         try:
@@ -1537,11 +1552,11 @@ class CommandEditor(QMainWindow):
                         cmd["Cost"] = int(cost_item.text() or 0)
                     except ValueError:
                         cmd["Cost"] = 0
-                if count_item:
-                    try:
-                        cmd["Count"] = int(count_item.text() or 0)
-                    except ValueError:
-                        cmd["Count"] = 0
+                # Count is NOT read back from the table: the bot increments
+                # cmd["Count"] directly, and re-reading the stale cell here
+                # silently reset every usage counter on the next save.
+                # (Manual edits of the Count cell reach the dict through
+                # table_item_changed.)
                 if usage_item:
                     cmd["Usage"] = usage_item.text()
                 if enabled_item:
@@ -1556,16 +1571,145 @@ class CommandEditor(QMainWindow):
                     except ValueError:
                         cmd["Volume"] = 100
                 
+            # Show the live usage counters in the table
+            self.table.blockSignals(True)
+            for i in range(min(self.table.rowCount(), len(self.commands))):
+                it = self.table.item(i, 8)
+                text = str(self.commands[i].get("Count", 0))
+                if it is not None and it.text() != text:
+                    it.setText(text)
+            self.table.blockSignals(False)
+
             # Save to file
             with open('commands.json', 'w', encoding='utf-8') as f:
                 json.dump(self.commands, f, indent=4, ensure_ascii=False)
-                
+
             # Update commands in Twitch tab if it exists
             if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
                 self.twitch_tab.bot.update_commands(self.commands)
                 
         except Exception as e:
             print(f"Error saving commands: {e}")
+
+    def _write_row_to_table(self, row):
+        """Write every column of commands[row] into the (classic) table
+        without triggering table_item_changed."""
+        cmd = self.commands[row]
+        values = [
+            cmd.get("Command", ""), cmd.get("Permission", "Everyone"),
+            cmd.get("Info", ""), cmd.get("Group", ""), cmd.get("Response", ""),
+            str(cmd.get("Cooldown", 0)), str(cmd.get("UserCooldown", 0)),
+            str(cmd.get("Cost", 0)), str(cmd.get("Count", 0)),
+            cmd.get("Usage", "SC"), "✓" if cmd.get("Enabled", True) else "✗",
+            cmd.get("SoundFile", ""), str(cmd.get("FKSoundFile", "") or ""),
+            str(cmd.get("Volume", 100)),
+        ]
+        self.table.blockSignals(True)
+        try:
+            for col, value in enumerate(values):
+                item = self.table.item(row, col)
+                if item is None:
+                    self.table.setItem(row, col, QTableWidgetItem(value))
+                elif item.text() != value:
+                    item.setText(value)
+        finally:
+            self.table.blockSignals(False)
+
+    def apply_command_edit(self, row, changes):
+        """Single entry point for edits made in the themed views.
+
+        Updates the command dict, the whole classic table row (save_commands
+        re-reads the table, so a partially written row used to revert the
+        edit on the next save), commands.json and the running bot.
+        """
+        if not (0 <= row < len(self.commands)) or not changes:
+            return
+        cmd = self.commands[row]
+        old_group = cmd.get("Group")
+        for key, value in changes.items():
+            if key == "Volume":
+                try:
+                    value = int(max(0, min(100, round(float(value)))))
+                except (TypeError, ValueError):
+                    continue
+            elif key in ("Cooldown", "UserCooldown", "Cost", "Count"):
+                try:
+                    value = max(0, int(value))
+                except (TypeError, ValueError):
+                    continue
+            cmd[key] = value
+        self._write_row_to_table(row)
+        self.save_commands()  # writes commands.json + pushes to the bot
+        if cmd.get("Group") != old_group and hasattr(self, "group_settings_tab"):
+            self.group_settings_tab.refresh_groups()
+
+    def apply_bulk_command_edits(self, changes_by_row):
+        """Apply {row: {key: value}} in one go (one save, one bot push).
+        Returns the number of changed fields."""
+        n = 0
+        for row, changes in changes_by_row.items():
+            if not (0 <= row < len(self.commands)):
+                continue
+            for key, value in changes.items():
+                self.commands[row][key] = value
+                n += 1
+            self._write_row_to_table(row)
+        if n:
+            self.save_commands()
+            # classic detail fields of the selected row
+            try:
+                sel = self.table.currentRow()
+                if sel in changes_by_row:
+                    self.update_details(sel, 0, -1, -1)
+            except Exception:
+                pass
+            self.refresh_themed_commands()
+        return n
+
+    def fix_sound_paths(self):
+        """Open the "Fix sound paths" dialog (moved / renamed sound folders)."""
+        import sound_paths
+        dlg = sound_paths.make_relink_dialog(self)
+        dlg.exec_()
+
+    def auto_relink_sounds(self, quiet=False):
+        """Re-link missing sounds from folders remembered by the fixer.
+
+        Only unambiguous matches are applied. Returns (fixed, still_missing).
+        """
+        import sound_paths
+        folders = self.config_manager.get_sound_folders()
+        missing = sound_paths.find_missing(self.commands)
+        if not missing:
+            return 0, 0
+        fixed = 0
+        if folders:
+            plan = sound_paths.plan_from_folders(self.commands, folders)
+            plan = [p for p in plan if p["new"] and not p["ambiguous"]]
+            fixed = self.apply_bulk_command_edits(sound_paths.plan_to_changes(plan))
+        still = len(sound_paths.find_missing(self.commands))
+        if not quiet and (fixed or still):
+            box = QMessageBox(self)
+            box.setWindowTitle("Sound files")
+            lines = []
+            if fixed:
+                lines.append("%d moved sound file(s) were found and re-linked automatically." % fixed)
+            if still:
+                lines.append("%d sound file(s) are missing (moved or renamed folder?)." % still)
+            box.setText("\n".join(lines))
+            fix_btn = None
+            if still:
+                fix_btn = box.addButton("Fix sound paths…", QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Close)
+            mute = QCheckBox("Don't warn about missing sounds on start-up")
+            box.setCheckBox(mute)
+            box.exec_()
+            if mute.isChecked():
+                self.config_manager.config['sound_check_on_start'] = False
+                self.config_manager.save_config()
+            if fix_btn is not None and box.clickedButton() is fix_btn:
+                self.fix_sound_paths()
+        return fixed, still
 
     def disconnect_bot(self):
         if self.bot:
@@ -2143,7 +2287,7 @@ class CommandEditor(QMainWindow):
 
             # Update status
             self.system_backup_status_label.setText(f"{len(backup_files)} backups available")
-            self.system_backup_status_label.setStyleSheet("color: blue;")
+            self.system_backup_status_label.setStyleSheet("color: #3B82F6;")
 
             # Add each backup
             for i, backup_file in enumerate(backup_files):
@@ -2220,13 +2364,17 @@ class CommandEditor(QMainWindow):
 
                     frame.setLayout(frame_layout)
 
-                    # Style the frame (latest backup in green)
+                    # Style the frame (latest backup in green). Selector by
+                    # objectName: a bare "QFrame {}" also matched every QLabel
+                    # inside (QLabel is a QFrame) and the fixed near-white
+                    # background made the card white in the dark theme.
                     if i == 0:
+                        frame.setObjectName("latestBackup")
                         frame.setStyleSheet("""
-                            QFrame {
+                            QFrame#latestBackup {
                                 border: 2px solid #4CAF50;
                                 border-radius: 5px;
-                                background-color: #f9fff9;
+                                background-color: rgba(76, 175, 80, 0.10);
                             }
                         """)
 
@@ -2519,7 +2667,7 @@ class CommandEditor(QMainWindow):
                 if hasattr(self, 'history_manager'):
                     backup_data["command_history"] = {
                         "max_backups": self.history_manager.max_backups,
-                        "backup_dir": str(self.history_manager.backup_dir)
+                        "backup_dir": str(self.history_manager.history_folder)
                     }
             except Exception as e:
                 print(f"Error backing up command history metadata: {e}")
@@ -2597,11 +2745,17 @@ class CommandEditor(QMainWindow):
     def on_tab_changed(self, index):
         """Handle tab changes to refresh data if needed"""
         current_widget = self.tab_widget.widget(index)
-        if hasattr(self, 'group_settings_tab') and current_widget == self.group_settings_tab:
+        # In themed layouts the tab is wrapped in a ThemedTabView, so compare
+        # against the wrapped widget too (the refresh never ran there and the
+        # Group Settings table stayed empty).
+        inner = getattr(current_widget, "original_tab", current_widget)
+        if hasattr(self, 'group_settings_tab') and inner is self.group_settings_tab:
             self.group_settings_tab.refresh_groups()
-        # Keep the sidebar theme's nav highlight in sync
-        if self.theme == "sidebar" and self.themed_commands_view is not None:
-            self.themed_commands_view.highlight_tab(index)
+        if hasattr(self, 'queue_control_tab') and inner is self.queue_control_tab:
+            self.queue_control_tab.refresh_groups()
+        # Keep the sidebar nav highlight in sync
+        if self.sidebar_nav is not None and self.sidebar_nav.isVisible():
+            self.sidebar_nav.highlight_tab(index)
 
     # ------------------------------------------------------------------
     # Theme switching
@@ -2618,21 +2772,25 @@ class CommandEditor(QMainWindow):
         # apply_theme вернём пользователя на его вкладку.
         current_index = self.tab_widget.currentIndex() if self.tab_widget is not None else 0
 
+        layout = _theme.layout_of(theme_name)
+
         app = QApplication.instance()
         if app is not None:
-            if theme_name == "classic":
-                app.setStyleSheet(_theme.qss_for("classic", {}))
-            else:
-                app.setStyleSheet(_theme.qss_for(theme_name, _theme.PALETTES[theme_name]))
+            app.setStyleSheet(_theme.qss_for(theme_name))
 
-        # In the sidebar theme the left nav IS the navigation — hide the
+        # In the sidebar layout the left nav IS the navigation — hide the
         # top tab bar so it doesn't duplicate it (content stays visible).
         try:
-            self.tab_widget.tabBar().setVisible(theme_name != "sidebar")
+            self.tab_widget.tabBar().setVisible(layout != "sidebar")
         except Exception:
             pass
 
+        # Every theme has a Settings tab (classic also keeps the same settings
+        # in the Commands tab; both drive the same widgets). Added before the
+        # nav so its button is shown.
+        self._update_settings_tab(True)
         self._update_sidebar(theme_name)
+        self._update_now_playing_bar(theme_name)
 
         # Fit all 11 tabs into the bar (avoid clipped labels)
         try:
@@ -2652,26 +2810,86 @@ class CommandEditor(QMainWindow):
         # делают removeTab/insertTab и setCurrentIndex(0), сбивая выбор —
         # при смене темы из About логично остаться на About).
         try:
+            if current_index >= self.tab_widget.count():
+                current_index = 0
             self.tab_widget.setCurrentIndex(current_index)
             if self.sidebar_nav is not None:
                 self.sidebar_nav.highlight_tab(current_index)
         except Exception:
             pass
 
+        # Keep the About tab's theme combo in sync when switched elsewhere
+        combo = getattr(getattr(self, "about_tab", None), "theme_combo", None)
+        if combo is not None:
+            i = combo.findData(theme_name)
+            if i >= 0 and combo.currentIndex() != i:
+                combo.blockSignals(True)
+                combo.setCurrentIndex(i)
+                combo.blockSignals(False)
+
     def _update_sidebar(self, theme_name):
-        """Show the persistent left nav rail in the sidebar theme, hide it
+        """Show the persistent left nav rail in sidebar-layout themes, hide it
         otherwise. The rail is a sibling of the tab widget in the central
-        container, so it stays visible on every tab."""
-        if theme_name == "sidebar":
-            if self.sidebar_nav is None:
-                self.sidebar_nav = _theme.SidebarNav(
-                    self, self.tab_widget, _theme.PALETTES["sidebar"])
-                self._central_layout.insertWidget(0, self.sidebar_nav, 0)
+        container, so it stays visible on every tab. Rebuilt on every theme
+        change so it picks up the new palette."""
+        if self.sidebar_nav is not None:
+            try:
+                self.tab_widget.currentChanged.disconnect(self.sidebar_nav.highlight_tab)
+            except (TypeError, RuntimeError):
+                pass
+            self.sidebar_nav.hide()
+            self.sidebar_nav.setParent(None)
+            self.sidebar_nav.deleteLater()
+            self.sidebar_nav = None
+        if _theme.layout_of(theme_name) == "sidebar":
+            self.sidebar_nav = _theme.SidebarNav(
+                self, self.tab_widget, _theme.palette_for(theme_name))
+            self._central_layout.insertWidget(0, self.sidebar_nav, 0)
             self.sidebar_nav.show()
             self.sidebar_nav.highlight_tab(self.tab_widget.currentIndex())
-        else:
-            if self.sidebar_nav is not None:
-                self.sidebar_nav.hide()
+
+    def _update_now_playing_bar(self, theme_name):
+        """Persistent queue strip under the tabs (Midnight theme)."""
+        bar = getattr(self, "now_playing_bar", None)
+        if bar is not None:
+            bar.setParent(None)
+            bar.deleteLater()
+            self.now_playing_bar = None
+        if theme_name in _theme.NOW_PLAYING_THEMES:
+            if not hasattr(self, "_content_column"):
+                # Wrap the tab widget in a column so the bar sits below it.
+                self._content_column = QWidget()
+                col = QVBoxLayout(self._content_column)
+                col.setContentsMargins(0, 0, 0, 0)
+                col.setSpacing(0)
+                idx = self._central_layout.indexOf(self.tab_widget)
+                self._central_layout.removeWidget(self.tab_widget)
+                col.addWidget(self.tab_widget, 1)
+                self._central_layout.insertWidget(max(0, idx), self._content_column, 1)
+            self.now_playing_bar = _theme.NowPlayingBar(self)
+            self._content_column.layout().addWidget(self.now_playing_bar, 0)
+
+    def _update_settings_tab(self, show):
+        """Add (themed layouts) or remove (classic) the Settings tab. It is
+        always the last tab so the fixed nav indices stay valid."""
+        tab = getattr(self, "settings_tab", None)
+        if tab is not None:
+            idx = self.tab_widget.indexOf(tab)
+            if idx >= 0:
+                self.tab_widget.removeTab(idx)
+            tab.setParent(None)
+            tab.deleteLater()
+            self.settings_tab = None
+        if show:
+            panel = _theme.SettingsPanel(self)
+            if _theme.layout_of(self.theme) == "classic":
+                # native look: no themed frame around it
+                self.settings_tab = panel
+            else:
+                self.settings_tab = _theme.ThemedTabView(
+                    self, self.tab_widget, panel,
+                    "Settings", "sound · auto-save · appearance")
+            self.tab_widget.addTab(self.settings_tab, "Settings")
 
     def set_theme(self, theme_name):
         """Public entry point for the theme switcher (About tab)."""
@@ -2679,7 +2897,7 @@ class CommandEditor(QMainWindow):
 
     def _make_commands_view(self):
         """Build the themed Commands view for the current theme."""
-        if self.theme == "sidebar":
+        if _theme.layout_of(self.theme) == "sidebar":
             return _theme.SidebarCommandsView(
                 self, self.main_tab, self.table, self.commands,
                 self.search_input,
@@ -2743,7 +2961,7 @@ class CommandEditor(QMainWindow):
 
     def _make_twitch_view(self):
         """Build the themed Twitch view for the current theme."""
-        if self.theme == "sidebar":
+        if _theme.layout_of(self.theme) == "sidebar":
             return _theme.SidebarTwitchView(self, self.tab_widget, self.twitch_tab)
         return _theme.SpreadsheetTwitchView(self, self.tab_widget, self.twitch_tab)
 
@@ -2827,6 +3045,8 @@ class CommandEditor(QMainWindow):
                 if orig is None:
                     continue
                 if tab_widget.indexOf(orig) < 0:
+                    # drop the themed background the wrapper put on it
+                    orig.setStyleSheet("")
                     tab_widget.insertTab(min(cidx, tab_widget.count()), orig, name)
             return
 
@@ -2834,15 +3054,25 @@ class CommandEditor(QMainWindow):
             orig = getattr(self, attr, None)
             if orig is None:
                 continue
+            existing = self.themed_tab_views.pop(name, None)
             idx = tab_widget.indexOf(orig)
+            if idx < 0 and existing is not None:
+                # Themed -> themed switch: the tab sits inside the previous
+                # wrapper. Re-wrap it so it gets the new palette (it used to
+                # keep the old theme's colours, e.g. white panels in Midnight).
+                idx = tab_widget.indexOf(existing)
             if idx < 0:
                 continue
             tab_widget.removeTab(idx)
-            existing = self.themed_tab_views.pop(name, None)
             if existing is not None:
+                orig.setParent(None)
                 existing.setParent(None)
                 existing.deleteLater()
-            view = _theme.ThemedTabView(self, tab_widget, orig, title, subtitle)
+            content = None
+            if name == "Sys.Commands" and _theme.layout_of(self.theme) == "sidebar":
+                # same master/detail editor as the themed Commands view
+                content = _theme.SysCommandsView(self, orig)
+            view = _theme.ThemedTabView(self, tab_widget, orig, title, subtitle, content=content)
             tab_widget.insertTab(idx, view, name)
             self.themed_tab_views[name] = view
 

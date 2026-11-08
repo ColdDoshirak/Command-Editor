@@ -49,7 +49,9 @@ async def test_queue_processes_sequentially():
         await bot.event_message(FakeMessage("alice", "!s1", ch))
         await bot.event_message(FakeMessage("bob", "!s2", ch))
 
-        ok = await wait_until(lambda: len(bot.command_queues[SONG]._queue) == 0, timeout=5)
+        # Wait for the second PLAY, not just an empty queue: the item leaves
+        # the queue a moment before its sound starts (executor hop).
+        ok = await wait_until(lambda: len(_mixer().Channel(1).play_log) >= 2, timeout=5)
         assert ok, "queue did not drain in time"
 
         log = _mixer().Channel(1).play_log

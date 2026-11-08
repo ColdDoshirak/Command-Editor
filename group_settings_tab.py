@@ -1,5 +1,27 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton, QHBoxLayout, QMessageBox, QCheckBox, QSpinBox
+# -*- coding: utf-8 -*-
+"""Group Settings tab: per-group queue / audio channel settings.
+
+Python 3.8 / PyQt5.
+"""
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
+                             QHeaderView, QPushButton, QHBoxLayout, QMessageBox,
+                             QCheckBox, QSpinBox, QLabel)
 from PyQt5.QtCore import Qt
+
+
+# (header, tooltip)
+_COLUMNS = [
+    ("Group", "Command group (the Group field of commands)"),
+    ("Queue", "Play this group's commands one after another instead of at once"),
+    ("Max size", "How many commands may wait (including the one playing). 0 = unlimited.\n"
+                 "When full, new commands are rejected and points refunded."),
+    ("Channel", "Audio channel. 0 = shared channel (sounds may cut each other).\n"
+                "1-32 = own channel: plays in parallel with other groups."),
+    ("Persist", "Keep waiting commands after a restart of the program"),
+    ("Announce", "Tell the viewer their position when a command is queued\n"
+                 "(only if something is already waiting)"),
+]
+
 
 class GroupSettingsTab(QWidget):
     def __init__(self, parent=None):
@@ -11,125 +33,140 @@ class GroupSettingsTab(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
 
-        # Table for group settings
+        hint = QLabel(
+            "Queued groups play one command at a time. Give music its own group "
+            "(e.g. SONG) with its own channel so it never cuts other sounds. "
+            "Changes apply to the running bot immediately — a playing track is not interrupted.")
+        hint.setWordWrap(True)
+        hint.setObjectName("statusLabel")
+        layout.addWidget(hint)
+
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Group Name", "Queue Enabled", "Max Queue Size", "Audio Channel", "Persist Queue"])
+        self.table.setColumnCount(len(_COLUMNS))
+        self.table.setHorizontalHeaderLabels([c[0] for c in _COLUMNS])
+        for i, (_h, tip) in enumerate(_COLUMNS):
+            self.table.horizontalHeaderItem(i).setToolTip(tip)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionMode(QTableWidget.NoSelection)
         layout.addWidget(self.table)
 
-        # Buttons
         btn_layout = QHBoxLayout()
-        self.refresh_btn = QPushButton("Refresh Groups")
+        self.refresh_btn = QPushButton("Reload")
+        self.refresh_btn.setToolTip("Discard unsaved edits and reload groups")
         self.refresh_btn.clicked.connect(self.refresh_groups)
         btn_layout.addWidget(self.refresh_btn)
-
+        btn_layout.addStretch(1)
+        self.status = QLabel("")
+        self.status.setObjectName("statusLabel")
+        btn_layout.addWidget(self.status)
         self.save_btn = QPushButton("Save Settings")
+        self.save_btn.setObjectName("primaryBtn")
         self.save_btn.clicked.connect(self.save_settings)
         btn_layout.addWidget(self.save_btn)
 
         layout.addLayout(btn_layout)
         self.setLayout(layout)
-        
+
         self.refresh_groups()
 
-    def refresh_groups(self):
-        # Get unique groups from commands
-        groups = set()
+    @staticmethod
+    def _centered(widget):
+        cell = QWidget()
+        lay = QHBoxLayout(cell)
+        lay.addWidget(widget)
+        lay.setAlignment(Qt.AlignCenter)
+        lay.setContentsMargins(0, 0, 0, 0)
+        return cell
+
+    def _all_groups(self):
+        """Groups from commands plus configured categories (case-insensitive
+        merge: the configured spelling wins)."""
+        categories = self.config_manager.get_audio_categories() or {}
+        by_upper = {}
+        for name in categories:
+            by_upper[str(name).upper()] = name
         for cmd in self.parent.commands:
-            groups.add(cmd.get("Group", "GENERAL"))
-        
-        # Load current settings
-        categories = self.config_manager.get_audio_categories()
-        
+            g = cmd.get("Group", "GENERAL") or "GENERAL"
+            by_upper.setdefault(str(g).upper(), g)
+        return sorted(by_upper.values(), key=lambda s: str(s).upper())
+
+    def refresh_groups(self):
+        categories = self.config_manager.get_audio_categories() or {}
+        groups = self._all_groups()
+        self._rows = []
         self.table.setRowCount(len(groups))
-        for i, group in enumerate(sorted(list(groups))):
-            self.table.setItem(i, 0, QTableWidgetItem(group))
-            
-            check = QCheckBox()
-            is_enabled = categories.get(group, {}).get("queue_enabled", False)
-            check.setChecked(is_enabled)
-            
-            # Center the checkbox
-            cell_widget = QWidget()
-            cell_layout = QHBoxLayout(cell_widget)
-            cell_layout.addWidget(check)
-            cell_layout.setAlignment(Qt.AlignCenter)
-            cell_layout.setContentsMargins(0, 0, 0, 0)
-            
-            self.table.setCellWidget(i, 1, cell_widget)
-            # Store the checkbox reference in the item's data or just use cellWidget
-            self.table.item(i, 0).setData(Qt.UserRole, check)
+        for i, group in enumerate(groups):
+            cat = categories.get(group, {})
+            if not isinstance(cat, dict):
+                cat = {}
+            name_item = QTableWidgetItem(group)
+            name_item.setFlags(Qt.ItemIsEnabled)
+            n_cmds = sum(1 for c in self.parent.commands
+                         if str(c.get("Group", "")).upper() == str(group).upper())
+            name_item.setToolTip("%d command(s)" % n_cmds)
+            self.table.setItem(i, 0, name_item)
 
-            # Max Queue Size SpinBox
-            spin = QSpinBox()
-            spin.setRange(0, 1000)
-            spin.setValue(categories.get(group, {}).get("max_queue_size", 0))
-            spin.setToolTip("0 = Unlimited")
-            
-            # Center the spinbox
-            spin_widget = QWidget()
-            spin_layout = QHBoxLayout(spin_widget)
-            spin_layout.addWidget(spin)
-            spin_layout.setAlignment(Qt.AlignCenter)
-            spin_layout.setContentsMargins(0, 0, 0, 0)
-            
-            self.table.setCellWidget(i, 2, spin_widget)
-            # Store spinbox reference
-            self.table.item(i, 0).setData(Qt.UserRole + 1, spin)
+            queue = QCheckBox()
+            queue.setChecked(bool(cat.get("queue_enabled", False)))
+            size = QSpinBox()
+            size.setRange(0, 1000)
+            size.setSpecialValueText("unlimited")
+            size.setValue(int(cat.get("max_queue_size", 0) or 0))
+            channel = QSpinBox()
+            channel.setRange(0, 32)
+            channel.setSpecialValueText("shared")
+            channel.setValue(int(cat.get("audio_channel", 0) or 0))
+            persist = QCheckBox()
+            persist.setChecked(bool(cat.get("persist_queue", False)))
+            announce = QCheckBox()
+            announce.setChecked(bool(cat.get("announce_enqueue", False)))
 
-            # Audio Channel SpinBox
-            channel_spin = QSpinBox()
-            channel_spin.setRange(0, 32)
-            channel_spin.setValue(categories.get(group, {}).get("audio_channel", 0))
-            channel_spin.setToolTip("0 = Default Channel. Assign unique IDs (1-32) for parallel playback.")
-            
-            # Center the spinbox
-            channel_widget = QWidget()
-            channel_layout = QHBoxLayout(channel_widget)
-            channel_layout.addWidget(channel_spin)
-            channel_layout.setAlignment(Qt.AlignCenter)
-            channel_layout.setContentsMargins(0, 0, 0, 0)
-            
-            self.table.setCellWidget(i, 3, channel_widget)
-            # Store channel spinbox reference
-            self.table.item(i, 0).setData(Qt.UserRole + 2, channel_spin)
+            widgets = (queue, size, channel, persist, announce)
+            for col, w in enumerate(widgets, start=1):
+                w.setToolTip(_COLUMNS[col][1])
+                self.table.setCellWidget(i, col, self._centered(w))
 
-            # Persist Queue checkbox (opt-in: keep this group's queue across restarts)
-            persist_check = QCheckBox()
-            persist_check.setChecked(categories.get(group, {}).get("persist_queue", False))
-            persist_check.setToolTip("Keep this group's queue across restarts (opt-in)")
-
-            persist_widget = QWidget()
-            persist_layout = QHBoxLayout(persist_widget)
-            persist_layout.addWidget(persist_check)
-            persist_layout.setAlignment(Qt.AlignCenter)
-            persist_layout.setContentsMargins(0, 0, 0, 0)
-
-            self.table.setCellWidget(i, 4, persist_widget)
-            self.table.item(i, 0).setData(Qt.UserRole + 3, persist_check)
+            # Queue-only options make no sense without a queue
+            def sync(_=None, q=queue, deps=(size, persist, announce)):
+                for d in deps:
+                    d.setEnabled(q.isChecked())
+            queue.toggled.connect(sync)
+            sync()
+            self._rows.append((group, widgets))
+        self.status.setText("")
 
     def save_settings(self):
-        categories = self.config_manager.get_audio_categories()
-        
-        for i in range(self.table.rowCount()):
-            group = self.table.item(i, 0).text()
-            check = self.table.item(i, 0).data(Qt.UserRole)
-            spin = self.table.item(i, 0).data(Qt.UserRole + 1)
-            channel_spin = self.table.item(i, 0).data(Qt.UserRole + 2)
-            persist_check = self.table.item(i, 0).data(Qt.UserRole + 3)
+        categories = self.config_manager.get_audio_categories() or {}
+        for group, (queue, size, channel, persist, announce) in getattr(self, "_rows", []):
+            entry = categories.setdefault(group, {})
+            entry["queue_enabled"] = queue.isChecked()
+            entry["max_queue_size"] = size.value()
+            entry["audio_channel"] = channel.value()
+            entry["persist_queue"] = persist.isChecked()
+            entry["announce_enqueue"] = announce.isChecked()
 
-            if group not in categories:
-                categories[group] = {}
+        # Two queued groups on the same dedicated channel would cut each other.
+        used = {}
+        for group, (queue, size, channel, persist, announce) in getattr(self, "_rows", []):
+            if channel.value() > 0:
+                used.setdefault(channel.value(), []).append(group)
+        clashes = ["channel %d: %s" % (ch, ", ".join(gs)) for ch, gs in sorted(used.items()) if len(gs) > 1]
 
-            categories[group]["queue_enabled"] = check.isChecked()
-            categories[group]["max_queue_size"] = spin.value()
-            categories[group]["audio_channel"] = channel_spin.value()
-            categories[group]["persist_queue"] = persist_check.isChecked() if persist_check else False
-            
         self.config_manager.save_audio_categories(categories)
-        QMessageBox.information(self, "Success", "Group settings saved successfully!")
 
-        # Apply changes to the running bot without a restart (no-op if not connected)
+        # Apply to the running bot without a restart (no-op if not connected)
         if hasattr(self.parent, "twitch_tab") and self.parent.twitch_tab:
             self.parent.twitch_tab.reload_bot_audio_categories()
+        qc = getattr(self.parent, "queue_control_tab", None)
+        if qc is not None:
+            qc.refresh_groups()
+
+        if clashes:
+            QMessageBox.warning(
+                self, "Shared audio channel",
+                "Saved. Note: these groups share a dedicated channel and will cut "
+                "each other off:\n\n" + "\n".join(clashes))
+            self.status.setText("Saved (channel clash)")
+        else:
+            self.status.setText("Saved ✓ — applied to the running bot")

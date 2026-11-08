@@ -376,16 +376,25 @@ class ConfigManager:
     def get_theme(self):
         """Return the active UI theme name (classic/sidebar/spreadsheet)."""
         t = self.config.get('theme', 'classic')
-        if t not in ('classic', 'sidebar', 'spreadsheet'):
+        if t not in ('classic', 'sidebar', 'spreadsheet', 'midnight'):
             return 'classic'
         return t
 
     def set_theme(self, theme):
-        if theme not in ('classic', 'sidebar', 'spreadsheet'):
+        if theme not in ('classic', 'sidebar', 'spreadsheet', 'midnight'):
             theme = 'classic'
         self.config['theme'] = theme
         self.save_config()
         
+    def get_sound_folders(self):
+        """Folders remembered by "Fix sound paths" (used for auto re-link)."""
+        folders = self.config.get('sound_folders', [])
+        return [f for f in folders if isinstance(f, str) and f] if isinstance(folders, list) else []
+
+    def set_sound_folders(self, folders):
+        self.config['sound_folders'] = list(folders or [])
+        self.save_config()
+
     def get_auto_save(self):
         return self.config.get('auto_save', {'enabled': True, 'interval': 300})
         
@@ -489,13 +498,31 @@ class ConfigManager:
         """Set volume for a specific group in audio categories configuration"""
         if 'audio_categories' not in self.config:
             self.config['audio_categories'] = {}
-        
-        group_key = group.upper()
+
+        group_key = self._group_key(group)
         if group_key not in self.config['audio_categories']:
             self.config['audio_categories'][group_key] = {}
-        
-        self.config['audio_categories'][group_key]['volume'] = volume
+
+        entry = self.config['audio_categories'][group_key]
+        # 0 used to mean "not set", so "!volume 0" could never mute a group.
+        # Mute is stored explicitly; 'volume' keeps the last audible value.
+        if volume <= 0:
+            entry['muted'] = True
+        else:
+            entry['muted'] = False
+            entry['volume'] = volume
         self.save_config()
+
+    def _group_key(self, group: str) -> str:
+        """Existing audio_categories key matching group (case-insensitive),
+        or the upper-cased name for a new group."""
+        categories = self.config.get('audio_categories', {})
+        if group in categories:
+            return group
+        for name in categories:
+            if str(name).upper() == str(group).upper():
+                return name
+        return group.upper()
 
     def get_group_volume(self, group: str) -> float:
         """Get volume for a specific group from audio categories configuration.
@@ -505,9 +532,11 @@ class ConfigManager:
         command's Volume with 50%, so the Volume column was ignored in the
         queue path (while the non-queued path respected it).
         """
-        group_key = group.upper()
         categories = self.config.get('audio_categories', {})
-        return categories.get(group_key, {}).get('volume', 0)
+        entry = categories.get(self._group_key(group), {})
+        if entry.get('muted'):
+            return 0
+        return entry.get('volume', 0)
 
     # ------------------------------------------------------------------
     # Optional queue persistence (opt-in per group via 'persist_queue')

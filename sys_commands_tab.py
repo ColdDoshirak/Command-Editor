@@ -250,9 +250,11 @@ class SysCommandsTab(QWidget):
         self.cooldown_spin = QSpinBox()
         self.cooldown_spin.setMinimum(0)
         self.cooldown_spin.setMaximum(3600)
+        self.cooldown_spin.setSuffix(" min")  # the bot counts minutes
         self.user_cooldown_spin = QSpinBox()
         self.user_cooldown_spin.setMinimum(0)
         self.user_cooldown_spin.setMaximum(3600)
+        self.user_cooldown_spin.setSuffix(" min")
         self.cost_spin = QSpinBox()
         self.cost_spin.setMinimum(0)
         self.cost_spin.setMaximum(1000000)
@@ -325,6 +327,15 @@ class SysCommandsTab(QWidget):
         
         self.setLayout(layout)
         
+        # !random / !volume fields are shown only for those commands (see
+        # on_command_selected); hidden until something is selected, otherwise
+        # all of them stacked up and inflated the window's minimum height.
+        for w in (self.random_group_label, self.random_group_edit,
+                  self.show_picked_command_check, self.picked_command_response_label,
+                  self.picked_command_response_edit, self.default_group_label,
+                  self.default_group_edit):
+            w.setVisible(False)
+
         # Update the table with current commands
         self.update_table()
         
@@ -681,54 +692,98 @@ class SysCommandsTab(QWidget):
                 if self.parent and hasattr(self.parent, 'update_system_commands'):
                     self.parent.update_system_commands(self.system_commands)
 
+    # -- API shared with the themed view (theme.SysCommandsView) ---------
+    @staticmethod
+    def display_name(cmd):
+        return cmd.get("command_name", cmd.get("command", ""))
+
+    def name_error(self, row, name):
+        """Why `name` can't be used for the command at `row` (None if ok)."""
+        name = (name or "").strip()
+        if not name:
+            return "Command name cannot be empty."
+        for i, other in enumerate(self.system_commands):
+            if i != row and self.display_name(other) == name:
+                return "Command name '%s' already exists." % name
+        return None
+
+    def set_field(self, row, field_name, value):
+        """Change one field, save and refresh the table. Returns an error
+        message (nothing changed) or None."""
+        if not (0 <= row < len(self.system_commands)):
+            return "No command selected."
+        cmd = self.system_commands[row]
+        if field_name == "command_name":
+            if not cmd.get("is_duplicate", False):
+                return "Original command names can't be changed — duplicate the command instead."
+            err = self.name_error(row, value)
+            if err:
+                return err
+            value = value.strip()
+        cmd[field_name] = value
+        if field_name == "enabled" and value and cmd.get("is_default_disabled", False):
+            cmd["was_manually_enabled"] = True
+        self.save_system_commands()
+        self.update_table()
+        if self.parent and hasattr(self.parent, 'update_system_commands'):
+            self.parent.update_system_commands(self.system_commands)
+        return None
+
+    def duplicate_at(self, row):
+        """Duplicate the original command at `row`. Returns the new row or
+        an error message (str)."""
+        if not (0 <= row < len(self.system_commands)):
+            return "Please select an original command to duplicate."
+        original_cmd = self.system_commands[row]
+        if not original_cmd.get("is_original", False) or original_cmd.get("is_duplicate", False):
+            return "You can only duplicate original commands, not existing duplicates."
+        import copy
+        duplicate_cmd = copy.deepcopy(original_cmd)
+        base_name = original_cmd["command"]
+        counter = 1
+        new_name = f"{base_name}_copy"
+        existing_names = [self.display_name(c) for c in self.system_commands]
+        while new_name in existing_names:
+            counter += 1
+            new_name = f"{base_name}_copy{counter}"
+        duplicate_cmd["command_name"] = new_name
+        duplicate_cmd["is_duplicate"] = True
+        duplicate_cmd["enabled"] = False  # Start disabled by default
+        self.system_commands.append(duplicate_cmd)
+        self.save_system_commands()
+        self.update_table()
+        return len(self.system_commands) - 1
+
+    def remove_at(self, row, parent_widget=None):
+        """Remove the duplicate at `row` after confirmation. True if removed."""
+        if not (0 <= row < len(self.system_commands)):
+            return False
+        cmd = self.system_commands[row]
+        if not cmd.get("is_duplicate", False):
+            QMessageBox.warning(parent_widget or self, "Error", "Cannot remove original system commands.")
+            return False
+        reply = QMessageBox.question(
+            parent_widget or self, "Confirm Removal",
+            f"Are you sure you want to remove the duplicate command '{self.display_name(cmd)}'?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return False
+        del self.system_commands[row]
+        self.save_system_commands()
+        self.update_table()
+        return True
+
     def duplicate_command(self):
         """Create a duplicate of the selected original command"""
         selected_items = self.table.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "Error", "Please select an original command to duplicate.")
             return
-
-        row = selected_items[0].row()
-        if row >= len(self.system_commands):
+        result = self.duplicate_at(selected_items[0].row())
+        if isinstance(result, str):
+            QMessageBox.warning(self, "Error", result)
             return
-
-        original_cmd = self.system_commands[row]
-
-        # Only allow duplicating original commands (that are not duplicates themselves)
-        if not original_cmd.get("is_original", False) or original_cmd.get("is_duplicate", False):
-            QMessageBox.warning(self, "Error", "You can only duplicate original commands, not existing duplicates.")
-            return
-
-        import copy
-        # Create a duplicate with a unique name
-        duplicate_cmd = copy.deepcopy(original_cmd)
-
-        # Generate a unique name for the duplicate
-        base_name = original_cmd["command"]
-        counter = 1
-        new_name = f"{base_name}_copy"
-
-        # Check if the name already exists and increment counter if needed
-        existing_names = [cmd.get("command_name", cmd["command"]) for cmd in self.system_commands]
-        while new_name in existing_names:
-            counter += 1
-            new_name = f"{base_name}_copy{counter}"
-
-        duplicate_cmd["command_name"] = new_name
-        duplicate_cmd["is_duplicate"] = True
-        duplicate_cmd["enabled"] = False # Start disabled by default
-
-        # Add to system commands
-        self.system_commands.append(duplicate_cmd)
-
-        # Save and update UI
-        self.save_system_commands()
-        self.update_table()
-
-        # Select the new duplicate
-        self.table.selectRow(len(self.system_commands) - 1)
-        
-
+        self.table.selectRow(result)
 
     def remove_command(self):
         """Remove the selected duplicate command"""
@@ -736,34 +791,7 @@ class SysCommandsTab(QWidget):
         if not selected_items:
             QMessageBox.warning(self, "Error", "Please select a duplicate command to remove.")
             return
-            
-        row = selected_items[0].row()
-        if row >= len(self.system_commands):
-            return
-            
-        cmd = self.system_commands[row]
-        
-        # Only allow removing duplicates, not original commands
-        # A command is considered a duplicate if it has is_duplicate=True
-        if not cmd.get("is_duplicate", False):
-            QMessageBox.warning(self, "Error", "Cannot remove original system commands.")
-            return
-        
-        reply = QMessageBox.question(
-            self, 
-            "Confirm Removal", 
-            f"Are you sure you want to remove the duplicate command '{cmd.get('command_name', cmd['command'])}'?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            # Remove from system commands
-            del self.system_commands[row]
-            
-            # Save and update UI
-            self.save_system_commands()
-            self.update_table()
+        self.remove_at(selected_items[0].row())
 
     def show_context_menu(self, position):
         """Show context menu for the table"""

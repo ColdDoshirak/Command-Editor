@@ -243,9 +243,9 @@ class AboutTab(QWidget):
         theme_label = QLabel("Theme:")
         theme_label.setStyleSheet("font-weight: 600;")
         self.theme_combo = QComboBox()
-        self.theme_combo.addItem("Classic (native)", "classic")
-        self.theme_combo.addItem("Sidebar (Design 1)", "sidebar")
-        self.theme_combo.addItem("Spreadsheet (Design 9)", "spreadsheet")
+        import theme as _theme_mod
+        for _key in _theme_mod.THEMES:
+            self.theme_combo.addItem(_theme_mod.THEME_LABELS[_key], _key)
         current_theme = getattr(self.parent, "theme", "classic") if self.parent is not None else "classic"
         for i in range(self.theme_combo.count()):
             if self.theme_combo.itemData(i) == current_theme:
@@ -523,7 +523,7 @@ class AboutTab(QWidget):
         
         <p><b>Application:</b> Twitch Bot Command Editor</p>
         <p><b>Version:</b> {self.current_version}</p>
-        <p><b>Release Date:</b> 2026-09-29</p>
+        <p><b>Release Date:</b> 2026-11-08</p>
         <p><b>Framework:</b> PyQt5</p>
         <p><b>Python Version:</b> 3.8+</p>
         

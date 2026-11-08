@@ -291,6 +291,14 @@ class TwitchTab(QWidget):
             sl.addStretch()
             sl.addWidget(self.active_viewers_count)
             sl.addWidget(self.all_viewers_count)
+            # A themed toolbar may have hidden a widget (overflow); nothing
+            # in this tab hides these on purpose, so show them all again.
+            for w in (self.auth_status, self.auth_button, self.token_button,
+                      self.channel_input, self.connect_button, self.disconnect_button,
+                      self.check_connection_button, self.chat_display, self.message_input,
+                      self.send_button, self.viewers_tabs, self.refresh_viewers_button,
+                      self.update_frequency, self.last_update_label):
+                w.show()
         finally:
             self._restoring = False
 

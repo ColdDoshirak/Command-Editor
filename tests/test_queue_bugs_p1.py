@@ -598,10 +598,25 @@ async def test_b9_reload_resets_semaphores():
         sem = bot.queue_semaphores[SONG]
         assert sem._value == 0
 
+        # Saving Group Settings while a track plays must neither cut the
+        # track nor kill the worker (the old reload did both, and the queue
+        # stayed dead until restart), and must not leak the slot.
+        worker = bot.queue_workers[SONG]
         await bot.reload_audio_categories()
+        await asyncio.sleep(0.1)
+        assert _mixer().Channel(1).get_busy(), "reload cut the playing track"
+        assert not worker.done(), "reload killed the queue worker"
+        assert bot.queue_processing[SONG], "queue left disabled after reload"
         sem2 = bot.queue_semaphores[SONG]
-        assert sem2._value == 1, (
-            "semaphore not reset after reload: sem._value=%s" % sem2._value)
+        assert sem2._value == 0, "playing item must still hold its slot"
+
+        # Slot frees once the track is over; the queue still accepts work.
+        _mixer().Channel(1).stop()
+        ok = await wait_until(lambda: sem2._value == 1, timeout=3)
+        assert ok, "slot leaked after reload: _value=%s" % sem2._value
+        await bot.event_message(FakeMessage("bob", "!s1", ch))
+        ok = await wait_until(lambda: len(_mixer().Channel(1).play_log) >= 2, timeout=3)
+        assert ok, "queue does not play after reload"
         await _stop_bot(bot)
     finally:
         drop_tmpdir(tmp)
