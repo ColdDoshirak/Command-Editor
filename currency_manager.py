@@ -10,6 +10,7 @@ import shutil
 import logging
 from typing import Optional, Dict, Any, List
 
+from core import paths
 
 class CurrencyManager:
     def __init__(self):
@@ -44,23 +45,21 @@ class CurrencyManager:
             'on_host': 0
         }
         
-        # Определение корректных путей для работы и с PyInstaller
-        if getattr(sys, 'frozen', False):
-            # Запущено как скомпилированный .exe
-            self.data_dir = Path(os.path.dirname(sys.executable))
-        else:
-            # Запущено как обычный .py файл
-            self.data_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        
+        # Все пути — из core.paths (рядом с программой). Настройки валюты
+        # раньше читались/писались относительно текущей рабочей папки.
+        self.data_dir = paths.app_dir()
+
         # Создаем директорию для данных, если она не существует
         os.makedirs(self.data_dir, exist_ok=True)
-        
+
         # Пути к файлам данных
-        self.users_file = self.data_dir / 'users_currency.json'
-        self.currency_file = self.data_dir / 'users_currency.json'
-        
+        self.users_file = paths.users_currency_file()
+        self.currency_file = self.users_file
+        self.settings_file = paths.currency_settings_file()
+        self.ranks_file = paths.ranks_file()
+
         # Backup-related settings
-        self.backup_dir = self.data_dir / 'backups' / 'currency'
+        self.backup_dir = paths.currency_backups_dir()
         self._load_backup_settings()  # Load backup settings from config
         self.backup_enabled = True
 
@@ -250,7 +249,10 @@ class CurrencyManager:
     def save_ranks(self):
         """Сохранить данные о рангах"""
         try:
-            with open(self.data_dir / 'ranks.json', 'w', encoding='utf-8') as f:
+            # Тот же файл, что читает вкладка Ranks (раньше — ranks.json в
+            # корне, и восстановление рангов из бэкапа не доходило до вкладки).
+            os.makedirs(os.path.dirname(str(self.ranks_file)), exist_ok=True)
+            with open(self.ranks_file, 'w', encoding='utf-8') as f:
                 json.dump(self.ranks, f, indent=4, ensure_ascii=False)
             return True
         except Exception as e:
@@ -261,11 +263,10 @@ class CurrencyManager:
         """Save currency settings to file"""
         try:
             # Ensure data directory exists
-            if not os.path.exists('data'):
-                os.makedirs('data')
-                
+            os.makedirs(os.path.dirname(str(self.settings_file)), exist_ok=True)
+
             # Save settings to file
-            with open('data/currency_settings.json', 'w', encoding='utf-8') as f:
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=4, ensure_ascii=False)
                 
             print("Currency settings saved to file")
@@ -311,8 +312,8 @@ class CurrencyManager:
             self.settings.update(defaults)
             
             # Load from file if it exists
-            if os.path.exists('data/currency_settings.json'):
-                with open('data/currency_settings.json', 'r', encoding='utf-8') as f:
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
                     loaded = json.load(f)
                     self.settings.update(loaded)
                 print("Currency settings loaded from file")

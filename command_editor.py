@@ -33,6 +33,7 @@ from PyQt5.QtCore import QMetaType
 import webbrowser
 import theme as _theme
 from app_log import setup_logging, install_print_bridge
+from core import paths
 
 # Вместо sip.registerMetaType используем:
 QMetaType.type("QTextCursor")
@@ -130,6 +131,15 @@ class CommandEditor(QMainWindow):
         self.setWindowTitle("Command Editor")
         self.setGeometry(100, 100, 1200, 800)
         
+        # Старые версии писали часть данных в текущую рабочую папку.
+        # Копируем недостающее рядом с программой ДО чтения конфигов
+        # (только копирование, ничего не перезаписывается и не удаляется).
+        try:
+            migrated = paths.migrate_from_cwd()
+        except Exception as _e:
+            migrated = []
+            print("Data migration from working directory failed: %s" % _e)
+
         # Initialize config manager
         self.config_manager = ConfigManager()
 
@@ -141,6 +151,8 @@ class CommandEditor(QMainWindow):
             install_print_bridge()
         except Exception as _e:
             print("Logging setup failed (continuing without logs): %s" % _e)
+        for _src, _dst in migrated:
+            print("Migrated %s -> %s" % (_src, _dst))
         
         # Theme state (classic / sidebar / spreadsheet)
         self.theme = self.config_manager.get_theme()
@@ -580,8 +592,8 @@ class CommandEditor(QMainWindow):
     def load_commands(self):
         """Load commands from file"""
         try:
-            if os.path.exists('commands.json'):
-                with open('commands.json', 'r', encoding='utf-8') as f:
+            if os.path.exists(paths.commands_file()):
+                with open(paths.commands_file(), 'r', encoding='utf-8') as f:
                     self.commands = json.load(f)
                     # Ensure all commands have Enabled field
                     for cmd in self.commands:
@@ -786,7 +798,7 @@ class CommandEditor(QMainWindow):
             
     def load_config(self):
         try:
-            self.config.read('config.ini')
+            self.config.read(str(paths.legacy_ini_file()))
             self.current_file = self.config.get('Settings', 'last_file', fallback=None)
             volume = self.config.getint('Settings', 'volume', fallback=50)
             self.volume_slider.setValue(volume)
@@ -799,7 +811,7 @@ class CommandEditor(QMainWindow):
         if self.current_file:
             self.config.set('Settings', 'last_file', self.current_file)
         self.config.set('Settings', 'volume', str(self.volume_slider.value()))
-        with open('config.ini', 'w') as f:
+        with open(paths.legacy_ini_file(), 'w') as f:
             self.config.write(f)
             
     def update_volume(self, value):
@@ -1293,8 +1305,8 @@ class CommandEditor(QMainWindow):
                 # Get existing commands for comparison
                 existing_commands = []
                 try:
-                    if os.path.exists('commands.json'):
-                        with open('commands.json', 'r', encoding='utf-8') as f:
+                    if os.path.exists(paths.commands_file()):
+                        with open(paths.commands_file(), 'r', encoding='utf-8') as f:
                             existing_commands = json.load(f)
                 except Exception as e:
                     print(f"Error reading existing commands for comparison: {e}")
@@ -1302,7 +1314,7 @@ class CommandEditor(QMainWindow):
 
                 # Save the commands first
                 print("Saving commands...")
-                with open('commands.json', 'w', encoding='utf-8') as f:
+                with open(paths.commands_file(), 'w', encoding='utf-8') as f:
                     json.dump(self.commands, f, indent=4, ensure_ascii=False)
 
                 # Always create backup on auto-save, don't check for significant changes
@@ -1581,7 +1593,7 @@ class CommandEditor(QMainWindow):
             self.table.blockSignals(False)
 
             # Save to file
-            with open('commands.json', 'w', encoding='utf-8') as f:
+            with open(paths.commands_file(), 'w', encoding='utf-8') as f:
                 json.dump(self.commands, f, indent=4, ensure_ascii=False)
 
             # Update commands in Twitch tab if it exists
@@ -2267,7 +2279,7 @@ class CommandEditor(QMainWindow):
                     item.widget().deleteLater()
 
             # Get backup directory
-            backup_dir = Path("backups") / "comprehensive"
+            backup_dir = paths.comprehensive_backups_dir()
             if not backup_dir.exists():
                 self.system_backup_status_label.setText("No backups found")
                 self.system_backup_status_label.setStyleSheet("color: gray;")
@@ -2603,7 +2615,7 @@ class CommandEditor(QMainWindow):
         """Create a comprehensive backup of the entire system"""
         try:
             # Create backup directory
-            backup_dir = Path("backups") / "comprehensive"
+            backup_dir = paths.comprehensive_backups_dir()
             backup_dir.mkdir(parents=True, exist_ok=True)
 
             # Generate timestamp
@@ -2707,7 +2719,7 @@ class CommandEditor(QMainWindow):
             from pathlib import Path
 
             # Get backup directory
-            backup_dir = Path("backups") / "comprehensive"
+            backup_dir = paths.comprehensive_backups_dir()
             if not backup_dir.exists():
                 return
 

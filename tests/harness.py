@@ -36,6 +36,15 @@ if not _os.environ.get("CE_TEST_VERBOSE"):
     builtins.__ce_real_print__ = builtins.print  # keep the original for the runner
     builtins.print = lambda *a, **k: None
 
+import tempfile  # noqa: E402
+from core import paths  # noqa: E402
+
+# Every ConfigManager/CurrencyManager the tests create - including the
+# extra ones built inside other classes - writes into a sandbox, never into
+# the repository. Individual tests point it at their own tmpdir.
+_SESSION_HOME = tempfile.mkdtemp(prefix="ce_home_")
+paths.set_app_dir(_SESSION_HOME)
+
 from config_manager import ConfigManager  # noqa: E402
 from twitch_bot import TwitchBot  # noqa: E402
 
@@ -134,6 +143,7 @@ def make_config_manager(tmpdir, audio_categories=None, sound_dir=None):
     with open(os.path.join(tmpdir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(cfg, f)
 
+    paths.set_app_dir(tmpdir)
     cm = ConfigManager()
     # Redirect every path to the temp dir and reload config from there.
     cm.program_dir = type(cm.program_dir)(tmpdir)
@@ -228,6 +238,7 @@ def make_real_currency(tmpdir):
 
     d = Path(tmpdir)
     (d / "backups" / "currency").mkdir(parents=True, exist_ok=True)
+    paths.set_app_dir(tmpdir)
     cm = CurrencyManager()
     cm.data_dir = d
     cm.users_file = d / "users_currency.json"

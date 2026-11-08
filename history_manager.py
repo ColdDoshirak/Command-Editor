@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 import shutil
 
+from core import paths
+
 class HistoryManager:
     def __init__(self, max_backups=100):
         """Initialize History Manager
@@ -12,7 +14,7 @@ class HistoryManager:
             max_backups (int): Maximum number of backup files to keep
         """
         self.max_backups = max_backups
-        self.history_folder = "command_history"
+        self.history_folder = str(paths.history_dir())
         
         # Create history folder if it doesn't exist
         if not os.path.exists(self.history_folder):
@@ -82,8 +84,8 @@ class HistoryManager:
         """
         try:
             # Create a backup of current commands before restoring
-            if os.path.exists("commands.json"):
-                shutil.copy("commands.json", "commands_before_restore.json")
+            if os.path.exists(paths.commands_file()):
+                shutil.copy(str(paths.commands_file()), str(paths.path("commands_before_restore.json")))
             
             # Load and return the backed-up commands
             with open(backup_path, 'r', encoding='utf-8') as f:

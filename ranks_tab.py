@@ -6,12 +6,14 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QBrush
 
+from core import paths
+
 class RanksTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
         self.ranks = []
-        self.ranks_file = "data/ranks.json"
+        self.ranks_file = str(paths.ranks_file())
         self.load_ranks()
         self.initUI()
         self.populate_table()

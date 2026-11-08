@@ -354,14 +354,8 @@ class AboutTab(QWidget):
     
     def get_resource_path(self, relative_path):
         """Get the correct path for resources whether running as script or frozen exe"""
-        if getattr(sys, 'frozen', False):
-            # If the application is run as a bundle (PyInstaller)
-            base_path = sys._MEIPASS
-        else:
-            # If running as a script
-            base_path = os.path.dirname(os.path.abspath(__file__))
-        
-        return os.path.join(base_path, relative_path)
+        from core import paths
+        return os.path.join(str(paths.resource_dir()), relative_path)
     
     def load_memes(self, layout):
         """Load and display memes from the memes directory"""

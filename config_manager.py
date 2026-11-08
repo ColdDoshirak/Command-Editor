@@ -8,21 +8,18 @@ import shutil
 from datetime import datetime
 from typing import Dict, Any
 
+from core import paths
+
 class ConfigManager:
     def __init__(self):
-        # Определяем корневую директорию в зависимости от того, запущено ли приложение как .exe или как .py
-        if getattr(sys, 'frozen', False):
-            # Если приложение запущено как .exe
-            self.program_dir = Path(os.path.dirname(sys.executable))
-        else:
-            # Если приложение запущено как .py
-            self.program_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-          # Настраиваем пути к конфигурационным файлам
-        self.config_file = self.program_dir / 'config.json'
-        self.twitch_file = self.program_dir / 'twitch_config.json'
-        self.commands_file = self.program_dir / 'commands.json'
-        self.moderators_file = self.program_dir / 'moderators.json'  # Отдельный файл для модераторов
-        self.backup_dir = self.program_dir / 'backups'
+        # Все пути — из core.paths (данные рядом с программой, не в
+        # текущей рабочей папке).
+        self.program_dir = paths.app_dir()
+        self.config_file = paths.config_file()
+        self.twitch_file = paths.twitch_file()
+        self.commands_file = paths.commands_file()
+        self.moderators_file = paths.moderators_file()  # Отдельный файл для модераторов
+        self.backup_dir = paths.backups_dir()
 
         # B4: одна блокировка на все мутации self.config + запись в файл.
         # Конфиг пишут два потока: UI (тумблеры/спинбоксы) и бот (!volume,
