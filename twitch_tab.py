@@ -29,6 +29,10 @@ class ChatSignalHandler(QObject):
     stream_status_signal = pyqtSignal(bool)
     currency_updated = pyqtSignal()
     moderators_signal = pyqtSignal(list)  # Новый сигнал для списка модераторов
+    # Результаты запросов из потока бота. Объект живёт в UI-потоке, поэтому
+    # emit из другого потока доставляется очередью Qt (C4).
+    viewers_ready = pyqtSignal(list)
+    stream_status_ready = pyqtSignal(bool)
 
 class TwitchTab(QWidget):
     def __init__(self, parent=None, commands_data=None, config_manager=None):
@@ -48,6 +52,8 @@ class TwitchTab(QWidget):
         self.signal_handler.stream_status_signal.connect(self.update_stream_status)
         self.signal_handler.currency_updated.connect(self.update_currency)
         self.signal_handler.moderators_signal.connect(self.update_moderators_list)  # Подключаем новый сигнал
+        self.signal_handler.viewers_ready.connect(self._apply_viewers)
+        self.signal_handler.stream_status_ready.connect(self._apply_stream_status)
 
         # Use the shared config_manager from parent if provided, otherwise create own instance
         self.config_manager = config_manager if config_manager is not None else ConfigManager()
@@ -619,8 +625,7 @@ class TwitchTab(QWidget):
 
     def _on_stream_status_done(self, future):
         """B7: доставить результат проверки статуса стрима в UI-поток,
-        не блокируя его. Вызывается из callback-потока asyncio, поэтому
-        обновление виджетов — через QMetaObject.invokeMethod (очередь UI)."""
+        не блокируя его. Вызывается в потоке бота, поэтому только сигнал."""
         try:
             exc = future.exception()
             if exc is not None:
@@ -630,13 +635,9 @@ class TwitchTab(QWidget):
         except Exception as e:
             print(f"Stream status callback error: {e}")
             return
-        # QMetaObject.invokeMethod с Qt.QueuedConnection: выполняется в
-        # UI-потоке, не блокируя его.
-        from PyQt5.QtCore import QMetaObject, Qt
-        QMetaObject.invokeMethod(
-            self, "_apply_stream_status", Qt.QueuedConnection,
-            Q_ARG(bool, is_live),
-        )
+        # Раньше здесь был QMetaObject.invokeMethod без @pyqtSlot -
+        # RuntimeError каждые 30 с, статус не обновлялся.
+        self.signal_handler.stream_status_ready.emit(bool(is_live))
 
     def _apply_stream_status(self, is_live):
         """B7: применить статус стрима в UI-потоке (вызывается через очередь)."""
@@ -671,22 +672,20 @@ class TwitchTab(QWidget):
     def _on_viewers_done(self, future):
         """B7: доставить список зрителей в UI без блокировки.
 
-        Вызывается из callback-потока asyncio (loop бота). Обновление
-        виджетов и process_currency_update выполняются здесь, а не в
-        UI-потоке — интерфейс не зависает.
+        Вызывается в потоке бота (callback future), поэтому виджеты здесь
+        не трогаются: список уходит сигналом в UI-поток (C4).
         """
         try:
             exc = future.exception()
             if exc is not None:
                 print(f"Viewers refresh failed: {exc}")
-                self._apply_viewers(list(getattr(self.bot, 'active_users', [])))
-                return
-            viewers = future.result()
+                viewers = list(getattr(self.bot, 'active_users', []))
+            else:
+                viewers = list(future.result())
         except Exception as e:
             print(f"Viewers callback error: {e}")
-            self._apply_viewers(list(getattr(self.bot, 'active_users', [])))
-            return
-        self._apply_viewers(viewers)
+            viewers = list(getattr(self.bot, 'active_users', []))
+        self.signal_handler.viewers_ready.emit(viewers)
 
     def _apply_viewers(self, viewers):
         """Обновить виджеты зрителей и начисления (B7: не блокирует UI)."""

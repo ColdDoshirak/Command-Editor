@@ -8,13 +8,16 @@ import os
 from config_manager import ConfigManager
 
 class TwitchAuthDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, config_manager=None):
         super().__init__(parent)
         self.setWindowTitle("Twitch Authentication")
         self.setModal(True)
-        
-        # Initialize config manager
-        self.config_manager = ConfigManager()
+
+        # Тот же ConfigManager, что у программы: иначе токен попадал только
+        # в файл, а работающая программа держала старый до перезапуска (C6).
+        if config_manager is None:
+            config_manager = getattr(parent, "config_manager", None)
+        self.config_manager = config_manager if config_manager is not None else ConfigManager()
         
         # Load saved tokens
         twitch_config = self.config_manager.get_twitch_config()

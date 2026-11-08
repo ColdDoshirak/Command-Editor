@@ -490,6 +490,43 @@ class CurrencyManager:
 
         return current_points
     
+    def transfer_points(self, sender, target, amount):
+        """Перевести очки от sender к target целиком или никак.
+
+        Обе проверки и оба изменения - под одним локом. Бонус регулярам не
+        начисляется (это перевод, а не заработок). Получатель должен быть
+        уже известен (видели в чате/списке зрителей), иначе опечатка в
+        имени съедала бы очки. Возвращает (ok, причина отказа).
+        """
+        def _norm(name):
+            name = str(name or "").strip().lower()
+            return name[1:] if name.startswith('@') else name
+
+        sender, target = _norm(sender), _norm(target)
+        amount = self._parse_amount(amount)
+        if not target:
+            return False, "no target"
+        if sender == target:
+            return False, "cannot give points to yourself"
+        with self.users_lock:
+            if target not in self.users:
+                return False, "user not found"
+            ok, err = self._validate_points_operation(sender, amount, "remove")
+            if ok:
+                ok, err = self._validate_points_operation(target, amount, "add")
+            if not ok:
+                print(f"[CURRENCY ERROR] transfer {sender} -> {target} refused: {err}")
+                return False, err
+            if sender not in self.users:
+                return False, "not enough points"
+            now = time.time()
+            self.users[sender]['points'] = self._format_points(self.users[sender]['points'] - amount)
+            self.users[target]['points'] = self._format_points(self.users[target]['points'] + amount)
+            self.users[sender]['last_seen'] = now
+            self.check_rank_promotion(target)
+            self._save_pending = True
+        return True, ""
+
     def add_hours(self, username, hours):
         """Добавить часы пользователю"""
         username = username.lower()

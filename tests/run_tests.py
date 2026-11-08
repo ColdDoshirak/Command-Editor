@@ -36,6 +36,7 @@ TEST_MODULES = [
     ("v2", "test_queue_v2"),
     ("paths", "test_sound_paths"),
     ("paths", "test_paths"),
+    ("stage0", "test_stage0"),
 ]
 
 

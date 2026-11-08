@@ -964,48 +964,9 @@ class CommandEditor(QMainWindow):
                 self.twitch_tab.bot.stop()   # ← вызываем .stop(), а не .disconnect()
                 time.sleep(0.2)
 
-            # Deduplicate commands before saving
-            if self.commands and self.original_commands:
-                print("Deduplicating and reordering commands before saving...")
-                
-                # Create a mapping of commands by their command names
-                command_map = {}
-                for cmd in self.commands:
-                    # Use command name as the key
-                    key = cmd["Command"]
-                    command_map[key] = cmd
-                
-                # Track fed commands to prevent duplicates
-                processed_commands = set()
-                ordered_commands = []
-                
-                # First pass: add commands that match by name from original order
-                for orig_cmd in self.original_commands:
-                    key = orig_cmd["Command"]
-                    if key in command_map:
-                        # Use current data for this command
-                        ordered_commands.append(command_map[key])
-                        processed_commands.add(key)
-                    else:
-                        # If command name changed, try to find by other properties
-                        found = False
-                        for cmd_name, current_cmd in command_map.items():
-                            if cmd_name not in processed_commands and (
-                                current_cmd.get("SoundFile") == orig_cmd.get("SoundFile") and
-                                current_cmd.get("Response") == orig_cmd.get("Response")
-                            ):
-                                ordered_commands.append(current_cmd)
-                                processed_commands.add(cmd_name)
-                                found = True
-                                break
-                
-                # Add any commands that weren't in the original list but exist now
-                for cmd_name, cmd in command_map.items():
-                    if cmd_name not in processed_commands:
-                        ordered_commands.append(cmd)
-                
-                # Update commands to ordered list before saving
-                self.commands = ordered_commands
+            # Команды сохраняются ровно в том виде и порядке, что на экране.
+            # Раньше здесь была "дедупликация" по имени: вторая команда с
+            # тем же именем молча удалялась при выходе (C5).
 
             # Save current commands before closing
             if self.commands:
@@ -1065,7 +1026,7 @@ class CommandEditor(QMainWindow):
                     loaded_commands = json.load(f)
                     
                     # Convert old format to new format
-                    self.commands = []
+                    converted = []
                     for cmd in loaded_commands:
                         new_cmd = {
                             "Command": cmd["Command"],
@@ -1083,19 +1044,10 @@ class CommandEditor(QMainWindow):
                             "FKSoundFile": cmd.get("FKSoundFile", ""),
                             "Volume": cmd.get("Volume", 100)  # Default volume is 100
                         }
-                        self.commands.append(new_cmd)
-                    
-                    # Save converted commands
-                    self.save_commands()
-                    
-                    # Update UI
-                    self.update_table()
-                    self.refresh_themed_commands()
-                    
-                    # Update commands in Twitch tab if it exists
-                    if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-                        self.twitch_tab.bot.update_commands(self.commands)
-                        
+                        converted.append(new_cmd)
+
+                    self.replace_commands(converted)
+
                     QMessageBox.information(self, "Success", "Commands loaded and converted successfully!")
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to load file: {str(e)}")
@@ -1603,6 +1555,21 @@ class CommandEditor(QMainWindow):
         except Exception as e:
             print(f"Error saving commands: {e}")
 
+    def replace_commands(self, new_commands):
+        """Заменить все команды (загрузка файла, восстановление бэкапа).
+
+        Список меняется на месте: тематические виды, вкладка Twitch и
+        редактор держат один и тот же объект (S10). Таблица перестраивается
+        ДО сохранения, потому что save_commands() читает её (S11).
+        """
+        self.commands[:] = list(new_commands)
+        self.original_commands = self.commands.copy()
+        self.update_table()  # заодно обновляет тематический вид
+        self.filter_commands()
+        if hasattr(self, 'twitch_tab'):
+            self.twitch_tab.commands_data = self.commands
+        self.save_commands()  # пишет файл и передаёт команды боту
+
     def _write_row_to_table(self, row):
         """Write every column of commands[row] into the (classic) table
         without triggering table_item_changed."""
@@ -2057,18 +2024,7 @@ class CommandEditor(QMainWindow):
             commands = self.history_manager.restore_backup(backup_path)
             
             if commands:
-                # Update commands
-                self.commands = commands
-                
-                # Also update original_commands for sorting reset
-                self.original_commands = self.commands.copy()
-                
-                # Refresh the table
-                self.refresh_table()
-                
-                # Update Twitch bot if running
-                self.update_commands()
-                
+                self.replace_commands(commands)
                 QMessageBox.information(self, "Success", "Commands restored successfully!")
             else:
                 QMessageBox.warning(self, "Error", "Failed to restore backup.")
@@ -2445,15 +2401,14 @@ class CommandEditor(QMainWindow):
 
             # Restore commands
             if 'commands' in backup_data:
-                self.commands = backup_data['commands']
-                self.original_commands = self.commands.copy()
-                self.refresh_table()
-                self.config_manager.save_commands(self.commands)
+                self.replace_commands(backup_data['commands'])
 
             # Restore currency users
             if 'currency_users' in backup_data and hasattr(self, 'currency_manager'):
                 self.currency_manager.users = backup_data['currency_users']
-                self.currency_manager.save_users()
+                # force: без него save_users() выходит, если не было
+                # отложенного сохранения, и восстановленное не пишется (S5)
+                self.currency_manager.save_users(force=True)
 
                 # Refresh currency tabs
                 if hasattr(self, 'user_currency_tab'):

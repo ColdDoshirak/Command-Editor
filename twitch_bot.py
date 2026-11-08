@@ -948,14 +948,7 @@ class TwitchBot(commands.Bot):
             
             # Check if the message matches this system command
             if key == cmd_key:
-                # Check permissions
-                required_permission = sys_cmd.get("permission", "Everyone").lower()
-                user_is_mod = await self.is_user_moderator(username)
-                
-                if required_permission == "moderator" and not user_is_mod:
-                    await message.channel.send(f"@{username}: You don't have permission to use this command.")
-                    return
-                elif required_permission == "admin" and not user_is_mod:  # Simplified admin check
+                if not await self.has_permission(message, sys_cmd.get("permission")):
                     await message.channel.send(f"@{username}: You don't have permission to use this command.")
                     return
                 
@@ -1038,6 +1031,12 @@ class TwitchBot(commands.Bot):
             if raw_cmd_key != cmd_key:
                 print(f"  Command normalized in config: '{raw_cmd_key}' -> '{cmd_key}'")
             print(f"  Command cost: {cmd.get('Cost', 0)}")
+
+            # Права проверяются до кулдауна и списания очков: отказ ничего
+            # не тратит и не запускает кулдаун.
+            if not await self.has_permission(message, cmd.get("Permission")):
+                await message.channel.send(f"@{username}: You don't have permission to use this command.")
+                return
 
             # теперь Cooldown измеряется в минутах
             cooldown_min = int(cmd.get("Cooldown", 0))
@@ -1614,6 +1613,38 @@ class TwitchBot(commands.Bot):
                 manual_mods.append(self.channel.lower())
             
             return manual_mods
+
+    # Уровни прав, для которых нужен модератор. "Admin" пока равен
+    # модератору (docs/refactor-plan.md, решение 1). Прочие уровни из
+    # бэкапов Streamlabs (Regular, Subscriber, ...) открыты всем, как раньше.
+    _MOD_PERMISSIONS = ("moderator", "admin", "editor", "caster")
+
+    async def has_permission(self, message, required):
+        """Может ли автор сообщения вызвать команду с правом `required`.
+
+        Для "Everyone" ничего не проверяется. Бейдж модератора/владельца из
+        тегов IRC решает сразу, без запроса к Twitch API; иначе - прежняя
+        проверка is_user_moderator. Исключённые модераторы - всегда нет.
+        """
+        level = str(required or "everyone").strip().lower()
+        if level not in self._MOD_PERMISSIONS:
+            return True
+        author = message.author
+        username = author.name.lower()
+        try:
+            if username in self.config_manager.get_excluded_moderators():
+                return False
+        except Exception:
+            pass
+        if username == str(self.channel).lower():
+            return True
+        for attr in ("is_broadcaster", "is_mod"):
+            try:
+                if getattr(author, attr, False) is True:
+                    return True
+            except Exception:
+                pass
+        return await self.is_user_moderator(username)
 
     async def is_user_moderator(self, username):
         """Проверяет, является ли пользователь модератором канала"""
@@ -2291,7 +2322,7 @@ class TwitchBot(commands.Bot):
             return
 
         # Moderator check for control commands
-        is_mod = await self.is_user_moderator(username)
+        is_mod = await self.has_permission(message, "moderator")
         if not is_mod:
             await reply("You don't have permission to use this command.")
             return
@@ -2441,7 +2472,7 @@ class TwitchBot(commands.Bot):
         elif command_name == "!add_points" or command_type == "!add_points":
             # Handle add_points command
             # Check if user is moderator
-            is_mod = await self.is_user_moderator(username)
+            is_mod = await self.has_permission(message, "moderator")
             if not is_mod:
                 await message.channel.send(f"@{username}: You don't have permission to use this command.")
                 return
@@ -2501,7 +2532,7 @@ class TwitchBot(commands.Bot):
         elif command_name == "!remove_points" or command_type == "!remove_points":
             # Handle remove_points command
             # Check if user is moderator
-            is_mod = await self.is_user_moderator(username)
+            is_mod = await self.has_permission(message, "moderator")
             if not is_mod:
                 await message.channel.send(f"@{username}: You don't have permission to use this command.")
                 return
@@ -2606,10 +2637,17 @@ class TwitchBot(commands.Bot):
                 await message.channel.send(f"@{username}: You don't have enough points ({sender_points:.2f})")
                 return
                 
-            # Perform transfer
-            self.currency_manager.remove_points(username, amount)
-            self.currency_manager.add_points(target_user, amount)
-            
+            ok, reason = self.currency_manager.transfer_points(username, target_user, amount)
+            if not ok:
+                if reason == "user not found":
+                    text = f"@{username}: User @{target_user} not found."
+                elif reason == "cannot give points to yourself":
+                    text = f"@{username}: You can't give points to yourself."
+                else:
+                    text = f"@{username}: Transfer failed, no points were moved."
+                await message.channel.send(text)
+                return
+
             await message.channel.send(f"@{username} gave {amount:.2f} points to @{target_user}!")
 
         elif command_name == "!uptime" or command_type == "!uptime":
