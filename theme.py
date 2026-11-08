@@ -960,14 +960,18 @@ class CommandDetailEditor(QScrollArea):
     """Full editor for one command (all fields of the classic tab).
 
     Used by the Sidebar/Midnight Commands view (right pane) and by the
-    Spreadsheet view (inspector next to the table). Text edits are applied
+    Spreadsheet view (panel below the table, wide=True). Text edits are applied
     after a short pause (not on every keystroke: each apply rewrites
     commands.json and pushes to the bot). Every edit goes through
     editor.apply_command_edit().
     """
 
-    def __init__(self, editor, table, commands, pal, on_remove, on_changed=None):
+    def __init__(self, editor, table, commands, pal, on_remove, on_changed=None, wide=False):
         super(CommandDetailEditor, self).__init__()
+        # wide=True: panel BELOW a table (like the classic tab) - fields in
+        # four columns on the left, sound + response on the right, so it
+        # needs little height.
+        self.wide = wide
         self.editor = editor
         self.table = table
         self.commands = commands
@@ -1035,11 +1039,13 @@ class CommandDetailEditor(QScrollArea):
         head.addWidget(self.d_delete)
         v.addLayout(head)
 
+        cols = 4 if self.wide else 2
         g = QGridLayout()
         g.setHorizontalSpacing(14)
         g.setVerticalSpacing(6)
-        g.setColumnStretch(0, 1)
-        g.setColumnStretch(1, 1)
+        for c in range(cols):
+            g.setColumnStretch(c, 1)
+        pairs = []  # (label, widget) in reading order, placed below
 
         self.f_command = QLineEdit()
         self.f_command.textChanged.connect(lambda t: self._edit("Command", t))
@@ -1048,10 +1054,7 @@ class CommandDetailEditor(QScrollArea):
         self.f_group.setInsertPolicy(QComboBox.NoInsert)
         self.f_group.setToolTip("Commands of a group share queue / channel settings (Group Settings tab)")
         self.f_group.editTextChanged.connect(lambda t: self._edit("Group", t))
-        g.addWidget(self._label("Command"), 0, 0)
-        g.addWidget(self._label("Group"), 0, 1)
-        g.addWidget(self.f_command, 1, 0)
-        g.addWidget(self.f_group, 1, 1)
+        pairs += [("Command", self.f_command), ("Group", self.f_group)]
 
         self.f_perm = QComboBox()
         self.f_perm.addItems(PERMISSIONS)
@@ -1060,10 +1063,7 @@ class CommandDetailEditor(QScrollArea):
         self.f_usage.addItems(USAGES)
         self.f_usage.setToolTip("SC = Streamer.bot/SC style, Chat = chat only, Both")
         self.f_usage.currentTextChanged.connect(lambda t: self._edit("Usage", t, now=True))
-        g.addWidget(self._label("Permission"), 2, 0)
-        g.addWidget(self._label("Usage"), 2, 1)
-        g.addWidget(self.f_perm, 3, 0)
-        g.addWidget(self.f_usage, 3, 1)
+        pairs += [("Permission", self.f_perm), ("Usage", self.f_usage)]
 
         self.f_cd = QSpinBox()
         self.f_cd.setRange(0, 100000)
@@ -1077,10 +1077,7 @@ class CommandDetailEditor(QScrollArea):
         self.f_ucd.setSpecialValueText("none")
         self.f_ucd.setToolTip("Per-viewer cooldown in MINUTES")
         self.f_ucd.valueChanged.connect(lambda val: self._edit("UserCooldown", val))
-        g.addWidget(self._label("Cooldown"), 4, 0)
-        g.addWidget(self._label("User cooldown"), 4, 1)
-        g.addWidget(self.f_cd, 5, 0)
-        g.addWidget(self.f_ucd, 5, 1)
+        pairs += [("Cooldown", self.f_cd), ("User cooldown", self.f_ucd)]
 
         self.f_cost = QSpinBox()
         self.f_cost.setRange(0, 10000000)
@@ -1090,17 +1087,36 @@ class CommandDetailEditor(QScrollArea):
         self.f_count.setRange(0, 100000000)
         self.f_count.setToolTip("How many times the command was used")
         self.f_count.valueChanged.connect(lambda val: self._edit("Count", val))
-        g.addWidget(self._label("Cost (points)"), 6, 0)
-        g.addWidget(self._label("Used"), 6, 1)
-        g.addWidget(self.f_cost, 7, 0)
-        g.addWidget(self.f_count, 7, 1)
+        pairs += [("Cost (points)", self.f_cost), ("Used", self.f_count)]
+
+        for i, (text, widget) in enumerate(pairs):
+            r, c = (i // cols) * 2, i % cols
+            g.addWidget(self._label(text), r, c)
+            g.addWidget(widget, r + 1, c)
+        last = ((len(pairs) + cols - 1) // cols) * 2
 
         self.f_info = QLineEdit()
         self.f_info.setPlaceholderText("Description for yourself / moderators")
         self.f_info.textChanged.connect(lambda t: self._edit("Info", t))
-        g.addWidget(self._label("Info"), 8, 0, 1, 2)
-        g.addWidget(self.f_info, 9, 0, 1, 2)
-        v.addLayout(g)
+        g.addWidget(self._label("Info"), last, 0, 1, cols)
+        g.addWidget(self.f_info, last + 1, 0, 1, cols)
+
+        # Narrow (side panel): everything in one column. Wide (bottom
+        # panel): fields on the left, sound + response on the right.
+        if self.wide:
+            body = QHBoxLayout()
+            body.setSpacing(24)
+            left = QVBoxLayout()
+            left.addLayout(g)
+            left.addStretch(1)
+            right = QVBoxLayout()
+            right.setSpacing(8)
+            body.addLayout(left, 3)
+            body.addLayout(right, 2)
+            v.addLayout(body, 1)
+            v = right  # the sound / response block goes to the right column
+        else:
+            v.addLayout(g)
 
         # Sound
         v.addWidget(self._label("Sound file"))
@@ -1162,11 +1178,14 @@ class CommandDetailEditor(QScrollArea):
         v.addLayout(rl)
         self.f_response = QTextEdit()
         self.f_response.setAcceptRichText(False)
-        self.f_response.setMinimumHeight(90)
+        self.f_response.setMinimumHeight(60 if self.wide else 90)
         self.f_response.textChanged.connect(
             lambda: self._edit("Response", self.f_response.toPlainText()))
-        v.addWidget(self.f_response)
-        v.addStretch(1)
+        if self.wide:
+            v.addWidget(self.f_response, 1)
+        else:
+            v.addWidget(self.f_response)
+            v.addStretch(1)
 
         self.detail_widgets = [self.f_command, self.f_group, self.f_perm, self.f_usage,
                                self.f_cd, self.f_ucd, self.f_cost, self.f_count, self.f_info,
@@ -1564,19 +1583,23 @@ class SpreadsheetCommandsView(QWidget):
         v.setSpacing(0)
         v.addWidget(self._build_topbar(), 0)
         v.addWidget(self._build_toolbar(), 0)
-        # table | inspector (the same full editor as the Sidebar layout)
-        self.split = QSplitter(Qt.Horizontal)
+        # table above, command settings below - as in the classic tab
+        # (the same full editor as the Sidebar layout, in its wide form)
+        self.split = QSplitter(Qt.Vertical)
         self.split.setChildrenCollapsible(False)
         self.split.setHandleWidth(1)
         self.split.addWidget(self._build_table())
         self.detail = CommandDetailEditor(self.editor, self.table, self.commands, self.pal,
                                           on_remove=self.on_remove,
-                                          on_changed=self._on_detail_changed)
-        self.detail.setMinimumWidth(360)
+                                          on_changed=self._on_detail_changed,
+                                          wide=True)
+        self.detail.setMinimumHeight(170)
         self.split.addWidget(self.detail)
-        self.split.setStretchFactor(0, 1)
-        self.split.setStretchFactor(1, 0)
-        self.split.setSizes([860, 420])
+        # both parts shrink with the window (table 2 : settings 1), so a
+        # small window keeps some table rows visible
+        self.split.setStretchFactor(0, 2)
+        self.split.setStretchFactor(1, 1)
+        self.split.setSizes([420, 330])
         v.addWidget(self.split, 1)
         v.addWidget(self._build_statusbar(), 0)
         shown = True
@@ -1647,7 +1670,7 @@ class SpreadsheetCommandsView(QWidget):
         h.addWidget(self.play_btn)
         h.addWidget(self.resp_btn)
         _toolbar_stretch(bar)
-        self.details_btn = self._tool("Details ▸", self._toggle_details,
+        self.details_btn = self._tool("Details ▾", self._toggle_details,
                                       "Show / hide the editor with all fields of the selected row")
         self.details_btn.setCheckable(True)
         h.addWidget(self.details_btn)
