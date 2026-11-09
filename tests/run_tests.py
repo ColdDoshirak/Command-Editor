@@ -51,6 +51,7 @@ TEST_MODULES = [
     ("stage4", "test_layout"),
     ("stage4", "test_backups"),
     ("bugs", "test_minor_bugs"),
+    ("stage6", "test_sys_handlers"),
 ]
 
 

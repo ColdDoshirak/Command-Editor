@@ -13,6 +13,12 @@ from typing import Optional, Dict, Any, List
 from core import paths, storage
 
 class CurrencyManager:
+    # пределы операций с очками (_validate_points_operation; их же
+    # называют ответы !add_points / !remove_points)
+    MAX_OPERATION = 5000000
+    MAX_BALANCE = 50000000
+    MIN_AMOUNT = 0.01
+
     def __init__(self, config_manager=None):
         # Общий ConfigManager программы (шаг 1.2); None - создаётся по
         # требованию (тесты, отдельное использование).
@@ -111,20 +117,20 @@ class CurrencyManager:
                 return False, f"Invalid amount value: {amount}"
             
             # Проверяем диапазон значений
-            max_single_operation = 5000000  # Максимальное количество очков за одну операцию
+            max_single_operation = self.MAX_OPERATION
             if abs(amount) > max_single_operation:
                 return False, f"Amount too large: {amount} (max: {max_single_operation})"
             
             # Проверяем минимальное значение
-            if abs(amount) < 0.01:
-                return False, f"Amount too small: {amount} (min: 0.01)"
+            if abs(amount) < self.MIN_AMOUNT:
+                return False, f"Amount too small: {amount} (min: {self.MIN_AMOUNT})"
             
             # Для операции add проверяем, что amount не отрицательный
             if operation == "add" and amount < 0:
                 return False, f"Negative amount not allowed for add operation: {amount}"
             
             # Проверяем максимальный баланс
-            max_balance = 50000000  # Максимальный баланс пользователя
+            max_balance = self.MAX_BALANCE
             current_points = self.users.get(username, {}).get('points', 0)
             
             if operation == "add":
