@@ -676,11 +676,14 @@ class CurrencyManager:
         
         required = settings.get("auto_regular_amount", 50)
         user = self.users.get(username)
-        
-        if user and user.get("points", 0) >= required:
+        # по очкам или по часам просмотра - как выбрано на вкладке валюты
+        # (раньше выбор "Hours" ни на что не влиял)
+        key = "hours" if settings.get("auto_regular_type", "Points") == "Hours" else "points"
+
+        if user and (user.get(key, 0) or 0) >= required:
             # Если пользователь еще не Regular, выводим сообщение
             if not user.get("is_regular", False):
-                print(f"User {username} became Regular (points: {user.get('points', 0)})")
+                print(f"User {username} became Regular ({key}: {user.get(key, 0)})")
             user["is_regular"] = True
             return True
         

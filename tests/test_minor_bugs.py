@@ -190,3 +190,22 @@ async def test_the_window_changes_viewers_only_through_currency_manager():
                     if pat.search(line):
                         bad.append("%s:%d %s" % (os.path.relpath(path, REPO_DIR), i, line.strip()))
     assert not bad, bad
+
+
+async def test_auto_regular_by_hours():
+    """Currency tab offers "auto regular by Points / Hours"; Hours was ignored."""
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        cur.settings.update({"auto_regular": True, "auto_regular_amount": 10, "auto_regular_type": "Hours"})
+        cur.users["lots_of_points"] = {"points": 500, "hours": 1}
+        cur.users["long_watcher"] = {"points": 1, "hours": 12}
+        cur.add_points("lots_of_points", 1)
+        cur.add_points("long_watcher", 1)
+        assert not cur.users["lots_of_points"].get("is_regular"), "by hours: points do not count"
+        assert cur.users["long_watcher"].get("is_regular") is True
+        cur.settings["auto_regular_type"] = "Points"
+        cur.add_points("lots_of_points", 1)
+        assert cur.users["lots_of_points"].get("is_regular") is True
+    finally:
+        drop_tmpdir(tmp)
