@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
+                           QTableView, QAbstractItemView,
                            QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
                            QFileDialog, QMessageBox, QSlider, QGroupBox, QTabWidget,
                            QDialog, QHeaderView, QMenu, QScrollArea, QTextEdit)
@@ -34,6 +35,7 @@ from ui import theme as _theme
 from core.app_log import setup_logging, install_print_bridge
 from core import paths, storage
 from core.commands import CommandRepository, FIELDS as COMMAND_FIELDS
+from ui.commands_model import CommandsTableModel, display_text
 from bot.audio import SoundCache
 
 # Вместо sip.registerMetaType используем:
@@ -169,7 +171,6 @@ class CommandEditor(QMainWindow):
         # self.commands - тот же объект списка, его identity не меняется.
         self.command_repo = CommandRepository(paths.commands_file())
         self.commands = self.command_repo.items
-        self.command_repo.subscribe(self._on_commands_changed)
 
         # Add an attribute to track original command order
         self.original_commands = []
@@ -212,23 +213,22 @@ class CommandEditor(QMainWindow):
         search_layout.addWidget(self.search_input)
         main_layout.addLayout(search_layout)
         
-        # Create table
-        self.table = QTableWidget()
-        self.table.setColumnCount(14)
-        self.table.setHorizontalHeaderLabels([
-            "Command", "Permission", "Info", "Group", "Response",
-            "Cooldown", "UserCooldown", "Cost", "Count", "Usage",
-            "Enabled", "SoundFile", "FKSoundFile", "Volume"
-        ])
+        # Классическая таблица - вид над CommandRepository (шаг 4.4): своей
+        # копии команд у неё нет, правка ячейки идёт в репозиторий.
+        self.commands_model = CommandsTableModel(self.command_repo, self)
+        self.commands_model.edited.connect(self._on_cell_edited)
+        self.table = QTableView()
+        self.table.setModel(self.commands_model)
+        # после загрузки/добавления/удаления модель сбрасывается - и скрытые
+        # поиском строки тоже: фильтр заново. Подключать после setModel:
+        # таблица сама сбрасывает скрытые строки в своём обработчике.
+        self.commands_model.modelReset.connect(self.filter_commands)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.itemChanged.connect(self.table_item_changed)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.itemSelectionChanged.connect(self.on_command_selected)
-        
-        # Disable sorting
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.selectionModel().selectionChanged.connect(lambda *_: self.on_command_selected())
         self.table.setSortingEnabled(False)
-        
+
         main_layout.addWidget(self.table)
         
         # Create buttons layout
@@ -625,99 +625,25 @@ class CommandEditor(QMainWindow):
             self.command_repo.replace_all([])
             
     def update_table(self):
-        """Update the commands table"""
-        self.table.blockSignals(True)  # Блокируем сигналы, чтобы избежать лишних обновлений
-        self.table.setRowCount(0)  # Очищаем таблицу
-
-        for cmd in self.commands:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-
-            # Устанавливаем элементы для строки
-            self.table.setItem(row, 0, QTableWidgetItem(cmd["Command"]))
-            self.table.setItem(row, 1, QTableWidgetItem(cmd["Permission"]))
-            self.table.setItem(row, 2, QTableWidgetItem(cmd["Info"]))
-            self.table.setItem(row, 3, QTableWidgetItem(cmd["Group"]))
-            self.table.setItem(row, 4, QTableWidgetItem(cmd["Response"]))
-            self.table.setItem(row, 5, QTableWidgetItem(str(cmd["Cooldown"])))
-            self.table.setItem(row, 6, QTableWidgetItem(str(cmd["UserCooldown"])))
-            self.table.setItem(row, 7, QTableWidgetItem(str(cmd["Cost"])))
-            self.table.setItem(row, 8, QTableWidgetItem(str(cmd["Count"])))
-            self.table.setItem(row, 9, QTableWidgetItem(cmd["Usage"]))
-            self.table.setItem(row, 10, QTableWidgetItem("✓" if cmd["Enabled"] else "✗"))  # Для отображения состояния
-            self.table.setItem(row, 11, QTableWidgetItem(cmd["SoundFile"]))
-            self.table.setItem(row, 12, QTableWidgetItem(str(cmd.get("FKSoundFile", ""))))
-            self.table.setItem(row, 13, QTableWidgetItem(str(cmd["Volume"])))
-
-        self.table.blockSignals(False)  # Разблокируем сигналы
+        """Перерисовать классическую таблицу и тематические виды (после
+        прямой правки словарей команд, мимо репозитория)."""
+        self.commands_model.beginResetModel()
+        self.commands_model.endResetModel()
         self.refresh_themed_commands()
-        
-    def populate_table(self):
-        """Populate the table with commands"""
-        self.table.setRowCount(len(self.commands))
-        
-        for row, cmd in enumerate(self.commands):
-            # Command column (0)
-            self.table.setItem(row, 0, QTableWidgetItem(cmd["Command"]))
-            
-            # Permission column (1)
-            self.table.setItem(row, 1, QTableWidgetItem(cmd["Permission"]))
-            
-            # Info column (2)
-            self.table.setItem(row, 2, QTableWidgetItem(cmd.get("Info", "")))
-            
-            # Group column (3)
-            self.table.setItem(row, 3, QTableWidgetItem(cmd.get("Group", "GENERAL")))
-            
-            # Response column (4)
-            self.table.setItem(row, 4, QTableWidgetItem(cmd["Response"]))
-            
-            # Cooldown column (5)
-            self.table.setItem(row, 5, QTableWidgetItem(str(cmd.get("Cooldown", 0))))
-            
-            # UserCooldown column (6)
-            self.table.setItem(row, 6, QTableWidgetItem(str(cmd.get("UserCooldown", 0))))
-            
-            # Cost column (7)
-            self.table.setItem(row, 7, QTableWidgetItem(str(cmd.get("Cost", 0))))
-            
-            # Count column (8)
-            self.table.setItem(row, 8, QTableWidgetItem(str(cmd.get("Count", 0))))
-            
-            # Usage column (9)
-            self.table.setItem(row, 9, QTableWidgetItem(cmd.get("Usage", "SC")))
-            
-            # Enabled column (10)
-            enabled = "✓" if cmd["Enabled"] else "✗"
-            self.table.setItem(row, 10, QTableWidgetItem(enabled))
-            
-            # SoundFile column (11)
-            self.table.setItem(row, 11, QTableWidgetItem(cmd["SoundFile"]))
-            
-            # FKSoundFile column (12)
-            self.table.setItem(row, 12, QTableWidgetItem(str(cmd.get("FKSoundFile", ""))))
-            
-            # Volume column (13)
-            self.table.setItem(row, 13, QTableWidgetItem(str(cmd.get("Volume", 100))))
-            
+
     def refresh_table(self):
-        """Refresh the table with current commands"""
-        # Remember search filter
-        search_text = self.search_input.text()
-        
-        # Block signals to prevent unintended changes
-        self.table.blockSignals(True)
-        
-        # Clear and repopulate the table
-        self.table.setRowCount(0)
-        self.populate_table()
-        
-        # Reapply search filter
-        self.filter_commands()
-        
-        # Unblock signals
-        self.table.blockSignals(False)
-        
+        self.update_table()
+
+    def _selected_row(self):
+        """Строка, выбранная в классической таблице, или -1."""
+        sm = self.table.selectionModel()
+        rows = sorted(set(i.row() for i in sm.selectedIndexes())) if sm is not None else []
+        return rows[0] if rows else -1
+
+    def _current_row(self):
+        idx = self.table.currentIndex()
+        return idx.row() if idx.isValid() else -1
+
     def response_key_press_event(self, event):
         """Обработка клавиш в поле Response для поддержки Shift+Enter"""
         if event.key() == Qt.Key_Return and not event.modifiers() & Qt.ShiftModifier:
@@ -729,9 +655,8 @@ class CommandEditor(QMainWindow):
             
     def on_response_changed(self):
         """Обработка изменений в поле Response"""
-        selected_items = self.table.selectedItems()
-        if selected_items:
-            row = selected_items[0].row()
+        row = self._selected_row()
+        if row >= 0:
             if row < len(self.commands) and not getattr(self, "_populating_details", False):
                 if self.command_repo.update(row, {"Response": self.response_edit.toPlainText()}):
                     self.save_commands()
@@ -755,21 +680,15 @@ class CommandEditor(QMainWindow):
             self.sound_file_edit.setText(cmd["SoundFile"])
             self.fk_sound_file_edit.setText(str(cmd["FKSoundFile"]))
             
-    def table_item_changed(self, item):
-        """Правка ячейки классической таблицы -> репозиторий. Таблица - только
-        вид: недопустимое значение (буквы в Cost) откатывается к сохранённому."""
+    def _on_cell_edited(self, row, done):
+        """Ячейка классической таблицы сохранена в репозиторий (модель):
+        записать файл, передать боту, обновить виды. Недопустимое значение
+        (буквы в Cost) модель не сохраняет - ячейка показывает прежнее."""
         try:
-            row, col = item.row(), item.column()
-            if not (0 <= row < len(self.commands)) or not (0 <= col < len(COMMAND_FIELDS)):
-                return
-            key = COMMAND_FIELDS[col]
-            done = self.command_repo.update(row, {key: item.text()})
-            if done:
-                self.save_commands()
-                self.refresh_themed_commands()
-                if key == "Group" and hasattr(self, "group_settings_tab"):
-                    self.group_settings_tab.refresh_groups()
-            self._write_row_to_table(row)  # показать сохранённое (" 12" -> "12", "x" -> откат)
+            self.save_commands()
+            self.refresh_themed_commands()
+            if "Group" in done and hasattr(self, "group_settings_tab"):
+                self.group_settings_tab.refresh_groups()
         except Exception as e:
             print(f"Error updating command: {e}")
 
@@ -800,9 +719,8 @@ class CommandEditor(QMainWindow):
         
         # Громкость выбранной команды. Пока ползунок тянут - только в память,
         # на диск при отпускании (sliderReleased -> save_commands).
-        selected_items = self.table.selectedItems()
-        if selected_items and not getattr(self, "_populating_details", False):
-            row = selected_items[0].row()
+        row = self._selected_row()
+        if row >= 0 and not getattr(self, "_populating_details", False):
             if row < len(self.commands):
                 if self.command_repo.update(row, {"Volume": value}) and \
                         not self.volume_slider.isSliderDown():
@@ -866,12 +784,12 @@ class CommandEditor(QMainWindow):
             return
             
         # Иначе - проигрываем звук
-        selected = self.table.selectedItems()
-        if not selected:
+        row = self._selected_row()
+        if row < 0:
             QMessageBox.warning(self, "Warning", "No command selected.")
             return
 
-        fn = self.commands[selected[0].row()]["SoundFile"]
+        fn = self.commands[row]["SoundFile"]
         if not fn or not os.path.exists(fn):
             QMessageBox.warning(self, "Warning", f"Sound file not found: {fn}")
             return
@@ -889,7 +807,7 @@ class CommandEditor(QMainWindow):
         snd = self.loaded_sounds.get(fn)
 
         # Устанавливаем громкость из вашей колонки Volume
-        vol = float(self.commands[selected[0].row()].get("Volume", 100)) / 100.0
+        vol = float(self.commands[row].get("Volume", 100)) / 100.0
         snd.set_volume(vol)
 
         # Воспроизводим на нашем канале
@@ -1038,7 +956,7 @@ class CommandEditor(QMainWindow):
         return self.currency_manager.pay_for_command(username, command_cost)
 
     def delete_command(self):
-        current_row = self.table.currentRow()
+        current_row = self._current_row()
         if current_row >= 0 and current_row < len(self.commands):
             cmd_to_delete = self.command_repo.remove(current_row)
             # Remove from original commands list (find by Command name)
@@ -1181,11 +1099,10 @@ class CommandEditor(QMainWindow):
             self._populating_details = False
 
     def _show_selected_details(self):
-        selected_items = self.table.selectedItems()
-        if not selected_items:
+        row = self._selected_row()
+        if row < 0:
             return
-            
-        row = selected_items[0].row()
+
         if row < len(self.commands):
             command = self.commands[row]
             
@@ -1252,10 +1169,7 @@ class CommandEditor(QMainWindow):
         не были подключены и правки в них терялись)."""
         if getattr(self, "_populating_details", False):
             return
-        selected_items = self.table.selectedItems()
-        if not selected_items:
-            return
-        row = selected_items[0].row()
+        row = self._selected_row()
         if not (0 <= row < len(self.commands)) or not (0 <= column < len(COMMAND_FIELDS)):
             return
         key = COMMAND_FIELDS[column]
@@ -1326,30 +1240,6 @@ class CommandEditor(QMainWindow):
             self.twitch_tab.commands_data = self.commands
         self.save_commands()  # пишет файл и передаёт команды боту
 
-    def _write_row_to_table(self, row):
-        """Write every column of commands[row] into the (classic) table
-        without triggering table_item_changed."""
-        cmd = self.commands[row]
-        values = [
-            cmd.get("Command", ""), cmd.get("Permission", "Everyone"),
-            cmd.get("Info", ""), cmd.get("Group", ""), cmd.get("Response", ""),
-            str(cmd.get("Cooldown", 0)), str(cmd.get("UserCooldown", 0)),
-            str(cmd.get("Cost", 0)), str(cmd.get("Count", 0)),
-            cmd.get("Usage", "SC"), "✓" if cmd.get("Enabled", True) else "✗",
-            cmd.get("SoundFile", ""), str(cmd.get("FKSoundFile", "") or ""),
-            str(cmd.get("Volume", 100)),
-        ]
-        self.table.blockSignals(True)
-        try:
-            for col, value in enumerate(values):
-                item = self.table.item(row, col)
-                if item is None:
-                    self.table.setItem(row, col, QTableWidgetItem(value))
-                elif item.text() != value:
-                    item.setText(value)
-        finally:
-            self.table.blockSignals(False)
-
     def apply_command_edit(self, row, changes):
         """Single entry point for edits made in the themed views.
         Values are coerced by the repository (Volume 0-100, ints >= 0)."""
@@ -1372,25 +1262,12 @@ class CommandEditor(QMainWindow):
         if rows:
             self.save_commands()
             try:
-                if self.table.currentRow() in rows:
+                if self._current_row() in rows:
                     self.on_command_selected()
             except Exception:
                 pass
             self.refresh_themed_commands()
         return n
-
-    def _on_commands_changed(self, event, rows):
-        """Слушатель репозитория: перерисовать классическую таблицу.
-        Тематические виды обновляют те, кто правит (как и раньше)."""
-        if not hasattr(self, "table"):
-            return
-        if event == "changed" and rows and self.table.rowCount() == len(self.commands):
-            for row in rows:
-                self._write_row_to_table(row)
-        else:
-            self.update_table()
-            if hasattr(self, "search_input"):
-                self.filter_commands()
 
     def fix_sound_paths(self):
         """Open the "Fix sound paths" dialog (moved / renamed sound folders)."""
@@ -1629,23 +1506,15 @@ class CommandEditor(QMainWindow):
         
         # Show all commands if search is empty
         if not search_text:
-            for row in range(self.table.rowCount()):
+            for row in range(self.commands_model.rowCount()):
                 self.table.setRowHidden(row, False)
             return
-                
-        # Hide rows that don't match the search
-        for row in range(self.table.rowCount()):
-            match_found = False
-            
-            # Search through all columns
-            for col in range(self.table.columnCount()):
-                item = self.table.item(row, col)
-                if item and search_text in item.text().lower():
-                    match_found = True
-                    break
-                    
-            # Hide/show the row based on match
-            self.table.setRowHidden(row, not match_found)  # Fixed: not_match_found -> not match_found
+
+        # Hide rows that don't match the search (any column, as shown)
+        for row, cmd in enumerate(self.commands):
+            match_found = any(search_text in display_text(cmd, key).lower()
+                              for key in COMMAND_FIELDS)
+            self.table.setRowHidden(row, not match_found)
         self.refresh_themed_commands()
 
     def create_history_tab(self):

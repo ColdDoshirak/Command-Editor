@@ -33,22 +33,50 @@ def body(k):
     check("editor list is the repository's list", w.commands is repo.items)
     check("Twitch tab sees the same list", w.twitch_tab.commands_data is repo.items)
 
-    # ---- the table is only a view ------------------------------------------
-    w.table.blockSignals(True)
-    w.table.item(1, 2).setText("garbage only in the table")
-    w.table.blockSignals(False)
-    w.save_commands(); pump()
-    check("save does not read the table",
-          w.commands[1]["Info"] != "garbage only in the table"
-          and _disk()[1]["Info"] != "garbage only in the table", w.commands[1]["Info"])
-    w.update_table(); pump()
+    # ---- the table is a view over the repository (step 4.4) ---------------------
+    from PyQt5.QtWidgets import QTableWidget
+    model = w.table.model()
+
+    def cell(r, c):
+        return model.index(r, c).data()
+    check("classic table is a model view over the repository",
+          not isinstance(w.table, QTableWidget) and getattr(model, "repo", None) is repo)
+    check("cells show the repository",
+          cell(1, 0) == w.commands[1]["Command"] and cell(1, 7) == str(w.commands[1]["Cost"]),
+          (cell(1, 0), cell(1, 7)))
 
     # ---- invalid cell value is rolled back ---------------------------------------
-    w.table.item(1, 7).setText("abc"); pump()   # Cost
-    check("invalid Cost rolled back in the cell", w.table.item(1, 7).text() == "0",
-          w.table.item(1, 7).text())
-    w.table.item(1, 7).setText("25"); pump()
+    model.setData(model.index(1, 7), "abc"); pump()   # Cost
+    check("invalid Cost not stored, cell shows the stored value",
+          w.commands[1]["Cost"] == 0 and cell(1, 7) == "0", cell(1, 7))
+    model.setData(model.index(1, 7), "25"); pump()
     check("valid cell edit saved", w.commands[1]["Cost"] == 25 and _disk()[1]["Cost"] == 25)
+    # as the user does it: open the cell editor, type, Enter
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtTest import QTest
+    from PyQt5.QtWidgets import QApplication
+    idx = model.index(1, 5)                                    # Cooldown
+    w.table.setCurrentIndex(idx); w.table.edit(idx); pump()
+    ed = QApplication.focusWidget()
+    ed.selectAll() if hasattr(ed, "selectAll") else None
+    QTest.keyClicks(ed, "42"); QTest.keyClick(ed, Qt.Key_Return); pump()
+    check("cell typed by the user is saved", w.commands[1]["Cooldown"] == 42
+          and _disk()[1]["Cooldown"] == 42 and cell(1, 5) == "42", (w.commands[1]["Cooldown"], cell(1, 5)))
+    repo.update(1, {"Info": "changed elsewhere"}); pump()
+    check("repository edits appear without a redraw call", cell(1, 2) == "changed elsewhere",
+          cell(1, 2))
+
+    # ---- search survives model resets -------------------------------------------------
+    w.search_input.setText(w.commands[0]["Command"]); pump()
+    hidden = [r for r in range(model.rowCount()) if w.table.isRowHidden(r)]
+    repo.add({"Command": "!zzz_not_matching"}); pump()
+    hidden2 = [r for r in range(model.rowCount()) if w.table.isRowHidden(r)]
+    check("search filter re-applied after a reset",
+          hidden and model.rowCount() - 1 in hidden2 and set(hidden) <= set(hidden2), (hidden, hidden2))
+    repo.remove(model.rowCount() - 1)
+    w.search_input.setText(""); pump()
+    check("clearing the search shows every row",
+          not any(w.table.isRowHidden(r) for r in range(model.rowCount())))
 
     # ---- selecting rows writes nothing ----------------------------------------------
     events = []
@@ -75,8 +103,8 @@ def body(k):
     QFileDialog.getOpenFileName = staticmethod(lambda *a, **kw: (new_sound, ""))
     w.sound_file_btn.click(); pump()
     check("Browse... saves the sound file", _disk()[2]["SoundFile"] == new_sound, _disk()[2]["SoundFile"])
-    check("table shows the panel's edits", w.table.item(2, 5).text() == "150"
-          and w.table.item(2, 11).text() == new_sound)
+    check("table shows the panel's edits", cell(2, 5) == "150"
+          and cell(2, 11) == new_sound)
 
     # ---- add / delete save at once ---------------------------------------------------
     n = len(w.commands)
@@ -96,7 +124,7 @@ def body(k):
     t.start(); t.join(); pump(200)   # as the bot thread does
     check("usage count from the bot thread reaches the editor",
           w.commands[0]["Count"] == before + 1, (before, w.commands[0]["Count"]))
-    check("count shown in the table", w.table.item(0, 8).text() == str(before + 1))
+    check("count shown in the table", cell(0, 8) == str(before + 1))
 
     # ---- themed views still edit through the repository ------------------------------
     w.apply_theme("sidebar"); pump(300)
@@ -106,7 +134,7 @@ def body(k):
     v.detail.f_cost.setValue(7); pump(600)
     check("themed edit saved through the repository", _disk()[3]["Cost"] == 7, _disk()[3]["Cost"])
     w.apply_theme("classic"); pump(200)
-    check("classic table shows the themed edit", w.table.item(3, 7).text() == "7")
+    check("classic table shows the themed edit", cell(3, 7) == "7")
 
 
 kit.start(body, delay_ms=400)
