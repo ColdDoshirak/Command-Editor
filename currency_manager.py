@@ -13,8 +13,12 @@ from typing import Optional, Dict, Any, List
 from core import paths, storage
 
 class CurrencyManager:
-    def __init__(self):
-        # Основные хранилища данных        self.users = {}
+    def __init__(self, config_manager=None):
+        # Общий ConfigManager программы (шаг 1.2); None - создаётся по
+        # требованию (тесты, отдельное использование).
+        self.config_manager = config_manager
+        # Основные хранилища данных
+        self.users = {}
         self.ranks = []
         
         # Настройки по умолчанию
@@ -1033,8 +1037,7 @@ class CurrencyManager:
             }
 
             metadata_file = backup_path.with_suffix('.json.meta')
-            with open(metadata_file, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2)
+            storage.atomic_write_json(metadata_file, metadata, indent=2, ensure_ascii=True)
 
             self.last_backup_time = current_time
 
@@ -1285,10 +1288,11 @@ class CurrencyManager:
     def _load_backup_settings(self):
         """Load backup settings from config manager"""
         try:
-            # Try to import config_manager here to avoid circular imports
-            from config_manager import ConfigManager
-
-            config_manager = ConfigManager()
+            config_manager = getattr(self, "config_manager", None)
+            if config_manager is None:
+                # import here to avoid circular imports
+                from config_manager import ConfigManager
+                config_manager = self.config_manager = ConfigManager()
             self.max_currency_backups = config_manager.get_max_currency_backups()
             print(f"[CURRENCY BACKUP] Loaded max backups: {self.max_currency_backups}")
         except Exception as e:

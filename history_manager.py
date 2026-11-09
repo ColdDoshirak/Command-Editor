@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 import shutil
 
-from core import paths
+from core import paths, storage
 
 class HistoryManager:
     def __init__(self, max_backups=100):
@@ -32,8 +32,7 @@ class HistoryManager:
         
         # Save the backup
         try:
-            with open(backup_file, 'w', encoding='utf-8') as f:
-                json.dump(commands, f, indent=4, ensure_ascii=False)
+            storage.atomic_write_json(backup_file, commands)
             
             # Manage the number of backups
             self._cleanup_old_backups()

@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QBrush
 
-from core import paths
+from core import paths, storage
 
 class RanksTab(QWidget):
     def __init__(self, parent=None):
@@ -26,9 +26,7 @@ class RanksTab(QWidget):
             self.ranks = []
 
     def save_ranks(self):
-        os.makedirs(os.path.dirname(self.ranks_file), exist_ok=True)
-        with open(self.ranks_file, "w", encoding="utf-8") as f:
-            json.dump(self.ranks, f, indent=4, ensure_ascii=False)
+        storage.atomic_write_json(self.ranks_file, self.ranks)
 
     def initUI(self):
         layout = QVBoxLayout()

@@ -9,7 +9,7 @@ import shutil
 from datetime import datetime
 from typing import Dict, Any
 
-from core import paths
+from core import paths, storage
 
 class ConfigManager:
     def __init__(self):
@@ -213,12 +213,7 @@ class ConfigManager:
                 # директории и os.replace(). Частичная/рваная запись config.json
                 # становится невозможной: читатель видит либо старый, либо
                 # новый файл целиком.
-                tmp_file = self.config_file.with_suffix('.json.tmp')
-                with open(tmp_file, 'w', encoding='utf-8') as f:
-                    json.dump(config_to_save, f, indent=4)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_file, self.config_file)
+                storage.atomic_write_json(self.config_file, config_to_save, ensure_ascii=True)
 
             return True
         except Exception as e:
@@ -228,14 +223,9 @@ class ConfigManager:
     def _atomic_write_json(self, path, data, ensure_ascii=True):
         """B4: атомарная запись JSON — tmp-файл в той же директории +
         os.replace(). Читатель никогда не увидит рваный/полузаписанный файл."""
-        path = Path(path)
-        os.makedirs(os.path.dirname(str(path)), exist_ok=True)
-        tmp_file = path.with_suffix(path.suffix + '.tmp')
-        with open(tmp_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4, ensure_ascii=ensure_ascii)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_file, path)
+        # Общий хелпер (шаг 1.3): тот же лок на файл, что у остальных
+        # мест, пишущих этот файл (например, commands.json из редактора).
+        storage.atomic_write_json(path, data, ensure_ascii=ensure_ascii)
 
     def save_twitch_config_file(self, twitch_config=None):
         """Save Twitch configuration to separate file"""
@@ -467,8 +457,7 @@ class ConfigManager:
             
     def save_legacy_format(self, commands, file_name):
         try:
-            with open(file_name, 'w', encoding='utf-8') as f:
-                json.dump(commands, f, indent=4)
+            storage.atomic_write_json(file_name, commands, ensure_ascii=True)
             return True
         except Exception as e:
             print(f"Error saving legacy format: {e}")

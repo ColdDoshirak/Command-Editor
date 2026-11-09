@@ -33,7 +33,7 @@ from PyQt5.QtCore import QMetaType
 import webbrowser
 import theme as _theme
 from app_log import setup_logging, install_print_bridge
-from core import paths
+from core import paths, storage
 
 # Вместо sip.registerMetaType используем:
 QMetaType.type("QTextCursor")
@@ -465,7 +465,7 @@ class CommandEditor(QMainWindow):
 
 
         # Add tabs for currency management
-        self.currency_manager = CurrencyManager()
+        self.currency_manager = CurrencyManager(config_manager=self.config_manager)
         if hasattr(self.currency_manager, 'load_settings'):
             self.currency_manager.load_settings() # Загружаем настройки при запуске
             print("Currency settings loaded in CommandEditor")
@@ -1266,8 +1266,7 @@ class CommandEditor(QMainWindow):
 
                 # Save the commands first
                 print("Saving commands...")
-                with open(paths.commands_file(), 'w', encoding='utf-8') as f:
-                    json.dump(self.commands, f, indent=4, ensure_ascii=False)
+                storage.atomic_write_json(paths.commands_file(), self.commands)
 
                 # Always create backup on auto-save, don't check for significant changes
                 print("Creating command backup during auto-save...")
@@ -1544,9 +1543,8 @@ class CommandEditor(QMainWindow):
                     it.setText(text)
             self.table.blockSignals(False)
 
-            # Save to file
-            with open(paths.commands_file(), 'w', encoding='utf-8') as f:
-                json.dump(self.commands, f, indent=4, ensure_ascii=False)
+            # Save to file (atomically: a crash never leaves half a commands.json)
+            storage.atomic_write_json(paths.commands_file(), self.commands)
 
             # Update commands in Twitch tab if it exists
             if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
@@ -2640,8 +2638,7 @@ class CommandEditor(QMainWindow):
                 print(f"Error backing up command history metadata: {e}")
 
             # Save backup data
-            with open(backup_path.with_suffix('.json'), 'w', encoding='utf-8') as f:
-                json.dump(backup_data, f, indent=2, ensure_ascii=False)
+            storage.atomic_write_json(backup_path.with_suffix('.json'), backup_data, indent=2)
 
             # Create metadata
             metadata = {
@@ -2654,8 +2651,8 @@ class CommandEditor(QMainWindow):
                 "version": backup_data["backup_info"]["version"]
             }
 
-            with open(backup_path.with_suffix('.json.meta'), 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2)
+            storage.atomic_write_json(backup_path.with_suffix('.json.meta'), metadata,
+                                      indent=2, ensure_ascii=True)
 
             print(f"[COMPREHENSIVE BACKUP] Created backup: {backup_path.name}")
             

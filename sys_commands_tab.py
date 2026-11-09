@@ -9,10 +9,12 @@ from config_manager import ConfigManager
 
 
 class SysCommandsTab(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, config_manager=None):
         super().__init__()
         self.parent = parent
-        self.config_manager = ConfigManager()
+        # Общий ConfigManager программы (шаг 1.2); свой - только без родителя.
+        shared = config_manager if config_manager is not None else getattr(parent, "config_manager", None)
+        self.config_manager = shared if shared is not None else ConfigManager()
         
         # Define original system commands with their default settings
         self.original_commands = [
