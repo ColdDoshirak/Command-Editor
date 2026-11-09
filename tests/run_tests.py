@@ -39,6 +39,7 @@ TEST_MODULES = [
     ("stage0", "test_stage0"),
     ("stage0", "test_crash_log"),
     ("stage1", "test_storage"),
+    ("stage1", "test_ranks"),
 ]
 
 

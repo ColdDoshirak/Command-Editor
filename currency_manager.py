@@ -42,11 +42,14 @@ class CurrencyManager:
             'sub_bonus': 0,            'mod_bonus': 0,
             'active_bonus': 1,
             'payout_mode': 'per_minute',  # Только per_minute режим
-            'on_raid': 10,
-            'on_follow': 10,
-            'on_sub': 10,
-            'mass_sub_gift': 0,
-            'on_host': 0
+            # Награды за события - одна схема для вкладки и бота (шаг 1.5)
+            'raid_points': 10,
+            'raid_points_per_viewer': 1,
+            'follow_points': 5,
+            'sub_points': 20,
+            'gift_sub_points': 15,   # получателю подарка
+            'mass_sub_points': 0,    # дарителю за каждую подарочную подписку
+            'host_points': 0
         }
         
         # Все пути — из core.paths (рядом с программой). Настройки валюты
@@ -74,6 +77,10 @@ class CurrencyManager:
         self.load_data()
 
         self.users_lock = threading.RLock()  # Реентерабельный: add_points держит лок и вызывает save_users через check_rank_promotion
+
+        # Ранги - из того же data/ranks.json, что у вкладки Ranks (S6:
+        # раньше не загружались вовсе и всегда были пустыми).
+        self.load_ranks()
 
         # Initialize data integrity tracking
         self.data_checksum = None
@@ -251,8 +258,63 @@ class CurrencyManager:
         """Alias для save_users() для совместимости"""
         return self.save_users(force)
     
+    @staticmethod
+    def _normalize_ranks(ranks):
+        """Единая схема рангов: required - число (старый ключ 'points' тоже
+        понимается), список по возрастанию порога (на это опирается
+        check_rank_promotion)."""
+        out = []
+        for r in ranks or []:
+            if not isinstance(r, dict) or not str(r.get("name", "")).strip():
+                continue
+            r = dict(r)
+            raw = r.get("required", r.pop("points", 0))
+            try:
+                req = float(raw)
+                r["required"] = int(req) if req == int(req) else req
+            except (TypeError, ValueError):
+                r["required"] = 0
+            r.setdefault("group", "Viewer")
+            r.setdefault("description", "")
+            r.setdefault("color", "#000000")
+            out.append(r)
+        out.sort(key=lambda x: x["required"])
+        return out
+
+    def load_ranks(self):
+        """Прочитать data/ranks.json (тот же файл, что у вкладки Ranks).
+        Список меняется на месте - вкладка держит тот же объект (S6)."""
+        ranks = []
+        try:
+            if os.path.exists(self.ranks_file):
+                with open(self.ranks_file, 'r', encoding='utf-8') as f:
+                    ranks = json.load(f)
+        except Exception as e:
+            print(f"Ошибка загрузки рангов: {e}")
+        self.ranks[:] = self._normalize_ranks(ranks)
+        return self.ranks
+
+    def set_ranks(self, ranks):
+        """Заменить ранги (вкладка Ranks), сохранить и пересчитать ранги
+        всех пользователей под новые пороги."""
+        self.ranks[:] = self._normalize_ranks(ranks)
+        self.save_ranks()
+        self.recheck_all_ranks()
+
+    def recheck_all_ranks(self):
+        changed = False
+        with self.users_lock:
+            for name in list(self.users):
+                changed = self._apply_rank(name) or changed
+            if changed:
+                self._save_pending = True
+        if changed:
+            self.save_users()
+        return changed
+
     def save_ranks(self):
         """Сохранить данные о рангах"""
+        self.ranks[:] = self._normalize_ranks(self.ranks)
         try:
             # Тот же файл, что читает вкладка Ranks (раньше — ranks.json в
             # корне, и восстановление рангов из бэкапа не доходило до вкладки).
@@ -275,6 +337,30 @@ class CurrencyManager:
             traceback.print_exc()
             return False
         
+    # Старые ключи наград -> один ключ (шаг 1.5). Порядок - от слабого к
+    # сильному: значение, заданное во вкладке (*_payout), побеждает.
+    LEGACY_SETTING_KEYS = {
+        'raid_points': ('on_raid', 'raid_payout'),
+        'follow_points': ('on_follow', 'follow_payout'),
+        'sub_points': ('on_sub', 'sub_event_payout'),
+        'mass_sub_points': ('gift_sub_bonus', 'mass_sub_gift', 'mass_sub_payout'),
+        'host_points': ('on_host', 'host_payout'),
+    }
+
+    def _migrate_setting_keys(self, loaded):
+        """Перенести старые ключи из файла в общую схему. True - если что-то
+        перенесено или удалено (файл стоит перезаписать)."""
+        changed = False
+        for new, olds in self.LEGACY_SETTING_KEYS.items():
+            for old in olds:
+                if old in loaded:
+                    self.settings[new] = loaded[old]
+                    changed = True
+            for old in olds:
+                if self.settings.pop(old, None) is not None:
+                    changed = True
+        return changed
+
     def load_settings(self):
         """Load currency settings from file"""
         try:
@@ -315,6 +401,8 @@ class CurrencyManager:
                     loaded = json.load(f)
                     self.settings.update(loaded)
                 print("Currency settings loaded from file")
+                if self._migrate_setting_keys(loaded):
+                    self.save_settings()
             else:
                 print("No currency settings file found, using defaults")
             
@@ -323,8 +411,9 @@ class CurrencyManager:
             self.settings.setdefault("follow_points", 5)
             self.settings.setdefault("sub_points", 20)
             self.settings.setdefault("gift_sub_points", 15)  # Для получателя
-            self.settings.setdefault("gift_sub_bonus", 5)    # Бонус дарителю за каждую            self.settings.setdefault("bits_ratio", 1)        # Очки за каждые 100 битов
-            self.settings.setdefault("host_points", 5)
+            self.settings.setdefault("mass_sub_points", 0)   # Дарителю за каждую подписку
+            self.settings.setdefault("bits_ratio", 1)        # Очки за каждые 100 битов
+            self.settings.setdefault("host_points", 0)
             self.settings.setdefault("sub_bonus", 2)         # Множитель очков для подписчиков
             self.settings.setdefault("payout_mode", "per_minute")  # Всегда используем per_minute
             
@@ -586,25 +675,33 @@ class CurrencyManager:
     
     def check_rank_promotion(self, username):
         """Проверить, нужно ли повысить ранг пользователя"""
-        if username not in self.users or not self.ranks:
+        if self._apply_rank(username):
+            self._save_pending = True
+            self.save_users(force=True)
+            return True
+        return False
+
+    def _apply_rank(self, username):
+        """Выставить user['rank'] по текущим порогам (без сохранения).
+        Возвращает True, если ранг изменился."""
+        user = self.users.get(username)
+        if not isinstance(user, dict):
             return False
-        
-        user = self.users[username]
-        
-        # Проверка на существование 'rank' в данных пользователя
-        if 'rank' not in user:
-            user['rank'] = ""
-            
-        rank_value = user['points'] if self.settings.get('rank_type') == 'Points' else user['hours']
-        
-        for rank in reversed(self.ranks):
-            if rank_value >= rank['required']:
-                if user['rank'] != rank['name']:
-                    user['rank'] = rank['name']
-                    self.save_users(force=True)
-                    return True
+        if self.settings.get('rank_type', 'Points') == 'Hours':
+            value = user.get('hours', 0) or 0
+        else:
+            value = user.get('points', 0) or 0
+        best = ""
+        for rank in self.ranks:  # по возрастанию порога (_normalize_ranks)
+            if value >= rank['required']:
+                best = rank['name']
+            else:
                 break
-        
+        if not self.ranks and not user.get('rank'):
+            return False
+        if user.get('rank', "") != best:
+            user['rank'] = best
+            return True
         return False
     
     def check_auto_regular(self, username):
@@ -686,7 +783,8 @@ class CurrencyManager:
     
     def get_currency_name(self):
         """Получить название валюты"""
-        return self.settings.get('currency_name', 'Points')
+        # Вкладка сохраняет название в 'name' ('currency_name' - старое имя)
+        return self.settings.get('name') or self.settings.get('currency_name') or 'Points'
     
     def get_currency_command(self):
         """Получить команду для валюты"""

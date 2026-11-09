@@ -9,9 +9,12 @@ from PyQt5.QtGui import QColor, QBrush
 from core import paths, storage
 
 class RanksTab(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, currency_manager=None):
         super().__init__(parent)
         self.parent = parent
+        # Ранги хранит CurrencyManager (шаг 1.4): вкладка показывает и правит
+        # тот же список, по которому бот выдаёт ранги.
+        self.currency_manager = currency_manager if currency_manager is not None             else getattr(parent, "currency_manager", None)
         self.ranks = []
         self.ranks_file = str(paths.ranks_file())
         self.load_ranks()
@@ -19,14 +22,22 @@ class RanksTab(QWidget):
         self.populate_table()
 
     def load_ranks(self):
-        if os.path.exists(self.ranks_file):
+        if self.currency_manager is not None:
+            self.ranks = self.currency_manager.load_ranks()
+        elif os.path.exists(self.ranks_file):
             with open(self.ranks_file, "r", encoding="utf-8") as f:
                 self.ranks = json.load(f)
         else:
             self.ranks = []
+        if hasattr(self, "ranks_table"):
+            self.populate_table()
 
     def save_ranks(self):
-        storage.atomic_write_json(self.ranks_file, self.ranks)
+        if self.currency_manager is not None:
+            # сортирует, сохраняет и пересчитывает ранги пользователей
+            self.currency_manager.set_ranks(self.ranks)
+        else:
+            storage.atomic_write_json(self.ranks_file, self.ranks)
 
     def initUI(self):
         layout = QVBoxLayout()
@@ -206,7 +217,7 @@ class RanksTab(QWidget):
                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         
         if reply == QMessageBox.Yes:
-            self.ranks = []
+            del self.ranks[:]
             self.save_ranks()
             self.populate_table()
             QMessageBox.information(self, "Success", "All ranks have been reset!")

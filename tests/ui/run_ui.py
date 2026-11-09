@@ -31,6 +31,7 @@ SCRIPTS = [
     "check_data_safety.py",
     "check_crash_log.py",
     "check_single_config.py",
+    "check_ranks.py",
 ]
 TIMEOUT = 180
 

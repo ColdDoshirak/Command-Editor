@@ -291,7 +291,7 @@ class CurrencyTab(QWidget):
         raid_label = QLabel("On Raid:")
         self.raid_payout_input = QSpinBox()
         self.raid_payout_input.setRange(0, 1000)
-        self.raid_payout_input.setValue(self.currency_manager.settings.get('raid_payout', 10))
+        self.raid_payout_input.setValue(self.currency_manager.settings.get('raid_points', 10))
         self.raid_payout_input.valueChanged.connect(self.save_settings)
         raid_layout.addWidget(raid_label)
         raid_layout.addWidget(self.raid_payout_input)
@@ -302,7 +302,7 @@ class CurrencyTab(QWidget):
         follow_label = QLabel("On Follow:")
         self.follow_payout_input = QSpinBox()
         self.follow_payout_input.setRange(0, 1000)
-        self.follow_payout_input.setValue(self.currency_manager.settings.get('follow_payout', 10))
+        self.follow_payout_input.setValue(self.currency_manager.settings.get('follow_points', 5))
         self.follow_payout_input.valueChanged.connect(self.save_settings)
         follow_layout.addWidget(follow_label)
         follow_layout.addWidget(self.follow_payout_input)
@@ -313,7 +313,7 @@ class CurrencyTab(QWidget):
         sub_event_label = QLabel("On Sub:")
         self.sub_event_payout_input = QSpinBox()
         self.sub_event_payout_input.setRange(0, 1000)
-        self.sub_event_payout_input.setValue(self.currency_manager.settings.get('sub_event_payout', 10))
+        self.sub_event_payout_input.setValue(self.currency_manager.settings.get('sub_points', 20))
         self.sub_event_payout_input.valueChanged.connect(self.save_settings)
         sub_event_layout.addWidget(sub_event_label)
         sub_event_layout.addWidget(self.sub_event_payout_input)
@@ -324,7 +324,7 @@ class CurrencyTab(QWidget):
         mass_sub_label = QLabel("Mass Sub Gift Amount (per Sub):")
         self.mass_sub_payout_input = QSpinBox()
         self.mass_sub_payout_input.setRange(0, 1000)
-        self.mass_sub_payout_input.setValue(self.currency_manager.settings.get('mass_sub_payout', 0))
+        self.mass_sub_payout_input.setValue(self.currency_manager.settings.get('mass_sub_points', 0))
         self.mass_sub_payout_input.valueChanged.connect(self.save_settings)
         mass_sub_layout.addWidget(mass_sub_label)
         mass_sub_layout.addWidget(self.mass_sub_payout_input)
@@ -340,7 +340,7 @@ class CurrencyTab(QWidget):
         host_label = QLabel("On Host:")
         self.host_payout_input = QSpinBox()
         self.host_payout_input.setRange(0, 1000)
-        self.host_payout_input.setValue(self.currency_manager.settings.get('host_payout', 0))
+        self.host_payout_input.setValue(self.currency_manager.settings.get('host_points', 0))
         self.host_payout_input.valueChanged.connect(self.save_settings)
         host_layout.addWidget(host_label)
         host_layout.addWidget(self.host_payout_input)
@@ -475,12 +475,12 @@ class CurrencyTab(QWidget):
                 'mod_bonus': self.mod_bonus_input.value(),
                 'active_bonus': self.active_bonus_input.value(),
                 
-                # Event payouts - используем только один набор настроек
-                'raid_payout': self.raid_payout_input.value(),
-                'follow_payout': self.follow_payout_input.value(),
-                'sub_event_payout': self.sub_event_payout_input.value(),
-                'mass_sub_payout': self.mass_sub_payout_input.value(),
-                'host_payout': self.host_payout_input.value()
+                # Награды за события - те же ключи, что читает бот (шаг 1.5)
+                'raid_points': self.raid_payout_input.value(),
+                'follow_points': self.follow_payout_input.value(),
+                'sub_points': self.sub_event_payout_input.value(),
+                'mass_sub_points': self.mass_sub_payout_input.value(),
+                'host_points': self.host_payout_input.value()
             }
             
             # Update currency manager settings
