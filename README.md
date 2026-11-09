@@ -45,7 +45,8 @@
 
 ## Требования
 
-- **Python 3.8+** (Windows 7 / Linux)
+- **Python 3.8** — последний Python для Windows 7; версии в `requirements.txt`
+  закреплены под него (twitchio 3.x требует Python 3.11+ и не подходит)
 - Зависимости из `requirements.txt`: PyQt5, pygame, twitchio, aiohttp, requests и др.
 
 ## Установка
@@ -67,6 +68,31 @@ pip install -r requirements.txt
 python command_editor.py
 ```
 
+Данные (команды, конфиг, валюта, бэкапы) лежат рядом с программой. Другую
+папку данных можно задать переменной окружения `COMMAND_EDITOR_HOME`.
+
+## Сборка .exe
+
+```bash
+pip install -r requirements-dev.txt
+python -m PyInstaller --noconfirm Command_Editor.spec   # -> dist/command_editor.exe
+```
+
+- В окружении не должно быть пакета `pathlib` (устаревший бэкпорт): с ним
+  PyInstaller отказывается собирать (`pip uninstall pathlib`).
+- spec собирает один файл из `command_editor.py`; пакеты `core/`, `bot/`, `ui/`
+  PyInstaller находит сам, из данных нужна только папка `memes`.
+- UCRT (`ucrtbase.dll`, `api-ms-win-*.dll`) PyInstaller берёт из `PATH`. Для
+  Windows 7 без обновления KB2999226 они должны попасть в сборку — проверьте
+  `build/Command_Editor/EXE-00.toc`.
+
+## Проверки
+
+```bash
+python tests/run_tests.py      # офлайн: бот, очередь, данные (~1 мин)
+python tests/ui/run_ui.py      # настоящее окно, данные во временной папке (~2 мин)
+```
+
 ## Быстрый старт
 
 1. **Экспортируйте команды** из Streamlabs Chatbot (ПКМ по команде → *Export by group*).
@@ -82,11 +108,14 @@ python command_editor.py
 
 ## Известные проблемы
 
-- Значения в таблице меняются только вручную (в самой таблице); панель под таблицей — для просмотра/копирования.
-- В настройках валюты не работает смена команды и награды за follow/sub/raid; работают Regular и Mod bonus.
-- Ranks — пока не работает.
+- Награды за follow не начисляются: Twitch не сообщает о фолловах через чат
+  (будет через EventSub). Награды за рейды и подписки работают.
+- Поле команды на вкладке валюты ни на что не влияет: команду баланса
+  (`!points`) переименовывают во вкладке **Sys.Commands**.
 - Команды без `!` не срабатывают.
-- При первом настройке Twitch бот считает, что конфига нет; после перезапуска всё встаёт на места.
+- Подключаться к Twitch нужно при каждом запуске.
+
+Что изменилось в 2.0 — [docs/release-notes.md](docs/release-notes.md).
 
 ---
 

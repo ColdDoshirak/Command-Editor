@@ -1,0 +1,14 @@
+# Tools for building and checking Command Editor (not needed to run it).
+# Python 3.8, on top of requirements.txt.
+-r requirements.txt
+
+pyinstaller==6.22.3            # builds command_editor.exe (see README, "Сборка")
+pyinstaller-hooks-contrib==2026.9
+altgraph==0.17.5
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
+packaging==26.2
+importlib_metadata==8.5.0
+zipp==3.20.2
+
+pyflakes==2.5.0                # quick static check: python -m pyflakes core bot ui
