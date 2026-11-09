@@ -37,6 +37,7 @@ TEST_MODULES = [
     ("paths", "test_sound_paths"),
     ("paths", "test_paths"),
     ("stage0", "test_stage0"),
+    ("stage0", "test_crash_log"),
 ]
 
 

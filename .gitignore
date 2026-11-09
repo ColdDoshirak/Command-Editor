@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
 command_editor.log*
+command_editor_crash.log*

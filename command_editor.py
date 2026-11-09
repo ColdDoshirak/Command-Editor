@@ -3045,9 +3045,16 @@ class CommandEditor(QMainWindow):
 
 if __name__ == "__main__":
     import sys
+    import app_log
+    # Журнал падений - до создания окна, чтобы ловить и ошибки запуска.
+    try:
+        app_log.install_crash_handlers(paths.app_dir())
+    except Exception as _e:
+        print("Crash log setup failed: %s" % _e)
     # Initialize the application
     app = QApplication(sys.argv)
-    
+    app_log.install_qt_message_handler()
+
     # Create and show the main window
     window = CommandEditor()
     window.show()

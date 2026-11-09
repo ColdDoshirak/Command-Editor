@@ -381,6 +381,11 @@ class TwitchTab(QWidget):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
+            import app_log
+            app_log.install_asyncio_handler(loop)
+        except Exception as e:
+            print(f"asyncio crash handler not installed: {e}")
+        try:
             # Initialize the bot in the same thread as the event loop
             channel = self.bot_params['channel']
             self.bot = TwitchBot(

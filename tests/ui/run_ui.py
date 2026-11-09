@@ -29,6 +29,7 @@ SCRIPTS = [
     "check_live_queue.py",
     "check_bot_bridge.py",
     "check_data_safety.py",
+    "check_crash_log.py",
 ]
 TIMEOUT = 180
 
