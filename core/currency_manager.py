@@ -1032,28 +1032,23 @@ class CurrencyManager:
             return self.users
     
     def get_points(self, username):
-        """Получить количество поинтов пользователя"""
+        """Получить количество поинтов пользователя (0, если такого зрителя нет).
+
+        Только чтение: раньше любой запрос (!remove_points @опечатка,
+        проверка цены команды) добавлял пустую запись в users_currency.json.
+        Записи создают те, кто начисляет (add_points и др.)."""
         username = username.lower()
         with self.users_lock:
-            if username not in self.users:
-                self.users[username] = {
-                    'points': 0,
-                    'hours': 0,
-                    'last_seen': time.time()
-                }
-            return self.users[username]['points']
+            user = self.users.get(username)
+            return user.get('points', 0) if isinstance(user, dict) else 0
         
     def get_hours(self, username):
-        """Получить количество часов пользователя"""
+        """Получить количество часов пользователя (0, если такого зрителя нет).
+        Только чтение, как get_points."""
         username = username.lower()
         with self.users_lock:
-            if username not in self.users:
-                self.users[username] = {
-                    'points': 0,
-                    'hours': 0,
-                    'last_seen': time.time()
-                }
-            return self.users[username].get('hours', 0)
+            user = self.users.get(username)
+            return user.get('hours', 0) if isinstance(user, dict) else 0
         
     def get_rank(self, username):
         """Получить ранг пользователя"""

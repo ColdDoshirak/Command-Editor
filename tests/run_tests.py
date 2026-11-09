@@ -50,6 +50,7 @@ TEST_MODULES = [
     ("stage4", "test_bot_ui"),
     ("stage4", "test_layout"),
     ("stage4", "test_backups"),
+    ("bugs", "test_minor_bugs"),
 ]
 
 
