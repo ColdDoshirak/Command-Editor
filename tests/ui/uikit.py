@@ -55,8 +55,12 @@ class Kit(object):
         # 0xC0000409) with no traceback. Record it as a failed check instead
         # (check_crash_log tests the program's own hook and turns this off).
         def _hook(etype, value, tb):
-            self.results.append(("FAIL", "exception in a Qt slot",
-                                 "".join(traceback.format_exception(etype, value, tb))))
+            text = "".join(traceback.format_exception(etype, value, tb))
+            self.results.append(("FAIL", "exception in a Qt slot", text))
+            # also uncaught errors outside Qt (e.g. at start-up) land here:
+            # never swallow the traceback
+            sys.__stderr__.write(text)
+            sys.__stderr__.flush()
         if catch_slot_errors:
             sys.excepthook = _hook
 

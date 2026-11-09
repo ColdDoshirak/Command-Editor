@@ -110,9 +110,20 @@ def body(k):
     n = len(w.commands)
     w.add_command(); pump()
     check("new command saved at once", len(_disk()) == n + 1 and _disk()[-1]["Command"] == "!new")
-    w.table.selectRow(n); pump()
-    w.delete_command(); pump()
-    check("deleted command gone from disk", len(_disk()) == n)
+    from PyQt5.QtWidgets import QMessageBox
+    asked = []
+    orig_q = QMessageBox.question
+    try:
+        QMessageBox.question = staticmethod(lambda *a, **kw: asked.append(a[2]) or QMessageBox.No)
+        w.table.selectRow(n); pump()
+        w.delete_command(); pump()
+        check("delete asks first, naming the command", asked and "!new" in asked[0], asked)
+        check("answer No keeps the command", len(_disk()) == n + 1 and len(w.commands) == n + 1)
+        QMessageBox.question = staticmethod(lambda *a, **kw: QMessageBox.Yes)
+        w.delete_command(); pump()
+        check("deleted command gone from disk", len(_disk()) == n)
+    finally:
+        QMessageBox.question = orig_q
 
     # ---- Play Sound (step 4.3): no helper thread, button reset in the UI thread -------
     row = next(i for i, c in enumerate(w.commands) if c["SoundFile"] and os.path.exists(c["SoundFile"]))

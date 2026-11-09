@@ -400,6 +400,15 @@ class ClassicCommandsMixin(object):
     def delete_command(self):
         current_row = self._current_row()
         if current_row >= 0 and current_row < len(self.commands):
+            # все кнопки удаления (классика и темы) приходят сюда; раньше
+            # команда удалялась и сразу сохранялась без вопроса
+            name = self.commands[current_row].get("Command", "")
+            reply = QMessageBox.question(
+                self, "Delete command",
+                f"Delete the command {name}?\n\nIt can be restored from the History tab.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                return
             cmd_to_delete = self.command_repo.remove(current_row)
             # Remove from original commands list (find by Command name)
             for i, cmd in enumerate(self.original_commands):
