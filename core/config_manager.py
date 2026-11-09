@@ -328,25 +328,6 @@ class ConfigManager:
 
         return result
         
-    def set_twitch_config(self, access_token=None, client_id=None, channel=None) -> None:
-        """Set Twitch configuration"""
-        # Обновляем токены в отдельный файл
-        twitch_update = {}
-        if access_token is not None and access_token:
-            twitch_update['access_token'] = access_token
-        if client_id is not None and client_id:
-            twitch_update['client_id'] = client_id
-            
-        if twitch_update:
-            self.save_twitch_config_file(twitch_update)
-        
-        # Обновляем канал в основную конфигурацию
-        if channel is not None:
-            if 'twitch' not in self.config:
-                self.config['twitch'] = {}
-            self.config['twitch']['channel'] = channel
-            self.save_config()
-        
     def set_twitch_channel(self, channel: str) -> None:
         """Set only the Twitch channel without affecting tokens"""
         if 'twitch' not in self.config:
@@ -358,15 +339,6 @@ class ConfigManager:
     
     def get_current_file(self):
         return self.config.get('current_file')
-        
-    def set_current_file(self, file_name):
-        self.config['current_file'] = file_name
-        # Add to recent files if not already there
-        if file_name and file_name not in self.config['recent_files']:
-            self.config['recent_files'].insert(0, file_name)
-            # Keep only last 10 files
-            self.config['recent_files'] = self.config['recent_files'][:10]
-        self.save_config()
         
     def get_volume(self):
         return self.config.get('volume', 0.5)
@@ -431,9 +403,6 @@ class ConfigManager:
         self.config['system_auto_backup']['interval'] = interval
         self.save_config()
         
-    def get_recent_files(self):
-        return self.config.get('recent_files', [])
-        
     def save_commands(self, commands):
         try:
             with self._lock:
@@ -461,31 +430,10 @@ class ConfigManager:
             print(f"Error saving legacy format: {e}")
             return False
 
-    def get_commands_config(self) -> Dict[str, Any]:
-        """Get commands configuration"""
-        return self.config.get('commands', {})
-        
-    def set_commands_config(self, commands: Dict[str, Any]) -> None:
-        """Set commands configuration"""
-        self.config['commands'] = commands
-        self.save_config()
-        
     def get_sound_config(self) -> Dict[str, Any]:
         """Get sound configuration"""
         return self.config.get('sound', {})
         
-    def set_sound_config(self, volume: float, sound_dir: str) -> None:
-        """Set sound configuration"""
-        if 'sound' not in self.config:
-            self.config['sound'] = {}
-            
-        if volume is not None:
-            self.config['sound']['volume'] = volume
-        if sound_dir is not None:
-            self.config['sound']['sound_dir'] = sound_dir
-        
-        self.save_config()
-
     def get_audio_categories(self) -> Dict[str, Any]:
         """Get audio categories configuration"""
         return self.config.get('audio_categories', {})
@@ -538,14 +486,6 @@ class ConfigManager:
         if entry.get('muted'):
             return 0
         return entry.get('volume', 0)
-
-    # ------------------------------------------------------------------
-    # Optional queue persistence (opt-in per group via 'persist_queue')
-    # ------------------------------------------------------------------
-    def get_persist_queue_groups(self) -> list:
-        """Return list of group names that have queue persistence enabled."""
-        cats = self.config.get('audio_categories', {})
-        return [g for g, v in cats.items() if isinstance(v, dict) and v.get('persist_queue', False)]
 
     def load_persisted_queue(self, group: str) -> list:
         """Load persisted queue items for a group.

@@ -618,12 +618,3 @@ class SysCommandsTab(QWidget):
         remove_action.triggered.connect(self.remove_command)
         
         menu.exec_(self.table.viewport().mapToGlobal(position))
-
-    def get_system_commands(self):
-        """Return the current system commands list"""
-        return self.system_commands
-
-    def set_system_commands(self, commands):
-        """Set the system commands list"""
-        self.system_commands = commands
-        self.update_table()

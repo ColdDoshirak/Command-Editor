@@ -97,24 +97,3 @@ class TwitchAuthDialog(QDialog):
         """Handle dialog acceptance"""
         # This method is overridden to prevent automatic saving
         super().accept()
-
-    def get_auth_url(self):
-        """Generate Twitch OAuth URL"""
-        scopes = [
-            "chat:read",
-            "chat:edit",
-            "channel:moderate",
-            "channel:read:subscriptions",
-            "moderator:read:chatters",  # Add this scope for chatters list access
-            "channel:manage:redemptions"
-        ]
-        
-        scope_str = "+".join(scopes)
-        
-        return (
-            f"https://id.twitch.tv/oauth2/authorize"
-            f"?client_id={self.client_id}"
-            f"&redirect_uri={self.redirect_uri}"
-            f"&response_type=token"
-            f"&scope={scope_str}"
-        )
