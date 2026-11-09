@@ -26,9 +26,14 @@ class HistoryManager:
         Args:
             commands (list): The commands to backup
         """
-        # Generate timestamp for the filename
+        # Generate timestamp for the filename (_2, _3 ... for the same second:
+        # before, the second backup overwrote the first)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_file = os.path.join(self.history_folder, f"commands_{timestamp}.json")
+        n = 2
+        while os.path.exists(backup_file):
+            backup_file = os.path.join(self.history_folder, f"commands_{timestamp}_{n}.json")
+            n += 1
         
         # Save the backup
         try:
@@ -41,6 +46,21 @@ class HistoryManager:
             print(f"Error saving backup: {e}")
             return False
     
+    def save_backup_if_changed(self, commands):
+        """Auto-save: back up only if the commands differ from the newest
+        backup. True - written, None - unchanged (nothing written), False -
+        error. Before, every auto-save tick (5 min) wrote an identical copy and
+        within hours pushed the real older versions out of the history."""
+        backups = self.get_backups()
+        if backups:
+            try:
+                with open(backups[0]["path"], "r", encoding="utf-8") as f:
+                    if json.load(f) == list(commands):
+                        return None
+            except Exception:
+                pass            # unreadable newest backup: write a new one
+        return self.save_backup(commands)
+
     def get_backups(self):
         """Get list of available backups
         

@@ -505,14 +505,14 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
                 print("Saving commands...")
                 self.command_repo.save()
 
-                # Always create backup on auto-save, don't check for significant changes
-                print("Creating command backup during auto-save...")
-                backup_successful = self.history_manager.save_backup(self.commands)
-
+                # A history backup only when the commands changed since the
+                # newest one (identical copies pushed real versions out)
+                backup_successful = self.history_manager.save_backup_if_changed(self.commands)
                 if backup_successful:
-                    print("Auto-save command backup created successfully")
+                    print("Auto-save command backup created")
                     self.history_tab.refresh()
-                    print("Command backup list refreshed")
+                elif backup_successful is None:
+                    print("Commands unchanged since the last backup - no new history backup")
                 else:
                     print("Failed to create auto-save command backup")
 
