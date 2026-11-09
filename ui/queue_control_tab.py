@@ -16,13 +16,11 @@ Python 3.8 / PyQt5.
 """
 import time
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox,
-                             QPushButton, QListWidget, QListWidgetItem,
-                             QLabel, QAbstractItemView, QFrame, QMessageBox,
-                             QSizePolicy)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
+                             QListWidget, QListWidgetItem, QLabel, QAbstractItemView, QFrame,
+                             QMessageBox)
 from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF, QSize
-from PyQt5.QtGui import (QIcon, QPixmap, QPainter, QColor, QPolygonF,
-                         QPen, QBrush, QKeySequence, QFont)
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPolygonF, QPen, QBrush, QKeySequence
 
 
 def _draw_icon(kind, size=32, color=(60, 60, 60)):

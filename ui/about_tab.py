@@ -1,12 +1,10 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTextBrowser, 
                           QTabWidget, QScrollArea, QGroupBox, QHBoxLayout, 
                           QPushButton, QFrame, QMessageBox, QDialog, QComboBox)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QPixmap, QIcon
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QFont, QPixmap
 import datetime
-from pathlib import Path
 import os
-import sys
 import requests
 import json
 import webbrowser

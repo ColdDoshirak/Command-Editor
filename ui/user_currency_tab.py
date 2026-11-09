@@ -1,10 +1,8 @@
-import json
 import os
 import time
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                           QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
-                           QCheckBox, QDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox,
-                           QFileDialog, QSizePolicy)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
+                             QTableWidgetItem, QHeaderView, QCheckBox, QDialog, QLineEdit,
+                             QSpinBox, QDoubleSpinBox, QMessageBox, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
 from core.currency_manager import CurrencyManager
 

@@ -1,5 +1,3 @@
-import json
-import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                            QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
                            QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox,
@@ -226,7 +224,7 @@ class SysCommandsTab(QWidget):
         self.table.setRowCount(len(self.system_commands))
 
         for row, cmd in enumerate(self.system_commands):
-            from PyQt5.QtGui import QColor, QFont
+            from PyQt5.QtGui import QColor
 
             # Type column - shows if it's Original or Duplicate
             if cmd.get("is_duplicate", False):

@@ -1,9 +1,7 @@
 import json
 import os
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                           QLabel, QLineEdit, QSpinBox, QTableWidget, QTableWidgetItem,
-                           QHeaderView, QMessageBox, QInputDialog, QColorDialog, QComboBox)
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
+                             QTableWidgetItem, QHeaderView, QMessageBox, QInputDialog, QColorDialog)
 from PyQt5.QtGui import QColor, QBrush
 
 from core import paths, storage

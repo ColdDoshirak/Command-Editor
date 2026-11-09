@@ -1,8 +1,6 @@
-import os
-import json
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                           QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
-                           QGroupBox, QSlider, QScrollArea, QSizePolicy, QGridLayout, QMessageBox)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
+                             QSpinBox, QComboBox, QCheckBox, QGroupBox, QSlider, QScrollArea,
+                             QMessageBox)
 from PyQt5.QtCore import Qt, QTimer
 from core.currency_manager import CurrencyManager
 
@@ -562,7 +560,7 @@ class CurrencyTab(QWidget):
     def refresh_backup_list(self):
         """Refresh the list of available backups"""
         try:
-            from PyQt5.QtWidgets import QFrame, QMessageBox
+            from PyQt5.QtWidgets import QFrame
 
             # Clear existing backup items
             layout = self.backup_list_layout

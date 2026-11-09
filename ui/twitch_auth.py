@@ -1,10 +1,5 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QLineEdit, QPushButton, QMessageBox)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QDesktopServices
-from PyQt5.QtCore import QUrl
-import json
-import os
 from core.config_manager import ConfigManager
 
 class TwitchAuthDialog(QDialog):

@@ -1,10 +1,8 @@
 import json
 import os
-import sys
 import copy
 import threading
 import time
-from pathlib import Path
 import shutil
 from datetime import datetime
 from typing import Dict, Any
@@ -705,13 +703,10 @@ class ConfigManager:
         """Remove a moderator from manual list and add to excluded list"""
         username = username.lower().strip()
         manual_mods = self.get_manual_moderators()
-        removed = False
-        
         if username in manual_mods:
             manual_mods.remove(username)
             self.set_manual_moderators(manual_mods)
-            removed = True
-        
+
         # Добавляем в список исключенных, чтобы API не переопределял решение
         self.add_excluded_moderator(username)
         

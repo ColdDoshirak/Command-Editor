@@ -44,3 +44,20 @@ async def test_bot_has_no_qt_and_does_not_import_the_window():
 async def test_only_the_entry_point_stays_at_the_top():
     top = sorted(n for n in os.listdir(REPO_DIR) if n.endswith(".py"))
     assert top == ["command_editor.py"], top
+
+
+async def test_pyflakes_clean():
+    """Undefined names and unused imports/variables (requirements-dev.txt).
+    Skipped when pyflakes is not installed."""
+    import subprocess
+    import sys
+    try:
+        import pyflakes  # noqa: F401
+    except ImportError:
+        return
+    out = subprocess.run([sys.executable, "-m", "pyflakes", "command_editor.py", "core", "bot", "ui"],
+                         cwd=REPO_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout
+    lines = [l for l in out.decode("utf-8", "replace").splitlines()
+             if "f-string is missing placeholders" not in l
+             and not l.replace("\\", "/").startswith("ui/theme/__init__.py")]   # re-exports
+    assert not lines, "\n".join(lines[:20])
