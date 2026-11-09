@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                            QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox,
                            QMenu, QMessageBox)
 from PyQt5.QtCore import Qt
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 import copy
 from core.system_commands import DEFAULT_SYSTEM_COMMANDS, merge_with_defaults
 

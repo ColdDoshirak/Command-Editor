@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                            QCheckBox, QDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox,
                            QFileDialog, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
-from currency_manager import CurrencyManager
+from core.currency_manager import CurrencyManager
 
 class UserCurrencyTab(QWidget):
     def __init__(self, parent=None):

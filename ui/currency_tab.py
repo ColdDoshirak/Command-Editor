@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                            QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
                            QGroupBox, QSlider, QScrollArea, QSizePolicy, QGridLayout, QMessageBox)
 from PyQt5.QtCore import Qt, QTimer
-from currency_manager import CurrencyManager
+from core.currency_manager import CurrencyManager
 
 class CurrencyTab(QWidget):
     def __init__(self, parent=None):

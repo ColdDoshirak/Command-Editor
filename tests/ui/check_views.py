@@ -128,8 +128,8 @@ def body(k):
     w.commands[1]["SoundFile"] = "Z:/nowhere/x.wav"; w.update_table(); pump()
     v.master_list.setCurrentRow(1); pump()
     check("missing sound flagged", v.detail.missing_lab.isVisibleTo(v.detail))
-    import sound_paths
-    dlg = sound_paths.make_relink_dialog(w)
+    from ui.sound_relink import make_relink_dialog
+    dlg = make_relink_dialog(w)
     check("fixer lists missing", dlg.table.rowCount() == 1, dlg.table.rowCount())
     dlg.show(); pump(300)
     shot("views_fix_dialog", dlg)

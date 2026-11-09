@@ -7,10 +7,10 @@ import concurrent.futures
 import threading
 from twitchio.ext import commands
 from twitchio.ext.commands import errors
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from pathlib import Path
 import traceback
-from currency_manager import CurrencyManager
+from core.currency_manager import CurrencyManager
 from datetime import datetime, timezone
 from typing import Union
 
@@ -101,7 +101,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
     def __init__(self, channel, message_callback=None, commands_data=None, sound_channel=None, config_manager=None, currency_manager=None, ui=None, **kwargs):
         # Загружаем настройки Twitch
         if not config_manager:
-            from config_manager import ConfigManager
+            from core.config_manager import ConfigManager
             config_manager = ConfigManager()
         self.config_manager = config_manager
         

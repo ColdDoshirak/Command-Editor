@@ -5,7 +5,7 @@ from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtCore import QUrl
 import json
 import os
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 class TwitchAuthDialog(QDialog):
     def __init__(self, parent=None, config_manager=None):

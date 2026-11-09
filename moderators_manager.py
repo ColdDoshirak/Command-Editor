@@ -4,7 +4,7 @@
 """
 
 from typing import List, Set
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 
 class ModeratorsManager:

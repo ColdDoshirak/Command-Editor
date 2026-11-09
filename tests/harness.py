@@ -45,8 +45,8 @@ from core import paths  # noqa: E402
 _SESSION_HOME = tempfile.mkdtemp(prefix="ce_home_")
 paths.set_app_dir(_SESSION_HOME)
 
-from config_manager import ConfigManager  # noqa: E402
-from twitch_bot import TwitchBot  # noqa: E402
+from core.config_manager import ConfigManager  # noqa: E402
+from bot.twitch_bot import TwitchBot  # noqa: E402
 from bot import helix as _helix  # noqa: E402
 
 
@@ -243,7 +243,7 @@ def make_real_currency(tmpdir):
     validation, checksum and backup logic (not the FakeCurrencyManager).
     """
     from pathlib import Path
-    from currency_manager import CurrencyManager
+    from core.currency_manager import CurrencyManager
 
     d = Path(tmpdir)
     (d / "backups" / "currency").mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ import os
 
 from harness import new_tmpdir, drop_tmpdir
 
-import sound_paths as sp
+from core import sound_paths as sp
 
 
 def _touch(path):

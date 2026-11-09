@@ -13,7 +13,7 @@ import threading
 
 from harness import new_tmpdir, drop_tmpdir
 
-import app_log
+from core import app_log
 
 
 def _read(path):

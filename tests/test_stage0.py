@@ -337,7 +337,7 @@ async def test_first_run_writes_default_config():
     import json
     import os
     from core import paths
-    from config_manager import ConfigManager
+    from core.config_manager import ConfigManager
     tmp = new_tmpdir()
     try:
         paths.set_app_dir(tmp)
@@ -356,7 +356,7 @@ async def test_first_run_writes_default_config():
 async def test_damaged_config_is_kept_aside():
     import os
     from core import paths
-    from config_manager import ConfigManager
+    from core.config_manager import ConfigManager
     tmp = new_tmpdir()
     try:
         paths.set_app_dir(tmp)

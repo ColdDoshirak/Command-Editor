@@ -38,7 +38,7 @@ box = {}
 
 def run_bot(w):
     """Like TwitchTab.run_bot, without connecting to Twitch."""
-    from twitch_bot import TwitchBot
+    from bot.twitch_bot import TwitchBot
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     bot = TwitchBot(channel="testchan", config_manager=w.config_manager,

@@ -12,26 +12,26 @@ from PyQt5.QtCore import Qt, QTimer, QDateTime
 import PyQt5.QtCore as QtCore
 from PyQt5.QtGui import QPixmap, QFont, QTextCursor  # Add QTextCursor here
 import pygame
-from twitch_auth import TwitchAuthDialog
-from twitch_tab import TwitchTab
-from config_manager import ConfigManager
-from about_tab import AboutTab
-from history_manager import HistoryManager
+from ui.twitch_auth import TwitchAuthDialog
+from ui.twitch_tab import TwitchTab
+from core.config_manager import ConfigManager
+from ui.about_tab import AboutTab
+from core.history_manager import HistoryManager
 from pathlib import Path
 import threading
 import time
-from currency_tab import CurrencyTab
-from user_currency_tab import UserCurrencyTab
-from ranks_tab import RanksTab
-from sys_commands_tab import SysCommandsTab  # Import the new system commands tab
-from group_settings_tab import GroupSettingsTab  # Import the new group settings tab
-from queue_control_tab import QueueControlTab  # Live queue management tab
-from currency_manager import CurrencyManager
+from ui.currency_tab import CurrencyTab
+from ui.user_currency_tab import UserCurrencyTab
+from ui.ranks_tab import RanksTab
+from ui.sys_commands_tab import SysCommandsTab  # Import the new system commands tab
+from ui.group_settings_tab import GroupSettingsTab  # Import the new group settings tab
+from ui.queue_control_tab import QueueControlTab  # Live queue management tab
+from core.currency_manager import CurrencyManager
 from PyQt5 import sip  # правильный импорт
 from PyQt5.QtCore import QMetaType
 import webbrowser
-import theme as _theme
-from app_log import setup_logging, install_print_bridge
+from ui import theme as _theme
+from core.app_log import setup_logging, install_print_bridge
 from core import paths, storage
 from core.commands import CommandRepository, FIELDS as COMMAND_FIELDS
 from bot.audio import SoundCache
@@ -1394,8 +1394,8 @@ class CommandEditor(QMainWindow):
 
     def fix_sound_paths(self):
         """Open the "Fix sound paths" dialog (moved / renamed sound folders)."""
-        import sound_paths
-        dlg = sound_paths.make_relink_dialog(self)
+        from ui.sound_relink import make_relink_dialog
+        dlg = make_relink_dialog(self)
         dlg.exec_()
 
     def auto_relink_sounds(self, quiet=False):
@@ -1403,7 +1403,7 @@ class CommandEditor(QMainWindow):
 
         Only unambiguous matches are applied. Returns (fixed, still_missing).
         """
-        import sound_paths
+        from core import sound_paths
         folders = self.config_manager.get_sound_folders()
         missing = sound_paths.find_missing(self.commands)
         if not missing:
@@ -2784,7 +2784,7 @@ class CommandEditor(QMainWindow):
 
 if __name__ == "__main__":
     import sys
-    import app_log
+    from core import app_log
     # Журнал падений - до создания окна, чтобы ловить и ошибки запуска.
     try:
         app_log.install_crash_handlers(paths.app_dir())
@@ -2792,7 +2792,8 @@ if __name__ == "__main__":
         print("Crash log setup failed: %s" % _e)
     # Initialize the application
     app = QApplication(sys.argv)
-    app_log.install_qt_message_handler()
+    from ui.qt_log import install_qt_message_handler
+    install_qt_message_handler()
 
     # Create and show the main window
     window = CommandEditor()

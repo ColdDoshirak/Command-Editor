@@ -115,8 +115,8 @@ async def main():
         return {"login": "botnick", "user_id": "1", "client_id": "cid", "scopes": []}
     twitchio.http.TwitchHTTP.validate = fake_validate
 
-    from config_manager import ConfigManager
-    from twitch_bot import TwitchBot
+    from core.config_manager import ConfigManager
+    from bot.twitch_bot import TwitchBot
     said = []
     bot = TwitchBot(channel="testchan", config_manager=ConfigManager(),
                     message_callback=said.append)

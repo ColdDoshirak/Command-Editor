@@ -7,7 +7,7 @@ import time
 
 from harness import make_bot, FakeCurrencyManager, new_tmpdir, drop_tmpdir
 
-import twitch_bot
+from bot import twitch_bot
 from bot.helix import HelixClient
 
 

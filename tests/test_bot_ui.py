@@ -106,7 +106,7 @@ async def test_a_failing_ui_never_breaks_a_command():
 
 
 async def test_bot_code_has_no_qt():
-    for rel in ["twitch_bot.py"] + ["bot/" + n for n in sorted(os.listdir(os.path.join(REPO_DIR, "bot")))
+    for rel in ["bot/" + n for n in sorted(os.listdir(os.path.join(REPO_DIR, "bot")))
                                     if n.endswith(".py")]:
         src = _read(rel)
         assert "PyQt5" not in src, rel + " imports Qt"
@@ -115,9 +115,8 @@ async def test_bot_code_has_no_qt():
 
 # UI modules that may hold a reference to the bot. Only the bridge may
 # schedule work on the bot loop.
-UI_MODULES = ["command_editor.py", "twitch_tab.py", "theme.py", "queue_control_tab.py",
-              "group_settings_tab.py", "sys_commands_tab.py", "currency_tab.py",
-              "user_currency_tab.py", "ranks_tab.py"]
+UI_MODULES = ["command_editor.py"] + ["ui/" + n for n in sorted(os.listdir(os.path.join(REPO_DIR, "ui")))
+                                     if n.endswith(".py") and n != "bot_bridge.py"]
 
 
 async def test_only_the_bridge_touches_the_bot_loop():

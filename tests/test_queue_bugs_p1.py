@@ -360,7 +360,7 @@ async def test_b7_update_viewers_and_status_does_not_block_ui():
     returns immediately.
     """
     _install_pyqt5_stub()
-    from twitch_tab import TwitchTab
+    from ui.twitch_tab import TwitchTab
 
     tmp = new_tmpdir()
     try:

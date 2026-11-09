@@ -209,24 +209,6 @@ def install_asyncio_handler(loop):
     loop.set_exception_handler(_handler)
 
 
-def install_qt_message_handler():
-    """Предупреждения и ошибки самого Qt - в лог (критичные - и в журнал падений)."""
-    try:
-        from PyQt5.QtCore import qInstallMessageHandler, QtWarningMsg, QtCriticalMsg, QtFatalMsg
-    except Exception:
-        return
-
-    def _qt_handler(mode, context, message):
-        try:
-            if mode in (QtCriticalMsg, QtFatalMsg):
-                _write_crash("Qt", "%s (%s:%s)" % (message, context.file, context.line))
-            elif mode == QtWarningMsg:
-                logger.warning("Qt: %s", message)
-        except Exception:
-            pass
-    qInstallMessageHandler(_qt_handler)
-
-
 # Глобальный логгер по умолчанию (до setup_logging — NullHandler, чтобы
 # print->logger не падал, если setup ещё не вызван).
 logger = logging.getLogger("command_editor")

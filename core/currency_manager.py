@@ -1388,7 +1388,7 @@ class CurrencyManager:
             config_manager = getattr(self, "config_manager", None)
             if config_manager is None:
                 # import here to avoid circular imports
-                from config_manager import ConfigManager
+                from core.config_manager import ConfigManager
                 config_manager = self.config_manager = ConfigManager()
             self.max_currency_backups = config_manager.get_max_currency_backups()
             print(f"[CURRENCY BACKUP] Loaded max backups: {self.max_currency_backups}")

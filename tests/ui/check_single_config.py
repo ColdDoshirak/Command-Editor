@@ -12,7 +12,7 @@ DATA, OUT = uikit.args()
 fixture.editor_set(DATA)
 
 sys.path.insert(0, uikit.REPO)
-import config_manager  # noqa: E402
+from core import config_manager  # noqa: E402
 created = []
 _orig_init = config_manager.ConfigManager.__init__
 

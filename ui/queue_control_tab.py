@@ -202,7 +202,7 @@ class QueueControlTab(QWidget):
     def _icon_rgb(self):
         """Icon colour that matches the active theme (dark themes need light icons)."""
         try:
-            import theme as _theme
+            from ui import theme as _theme
             name = getattr(self.parent, "theme", "classic")
             if _theme.layout_of(name) != "classic":
                 c = QColor(_theme.palette_for(name)["text2"])

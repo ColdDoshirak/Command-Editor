@@ -243,7 +243,7 @@ class AboutTab(QWidget):
         theme_label = QLabel("Theme:")
         theme_label.setStyleSheet("font-weight: 600;")
         self.theme_combo = QComboBox()
-        import theme as _theme_mod
+        from ui import theme as _theme_mod
         for _key in _theme_mod.THEMES:
             self.theme_combo.addItem(_theme_mod.THEME_LABELS[_key], _key)
         current_theme = getattr(self.parent, "theme", "classic") if self.parent is not None else "classic"

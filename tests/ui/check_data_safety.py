@@ -94,7 +94,7 @@ def body(k):
           _disk_commands()[0].get("Info") == "after full", _disk_commands()[0])
 
     # ---- C6: the auth dialog updates the config the app actually uses -----
-    from twitch_auth import TwitchAuthDialog
+    from ui.twitch_auth import TwitchAuthDialog
     dlg = TwitchAuthDialog(w.twitch_tab)
     dlg.client_id_edit.setText("cid-new")
     dlg.access_token_edit.setText("tok-new")

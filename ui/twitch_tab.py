@@ -13,9 +13,9 @@ import time
 import webbrowser
 from datetime import datetime
 
-from twitch_bot import TwitchBot
-from twitch_auth import TwitchAuthDialog
-from config_manager import ConfigManager
+from bot.twitch_bot import TwitchBot
+from ui.twitch_auth import TwitchAuthDialog
+from core.config_manager import ConfigManager
 from ui.bot_bridge import BotBridge
 
 # регистрируем QTextCursor для передачи в сигналах
@@ -380,7 +380,7 @@ class TwitchTab(QWidget):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            import app_log
+            from core import app_log
             app_log.install_asyncio_handler(loop)
         except Exception as e:
             print(f"asyncio crash handler not installed: {e}")
