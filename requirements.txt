@@ -1,15 +1,31 @@
-PyQt5>=5.15.2
-pygame>=2.1.2
-aiohttp>=3.8.1
-twitchio>=2.6.0
-attrs>=21.4.0
-requests>=2.27.1
-pathlib>=1.0.1
-iso8601>=1.0.2
-multidict>=6.0.2
-yarl>=1.7.2
-async_timeout>=4.0.2
-typing_extensions>=4.1.1
-frozenlist>=1.3.0
-aiosignal>=1.2.0
-aiohappyeyeballs>=2.2.0
+# Command Editor 2.0 - Python 3.8 (the last Python for Windows 7).
+# Exact versions the test suites run with (.venv); newer ones need Python 3.9+
+# or drop Windows 7.
+
+# what the program imports
+PyQt5==5.15.11
+PyQt5-Qt5==5.15.2          # Qt itself; 5.15.2 is the last wheel that runs on Windows 7
+PyQt5_sip==12.15.0
+pygame==2.6.1
+twitchio==2.10.0           # 3.x needs Python 3.11+
+aiohttp==3.10.11           # Twitch API calls of the bot (bot/helix.py)
+requests==2.32.4           # update check in the About tab
+
+# their dependencies, pinned for reproducible builds
+aiohappyeyeballs==2.4.4
+aiosignal==1.3.1
+async-timeout==5.0.1
+attrs==25.3.0
+certifi==2026.10.23
+charset-normalizer==3.5.2
+frozenlist==1.5.0
+idna==3.15
+iso8601==2.1.0
+multidict==6.1.0
+propcache==0.2.0
+typing_extensions==4.13.2
+urllib3==2.2.3
+yarl==1.15.2
+
+# Not here on purpose: "pathlib" (an obsolete backport of the standard
+# library module; PyInstaller refuses to build while it is installed).
