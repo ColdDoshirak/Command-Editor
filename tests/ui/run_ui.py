@@ -34,6 +34,7 @@ SCRIPTS = [
     "check_ranks.py",
     "check_twitch_reconnect.py",
     "check_commands_model.py",
+    "check_user_currency.py",
 ]
 TIMEOUT = 180
 

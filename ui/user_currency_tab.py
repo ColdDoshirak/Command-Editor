@@ -130,63 +130,69 @@ class UserCurrencyTab(QWidget):
             if self.table.verticalScrollBar():
                 scroll_position = self.table.verticalScrollBar().value()
             
-            # Получаем текущие данные пользователей из менеджера
-            if self.currency_manager:
-                users_data = self.currency_manager.users
-            else:
-                users_data = {}
-            
-            if not users_data:
-                print("No currency users data available")
-                # Обновить метку времени последнего обновления
-                now = QDateTime.currentDateTime().toString("HH:mm:ss")
-                self.last_update.setText(f"Last update: {now}")
-                return
-            
+            # Снимок под users_lock: бот меняет users из своего потока, а
+            # sorted(users.items()) по живому словарю падал с "dictionary
+            # changed size during iteration" - и таблица молча не обновлялась.
+            cm = self.currency_manager
+            users_data = []
+            if cm:
+                lock = getattr(cm, 'users_lock', None)
+                if lock is not None:
+                    with lock:
+                        users_data = [(name, dict(data)) for name, data in cm.users.items()
+                                      if isinstance(data, dict)]
+                else:
+                    users_data = [(name, dict(data)) for name, data in cm.users.items()
+                                  if isinstance(data, dict)]
+
             # Сортировка пользователей по количеству очков (по убыванию)
-            sorted_users = sorted(users_data.items(), key=lambda x: x[1].get('points', 0), reverse=True)
-            
-            # Настраиваем количество строк
+            sorted_users = sorted(users_data, key=lambda x: x[1].get('points', 0), reverse=True)
+            # кнопки строк узнают зрителя отсюда: их больше не пересоздаём
+            # на каждом обновлении (раньше - две новые кнопки на зрителя раз в 30 с)
+            self._row_users = [name for name, _data in sorted_users]
+
+            # Настраиваем количество строк (лишние строки и их кнопки уходят)
             self.table.setRowCount(len(sorted_users))
-            
+
             # Заполняем таблицу
             for row, (username, data) in enumerate(sorted_users):
                 # Пользователь
                 user_item = QTableWidgetItem(username)
                 self.table.setItem(row, 0, user_item)
-                
+
                 # Очки
                 points = data.get('points', 0)
                 points_item = QTableWidgetItem(str(points))
                 points_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.table.setItem(row, 1, points_item)                # Часы в формате "1h15m"
+                self.table.setItem(row, 1, points_item)
+                # Часы в формате "1h15m"
                 hours = data.get('hours', 0)
-                formatted_hours = self.currency_manager.format_hours(hours) if hasattr(self.currency_manager, 'format_hours') else f"{hours:.2f}"
+                formatted_hours = cm.format_hours(hours) if hasattr(cm, 'format_hours') else f"{hours:.2f}"
                 hours_item = QTableWidgetItem(formatted_hours)
                 hours_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(row, 2, hours_item)
-                
+
                 # Ранг
                 rank = self.get_user_rank(username, points)
                 rank_item = QTableWidgetItem(rank)
                 self.table.setItem(row, 3, rank_item)
-                
+
                 # Статус Regular
                 is_regular = data.get('is_regular', False)
                 regular_item = QTableWidgetItem("✓" if is_regular else "")
                 regular_item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, 4, regular_item)
-                
-                # Кнопка редактирования
-                edit_btn = QPushButton("Edit")
-                edit_btn.clicked.connect(lambda checked=False, u=username: self.edit_user(u))
-                self.table.setCellWidget(row, 5, edit_btn)
-                
-                # Кнопка удаления
-                remove_btn = QPushButton("Remove")
-                remove_btn.clicked.connect(lambda checked=False, u=username: self.remove_user(u))
-                self.table.setCellWidget(row, 6, remove_btn)
-            
+
+                # Кнопки - один раз на строку
+                if self.table.cellWidget(row, 5) is None:
+                    edit_btn = QPushButton("Edit")
+                    edit_btn.clicked.connect(lambda checked=False, r=row: self._on_row_button(r, "edit_user"))
+                    self.table.setCellWidget(row, 5, edit_btn)
+                if self.table.cellWidget(row, 6) is None:
+                    remove_btn = QPushButton("Remove")
+                    remove_btn.clicked.connect(lambda checked=False, r=row: self._on_row_button(r, "remove_user"))
+                    self.table.setCellWidget(row, 6, remove_btn)
+
             # Восстановим выделение и позицию прокрутки
             if current_row >= 0 and current_row < self.table.rowCount():
                 self.table.selectRow(current_row)
@@ -205,6 +211,12 @@ class UserCurrencyTab(QWidget):
             import traceback
             traceback.print_exc()
     
+    def _on_row_button(self, row, action):
+        """Кнопка строки: зритель - тот, что сейчас в этой строке."""
+        users = getattr(self, '_row_users', [])
+        if 0 <= row < len(users):
+            getattr(self, action)(users[row])
+
     def get_user_rank(self, username, points):
         """Получить ранг пользователя"""
         try:
