@@ -1177,12 +1177,17 @@ class TwitchBot(commands.Bot):
             sf = cmd.get("SoundFile", "").strip()
             if sf:
                 has_sound = True
-                volume = int(cmd.get("Volume", 100))
-                
-                # Get group audio channel
-                group = cmd.get("Group", "GENERAL")
-                categories = self.config_manager.get_audio_categories()
-                channel_id = categories.get(group, {}).get("audio_channel", 0)
+                try:
+                    volume = float(cmd.get("Volume", 100))
+                except (TypeError, ValueError):
+                    volume = 100.0
+                # !volume группы действует и без очереди, как в очереди (S9)
+                override = self._group_volume_override(group)
+                if override is not None:
+                    volume = override * 100.0
+
+                # Канал группы (group уже нормализована выше)
+                channel_id = self._category(group).get("audio_channel", 0)
                 
                 sound_played = self.play_sound(sf, volume, channel_id)
                 if sound_played:

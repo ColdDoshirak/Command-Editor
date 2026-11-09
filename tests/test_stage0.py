@@ -219,3 +219,153 @@ async def test_s1_give_to_unknown_user_is_refused():
         assert "nobodyy" not in cur.users, cur.users.get("nobodyy")
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- S3: no payout for the time the bot was not watching --------------------
+def _payout_currency(tmp):
+    from harness import make_real_currency
+    cur = make_real_currency(tmp)
+    cur.settings.update({"accumulation_enabled": True, "live_payout": 10, "online_interval": 5,
+                         "regular_bonus": 0, "mod_bonus": 0})
+    cur.users["viewer"] = {"points": 0, "hours": 0, "last_seen": 0}
+    return cur
+
+
+async def test_s3_normal_tick_is_prorated():
+    import time
+    tmp = new_tmpdir()
+    try:
+        cur = _payout_currency(tmp)
+        cur.last_update_time = time.time() - 60   # one 60-second tick
+        cur.process_currency_update(is_live=True, all_viewers=["viewer"])
+        assert cur.users["viewer"]["points"] == 2.0, cur.users["viewer"]
+        assert abs(cur.users["viewer"]["hours"] - round(1 / 60, 2)) < 1e-9, cur.users["viewer"]
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_s3_gap_after_downtime_pays_no_backlog():
+    import time
+    tmp = new_tmpdir()
+    try:
+        cur = _payout_currency(tmp)
+        cur.last_update_time = time.time() - 3 * 3600   # bot was off for 3 hours
+        cur.process_currency_update(is_live=True, all_viewers=["viewer"])
+        assert cur.users["viewer"]["points"] <= 2.0, cur.users["viewer"]
+        assert cur.users["viewer"]["hours"] == 0, cur.users["viewer"]
+    finally:
+        drop_tmpdir(tmp)
+
+
+# ---- S4: users file survives a crash in the middle of a save ----------------
+async def test_s4_interrupted_save_keeps_previous_file():
+    import builtins
+    import json
+    import os
+    from harness import make_real_currency
+    tmp = new_tmpdir()
+    real_open = builtins.open
+    try:
+        cur = make_real_currency(tmp)
+        cur.users = {"alice": {"points": 100, "hours": 0, "last_seen": 0}}
+        assert cur.save_users(force=True)
+        target = os.path.abspath(str(cur.users_file))
+
+        class HalfWriter(object):
+            """Writes half of the text, then the 'power goes out'."""
+            def __init__(self, f):
+                self.f = f
+            def write(self, text):
+                self.f.write(text[:len(text) // 2])
+                self.f.flush()
+                raise OSError("simulated crash")
+            def __getattr__(self, name):
+                return getattr(self.f, name)
+            def __enter__(self):
+                return self
+            def __exit__(self, *exc):
+                self.f.close()
+
+        def crashing_open(file, mode="r", *a, **kw):
+            f = real_open(file, mode, *a, **kw)
+            p = os.path.abspath(str(file))
+            if "w" in mode and os.path.dirname(p) == os.path.dirname(target):
+                return HalfWriter(f)
+            return f
+
+        cur.users["alice"]["points"] = 5
+        builtins.open = crashing_open
+        try:
+            cur.save_users(force=True)
+        finally:
+            builtins.open = real_open
+        with real_open(target, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data["alice"]["points"] == 100, data
+        leftovers = [n for n in os.listdir(os.path.dirname(target)) if n.endswith(".tmp")]
+        assert leftovers == [], leftovers
+        assert cur._save_pending, "a failed save must stay pending"
+    finally:
+        builtins.open = real_open
+        drop_tmpdir(tmp)
+
+
+# ---- S9: !volume for a group without a queue --------------------------------
+async def test_s9_group_volume_applies_without_queue():
+    import os
+    import sys
+    from harness import make_sound_file
+    tmp = new_tmpdir()
+    try:
+        make_sound_file(tmp, "fx.mp3")
+        cmd = make_command("!fx", "FX", SoundFile=os.path.join(tmp, "fx.mp3"), Volume=100)
+        cats = {"FX": {"queue_enabled": False, "audio_channel": 2}}
+        bot, _cm, _cur = make_bot(tmp, [cmd], audio_categories=cats,
+                                  currency=FakeCurrencyManager({"mod": {"points": 0, "is_mod": True}}))
+        await bot.event_message(_msg("mod", "!volume FX 25", FakeChannel()))
+        await bot.event_message(_msg("viewer", "!fx", FakeChannel()))
+        ch = sys.modules["pygame"].mixer.Channel(2)
+        assert ch.play_log, "sound did not play"
+        vol = ch.last_sound._volume
+        assert abs(vol - 0.25) < 1e-9, "group volume ignored, played at %r" % vol
+    finally:
+        drop_tmpdir(tmp)
+
+
+# ---- first start in an empty folder / damaged config.json -------------------
+async def test_first_run_writes_default_config():
+    import json
+    import os
+    from core import paths
+    from config_manager import ConfigManager
+    tmp = new_tmpdir()
+    try:
+        paths.set_app_dir(tmp)
+        cm = ConfigManager()
+        cfg_file = os.path.join(tmp, "config.json")
+        assert os.path.exists(cfg_file), os.listdir(tmp)
+        with open(cfg_file, encoding="utf-8") as f:
+            assert json.load(f).get("format_version") == "2.0"
+        cm.config["sound"]["volume"] = 0.3
+        assert cm.default_config["sound"]["volume"] == 1.0, \
+            "defaults must not share nested dicts with the live config"
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_damaged_config_is_kept_aside():
+    import os
+    from core import paths
+    from config_manager import ConfigManager
+    tmp = new_tmpdir()
+    try:
+        paths.set_app_dir(tmp)
+        with open(os.path.join(tmp, "config.json"), "w", encoding="utf-8") as f:
+            f.write('{"theme": "midnight", ')
+        ConfigManager()
+        kept = [n for n in os.listdir(tmp) if n.startswith("config.json.corrupt")]
+        assert len(kept) == 1, os.listdir(tmp)
+        with open(os.path.join(tmp, kept[0]), encoding="utf-8") as f:
+            assert "midnight" in f.read()
+    finally:
+        drop_tmpdir(tmp)

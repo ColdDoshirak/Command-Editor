@@ -428,7 +428,9 @@ class TwitchTab(QWidget):
         finally:
             # Даже после закрытия event loop сохраняем ссылку на бота
             # чтобы была возможность повторного подключения
-            if not self.bot.is_running and hasattr(self, 'connect_button'):
+            # После Disconnect self.bot уже None (раньше - AttributeError здесь).
+            bot = self.bot
+            if (bot is None or not getattr(bot, 'is_running', False)) and hasattr(self, 'connect_button'):
                 # Выполняем в главном потоке
                 self.signal_handler.chat_signal.emit("Bot disconnected, reconnect manually")
             

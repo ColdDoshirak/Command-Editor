@@ -3,6 +3,7 @@ import os
 import sys
 import copy
 import threading
+import time
 from pathlib import Path
 import shutil
 from datetime import datetime
@@ -64,7 +65,10 @@ class ConfigManager:
             'excluded_moderators': [],
             'notes': 'Этот файл содержит список ручных модераторов и исключенных модераторов. Безопасен для показа на стриме'
         }
-          # Load or create config
+        # Load or create config. self.config существует ДО load_config():
+        # при первом запуске тот вызывает save_config, которому он нужен
+        # (раньше: "Error saving config: no attribute 'config'", файл не писался).
+        self.config = {}
         self.config = self.load_config()
         
         # Load Twitch config (отдельный вызов)
@@ -72,8 +76,8 @@ class ConfigManager:
         # запуске load_twitch_config сам вызывает save_twitch_config_file,
         # а load_moderators_config читает self.twitch_config — без
         # предзаполненных атрибутов оба падают с AttributeError.
-        self.twitch_config = self.default_twitch.copy()
-        self.moderators_config = self.default_moderators.copy()
+        self.twitch_config = copy.deepcopy(self.default_twitch)
+        self.moderators_config = copy.deepcopy(self.default_moderators)
         self.twitch_config = self.load_twitch_config()
         
         # Load moderators config (отдельный вызов)
@@ -94,13 +98,26 @@ class ConfigManager:
                         
                 return config
             except json.JSONDecodeError:
-                config = self.default_config.copy()
+                # Битый файл не затираем молча: откладываем рядом, чтобы
+                # настройки можно было восстановить руками.
+                self._keep_damaged(self.config_file)
+                config = copy.deepcopy(self.default_config)
                 self.save_config(config)
                 return config
         else:
-            config = self.default_config.copy()
+            config = copy.deepcopy(self.default_config)
             self.save_config(config)
             return config
+
+    @staticmethod
+    def _keep_damaged(path):
+        try:
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            target = "%s.corrupt-%s" % (path, stamp)
+            shutil.copy2(str(path), target)
+            print("Damaged %s kept as %s" % (path, target))
+        except Exception as e:
+            print("Could not keep damaged %s: %s" % (path, e))
             
     def load_twitch_config(self) -> Dict[str, str]:
         """Load Twitch configuration from separate file"""
@@ -112,7 +129,7 @@ class ConfigManager:
                     twitch_config = {**self.default_twitch, **loaded_twitch}
                 return twitch_config
             except json.JSONDecodeError:
-                twitch_config = self.default_twitch.copy()
+                twitch_config = copy.deepcopy(self.default_twitch)
                 self.save_twitch_config_file(twitch_config)
                 return twitch_config
         else:
@@ -132,7 +149,7 @@ class ConfigManager:
                     del self.config['twitch']['refresh_token']
                 self.save_config(self.config)
             else:
-                twitch_config = self.default_twitch.copy()
+                twitch_config = copy.deepcopy(self.default_twitch)
                 
             self.save_twitch_config_file(twitch_config)
             return twitch_config
@@ -147,13 +164,13 @@ class ConfigManager:
                     moderators_config = {**self.default_moderators, **loaded_moderators}
                 return moderators_config
             except json.JSONDecodeError:
-                moderators_config = self.default_moderators.copy()
+                moderators_config = copy.deepcopy(self.default_moderators)
                 self.save_moderators_config_file(moderators_config)
                 return moderators_config
         else:
             # Migrate existing manual_moderators from twitch_config if present
             existing_manual_mods = self.twitch_config.get('manual_moderators', [])
-            moderators_config = self.default_moderators.copy()
+            moderators_config = copy.deepcopy(self.default_moderators)
             if existing_manual_mods:
                 moderators_config['manual_moderators'] = existing_manual_mods
                 # Remove from twitch_config

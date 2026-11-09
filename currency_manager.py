@@ -10,7 +10,7 @@ import shutil
 import logging
 from typing import Optional, Dict, Any, List
 
-from core import paths
+from core import paths, storage
 
 class CurrencyManager:
     def __init__(self):
@@ -218,22 +218,23 @@ class CurrencyManager:
             return True
 
         try:
-            # Убедимся, что директория существует
-            os.makedirs(os.path.dirname(str(self.users_file)), exist_ok=True)
-
-            # Снимаем снапшот словаря ПОД лок, чтобы параллельные мутации
-            # (pay_for_command / add_points) не дали рваный/промежуточный
-            # словарь во время json.dump. Без этого два потока (бот + UI)
-            # могли записать файл вразнобой и потерять баллы.
-            with self.users_lock:
-                snapshot = json.dumps(self.users, indent=4, ensure_ascii=False)
-
-            with open(self.users_file, 'w', encoding='utf-8') as f:
-                f.write(snapshot)
+            # Снимок и запись - под одним локом файла: снимки пишутся в том
+            # порядке, в каком сняты, старый не перезапишет новый (S4).
+            # Сам снимок - под users_lock, чтобы не поймать словарь посреди
+            # изменения; флаг сбрасывается там же - изменение, сделанное во
+            # время записи, снова поставит его.
+            with storage.lock_for(self.users_file):
+                with self.users_lock:
+                    snapshot = json.dumps(self.users, indent=4, ensure_ascii=False)
+                    self._save_pending = False
+                try:
+                    # tmp-файл + fsync + os.replace: при обрыве остаётся
+                    # прежний целый файл, а не половина нового.
+                    storage.atomic_write_text(self.users_file, snapshot)
+                except Exception:
+                    self._save_pending = True
+                    raise
             print(f"Пользователи сохранены в {self.users_file}")
-
-            # Сбрасываем флаг отложенного сохранения
-            self._save_pending = False
             return True
         except Exception as e:
             print(f"Ошибка сохранения данных пользователей: {e}")
@@ -251,9 +252,7 @@ class CurrencyManager:
         try:
             # Тот же файл, что читает вкладка Ranks (раньше — ranks.json в
             # корне, и восстановление рангов из бэкапа не доходило до вкладки).
-            os.makedirs(os.path.dirname(str(self.ranks_file)), exist_ok=True)
-            with open(self.ranks_file, 'w', encoding='utf-8') as f:
-                json.dump(self.ranks, f, indent=4, ensure_ascii=False)
+            storage.atomic_write_json(self.ranks_file, self.ranks)
             return True
         except Exception as e:
             print(f"Ошибка сохранения данных рангов: {e}")
@@ -262,13 +261,8 @@ class CurrencyManager:
     def save_settings(self):
         """Save currency settings to file"""
         try:
-            # Ensure data directory exists
-            os.makedirs(os.path.dirname(str(self.settings_file)), exist_ok=True)
+            storage.atomic_write_json(self.settings_file, self.settings)
 
-            # Save settings to file
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, indent=4, ensure_ascii=False)
-                
             print("Currency settings saved to file")
             return True
         except Exception as e:
@@ -744,6 +738,9 @@ class CurrencyManager:
         """Метод для совместимости с обращениями к get_all_users"""
         return self.users
     
+    # Самая редкая частота обновления зрителей в интерфейсе - 5 минут.
+    MAX_TICK_GAP_MINUTES = 10
+
     def process_currency_update(self, is_live=False, active_viewers=None, all_viewers=None, chat_message_callback=None):
         """Process currency update for viewers"""
         # Проверяем, включено ли накопление валюты
@@ -765,7 +762,14 @@ class CurrencyManager:
         elapsed_minutes = 0
         if hasattr(self, 'last_update_time'):
             elapsed_minutes = (current_time - self.last_update_time) / 60
-        
+            # Тики идут не реже раза в 5 минут. Больший разрыв - это простой
+            # (бот отключён, компьютер спал): зрителей в это время никто не
+            # видел, поэтому начисляем как при первом запуске, без "долга" (S3).
+            if elapsed_minutes > self.MAX_TICK_GAP_MINUTES:
+                print(f"[{datetime.now().isoformat()}] Gap of {elapsed_minutes:.1f} min since the last "
+                      f"update - not paying for downtime")
+                elapsed_minutes = 0
+
         self.last_update_time = current_time
         
         try:
@@ -1133,8 +1137,9 @@ class CurrencyManager:
                 shutil.copy2(self.users_file, emergency_backup_path)
                 print(f"[CURRENCY BACKUP] Emergency backup created: {emergency_backup_path}")
 
-            # Restore from backup
-            shutil.copy2(backup_path, self.users_file)
+            # Restore from backup (atomically, under the same lock as saves)
+            with open(backup_path, 'r', encoding='utf-8') as f:
+                storage.atomic_write_text(self.users_file, f.read())
 
             # Reload data
             self.load_data()
