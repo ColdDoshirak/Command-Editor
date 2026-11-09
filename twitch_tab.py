@@ -32,6 +32,7 @@ class ChatSignalHandler(QObject):
     # Результаты запросов из потока бота. Объект живёт в UI-потоке, поэтому
     # emit из другого потока доставляется очередью Qt (C4).
     viewers_ready = pyqtSignal(list)
+    command_used = pyqtSignal(object)   # бот выполнил команду (копию из снимка)
     stream_status_ready = pyqtSignal(bool)
 
 class TwitchTab(QWidget):
@@ -54,6 +55,7 @@ class TwitchTab(QWidget):
         self.signal_handler.moderators_signal.connect(self.update_moderators_list)  # Подключаем новый сигнал
         self.signal_handler.viewers_ready.connect(self._apply_viewers)
         self.signal_handler.stream_status_ready.connect(self._apply_stream_status)
+        self.signal_handler.command_used.connect(self._on_command_used)
 
         # Use the shared config_manager from parent if provided, otherwise create own instance
         self.config_manager = config_manager if config_manager is not None else ConfigManager()
@@ -353,7 +355,8 @@ class TwitchTab(QWidget):
             'channel': channel,
             'message_callback': self.signal_handler.chat_signal.emit,
             'currency_manager': self.parent.currency_manager,
-            'commands_data': self.commands_data.copy() if self.commands_data else [],
+            # снимок (копии) из CommandRepository: бот не трогает словари редактора
+            'commands_data': self._commands_snapshot(),
             'signal_handler': self.signal_handler,
             'config_manager': self.config_manager
         }
@@ -397,6 +400,8 @@ class TwitchTab(QWidget):
             if self.bot_params['commands_data']:
                 self.bot.update_commands(self.bot_params['commands_data'])
             self.bot.signal_handler = self.bot_params['signal_handler']
+            # из потока бота -> сигналом в UI-поток -> CommandRepository.record_use
+            self.bot.on_command_used = self.signal_handler.command_used.emit
             
             # Now run the bot (it will use the current thread's event loop)
             loop.run_until_complete(self.bot.start())
@@ -422,6 +427,21 @@ class TwitchTab(QWidget):
             # Закрываем loop только если он не закрыт и программа завершается
             if not loop.is_closed():
                 loop.close()
+
+    def _commands_snapshot(self):
+        repo = getattr(self.parent, "command_repo", None)
+        if repo is not None:
+            return repo.snapshot()
+        import copy
+        return copy.deepcopy(self.commands_data or [])
+
+    def _on_command_used(self, cmd):
+        """UI-поток: счётчик использований - в оригинал команды."""
+        # Тематический вид здесь не обновляем: refresh() во время ввода
+        # сбросил бы поля; классическая таблица обновится через слушателя.
+        repo = getattr(self.parent, "command_repo", None)
+        if repo is not None:
+            repo.record_use(cmd)
 
     def reload_bot_audio_categories(self):
         """Apply new group/audio settings to the running bot without a restart.

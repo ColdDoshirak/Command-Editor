@@ -34,6 +34,7 @@ import webbrowser
 import theme as _theme
 from app_log import setup_logging, install_print_bridge
 from core import paths, storage
+from core.commands import CommandRepository, FIELDS as COMMAND_FIELDS
 
 # Вместо sip.registerMetaType используем:
 QMetaType.type("QTextCursor")
@@ -164,8 +165,11 @@ class CommandEditor(QMainWindow):
         self.allow_sound_interruption = self.config_manager.get_sound_interruption()
         self.show_interruption_message = self.config_manager.get_interruption_message()
         
-        # Initialize commands list
-        self.commands = []
+        # Команды: единственный владелец - CommandRepository (этап 2).
+        # self.commands - тот же объект списка, его identity не меняется.
+        self.command_repo = CommandRepository(paths.commands_file())
+        self.commands = self.command_repo.items
+        self.command_repo.subscribe(self._on_commands_changed)
 
         # Add an attribute to track original command order
         self.original_commands = []
@@ -347,6 +351,7 @@ class CommandEditor(QMainWindow):
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
         self.volume_slider.valueChanged.connect(self.update_volume)
+        self.volume_slider.sliderReleased.connect(self.save_commands)
 
         # Add label to display the current volume value
         self.volume_value_label = QLabel("50%")  # Default value
@@ -445,6 +450,28 @@ class CommandEditor(QMainWindow):
         details_layout.addLayout(middle_column)
         details_layout.addLayout(right_column)
         details_group.setLayout(details_layout)
+
+        # S12: поля панели сохраняют правки (раньше были только для показа).
+        # Текстовые - по окончании ввода, остальные - сразу.
+        for spin in (self.cooldown_spin, self.user_cooldown_spin, self.cost_spin, self.count_spin):
+            spin.setRange(0, 1000000)  # QSpinBox по умолчанию ограничен 99
+        self.command_edit.editingFinished.connect(
+            lambda: self.update_command_field(self.command_edit.text(), 0))
+        self.permission_combo.currentTextChanged.connect(self.on_permission_changed)
+        self.info_edit.editingFinished.connect(
+            lambda: self.update_command_field(self.info_edit.text(), 2))
+        self.group_edit.editingFinished.connect(
+            lambda: self.update_command_field(self.group_edit.text(), 3))
+        self.cooldown_spin.valueChanged.connect(self.on_cooldown_changed)
+        self.user_cooldown_spin.valueChanged.connect(self.on_user_cooldown_changed)
+        self.cost_spin.valueChanged.connect(self.on_cost_changed)
+        self.count_spin.valueChanged.connect(self.on_count_changed)
+        self.usage_combo.currentTextChanged.connect(self.on_usage_changed)
+        self.enabled_check.stateChanged.connect(self.on_enabled_changed)
+        self.sound_file_edit.editingFinished.connect(
+            lambda: self.update_command_field(self.sound_file_edit.text(), 11))
+        self.fk_sound_file_edit.editingFinished.connect(
+            lambda: self.update_command_field(self.fk_sound_file_edit.text(), 12))
         main_layout.addWidget(details_group)
         
         # Set main tab layout
@@ -592,19 +619,10 @@ class CommandEditor(QMainWindow):
     def load_commands(self):
         """Load commands from file"""
         try:
-            if os.path.exists(paths.commands_file()):
-                with open(paths.commands_file(), 'r', encoding='utf-8') as f:
-                    self.commands = json.load(f)
-                    # Ensure all commands have Enabled field
-                    for cmd in self.commands:
-                        if "Enabled" not in cmd:
-                            cmd["Enabled"] = True
-            else:
-                self.commands = []
-            self.update_table()
+            self.command_repo.load()  # заполняет недостающие поля (Enabled и т.д.)
         except Exception as e:
             print(f"Error loading commands: {e}")
-            self.commands = []
+            self.command_repo.replace_all([])
             
     def update_table(self):
         """Update the commands table"""
@@ -714,10 +732,10 @@ class CommandEditor(QMainWindow):
         selected_items = self.table.selectedItems()
         if selected_items:
             row = selected_items[0].row()
-            if row < len(self.commands):
-                self.commands[row]["Response"] = self.response_edit.toPlainText()
-                self.table.item(row, 4).setText(self.response_edit.toPlainText())
-                self.save_commands()
+            if row < len(self.commands) and not getattr(self, "_populating_details", False):
+                if self.command_repo.update(row, {"Response": self.response_edit.toPlainText()}):
+                    self.save_commands()
+                    self.refresh_themed_commands()
             
                 
     def update_details(self, current_row, current_col, previous_row, previous_col):
@@ -738,64 +756,23 @@ class CommandEditor(QMainWindow):
             self.fk_sound_file_edit.setText(str(cmd["FKSoundFile"]))
             
     def table_item_changed(self, item):
+        """Правка ячейки классической таблицы -> репозиторий. Таблица - только
+        вид: недопустимое значение (буквы в Cost) откатывается к сохранённому."""
         try:
-            row = item.row()
-            col = item.column()
-            
-            if row < len(self.commands):
-                cmd = self.commands[row]
-                
-                if col == 2:  # Info column
-                    cmd["Info"] = item.text()
-                elif col == 0:  # Command name column
-                    cmd["Command"] = item.text()
-                elif col == 1:  # Permission column
-                    cmd["Permission"] = item.text()
-                elif col == 3:  # Group column
-                    cmd["Group"] = item.text()
-                elif col == 4:  # Response column
-                    cmd["Response"] = item.text()
-                elif col == 5:  # Cooldown column
-                    try:
-                        cmd["Cooldown"] = int(item.text() or 0)
-                    except ValueError:
-                        cmd["Cooldown"] = 0
-                elif col == 6:  # UserCooldown column
-                    try:
-                        cmd["UserCooldown"] = int(item.text() or 0)
-                    except ValueError:
-                        cmd["UserCooldown"] = 0
-                elif col == 7:  # Cost column
-                    try:
-                        cmd["Cost"] = int(item.text() or 0)
-                    except ValueError:
-                        cmd["Cost"] = 0
-                elif col == 8:  # Count column
-                    try:
-                        cmd["Count"] = int(item.text() or 0)
-                    except ValueError:
-                        cmd["Count"] = 0
-                elif col == 9:  # Usage column
-                    cmd["Usage"] = item.text()
-                elif col == 10:  # Enabled column
-                    cmd["Enabled"] = item.text() == "✓"
-                elif col == 11:  # SoundFile column
-                    cmd["SoundFile"] = item.text()
-                elif col == 12:  # FKSoundFile column
-                    cmd["FKSoundFile"] = item.text()
-                elif col == 13:  # Volume column
-                    try:
-                        cmd["Volume"] = int(item.text() or 100)
-                    except ValueError:
-                        cmd["Volume"] = 100
-                
-                # Save changes
+            row, col = item.row(), item.column()
+            if not (0 <= row < len(self.commands)) or not (0 <= col < len(COMMAND_FIELDS)):
+                return
+            key = COMMAND_FIELDS[col]
+            done = self.command_repo.update(row, {key: item.text()})
+            if done:
                 self.save_commands()
                 self.refresh_themed_commands()
-                
+                if key == "Group" and hasattr(self, "group_settings_tab"):
+                    self.group_settings_tab.refresh_groups()
+            self._write_row_to_table(row)  # показать сохранённое (" 12" -> "12", "x" -> откат)
         except Exception as e:
             print(f"Error updating command: {e}")
-            
+
     def load_config(self):
         try:
             self.config.read(str(paths.legacy_ini_file()))
@@ -821,13 +798,15 @@ class CommandEditor(QMainWindow):
         # Update the volume display label
         self.volume_value_label.setText(f"{value}%")
         
-        # Update the selected command's volume if any
+        # Громкость выбранной команды. Пока ползунок тянут - только в память,
+        # на диск при отпускании (sliderReleased -> save_commands).
         selected_items = self.table.selectedItems()
-        if selected_items:
+        if selected_items and not getattr(self, "_populating_details", False):
             row = selected_items[0].row()
             if row < len(self.commands):
-                self.commands[row]["Volume"] = value
-                self.table.item(row, 13).setText(str(value))
+                if self.command_repo.update(row, {"Volume": value}) and \
+                        not self.volume_slider.isSliderDown():
+                    self.save_commands()
                     
     def auto_assign_sounds(self):
         """Auto-assign sound files to commands based on filename matching"""
@@ -863,40 +842,17 @@ class CommandEditor(QMainWindow):
                 sound_dict[name_without_ext[1:]] = str(sound_file)
         
         # Update commands with matching sound files
-        updated = False
-        self.table.blockSignals(True)  # Block signals before updating the table
-        for i in range(self.table.rowCount()):
-            command_item = self.table.item(i, 0)
-            if command_item:
-                command = command_item.text()
-                command_without_bang = command.lstrip('!')
-                
-                if command in sound_dict:
-                    # Update the commands data structure
-                    self.commands[i]["SoundFile"] = sound_dict[command]
-                    self.commands[i]["Enabled"] = True  # Set Enabled to True
-                    
-                    # Update table cells with correct column indices
-                    # Column 11 is the SoundFile column according to your table header setup
-                    self.table.setItem(i, 11, QTableWidgetItem(sound_dict[command]))
-                    # Column 10 is the Enabled column (showing "✓" or "✗")
-                    self.table.setItem(i, 10, QTableWidgetItem("✓"))
-                    updated = True
-                elif command_without_bang in sound_dict:
-                    # Update the commands data structure
-                    self.commands[i]["SoundFile"] = sound_dict[command_without_bang]
-                    self.commands[i]["Enabled"] = True  # Set Enabled to True
-                    
-                    # Update table cells with correct column indices
-                    self.table.setItem(i, 11, QTableWidgetItem(sound_dict[command_without_bang]))
-                    self.table.setItem(i, 10, QTableWidgetItem("✓"))
-                    updated = True
-
-        self.table.blockSignals(False)  # Unblock signals after updating the table
+        changes = {}
+        for i, cmd in enumerate(self.commands):
+            command = cmd.get("Command", "")
+            match = sound_dict.get(command) or sound_dict.get(command.lstrip('!'))
+            if match:
+                changes[i] = {"SoundFile": match, "Enabled": True}
+        updated = bool(self.command_repo.update_many(changes)) if changes else False
 
         if updated:
             self.save_commands()  # Save changes
-            self.update_table()  # Refresh the table
+            self.refresh_themed_commands()
             QMessageBox.information(self, "Success", "Sound files assigned automatically!")
         else:
             QMessageBox.information(self, "Info", "No new sound files to assign.")
@@ -1070,36 +1026,13 @@ class CommandEditor(QMainWindow):
             QMessageBox.warning(self, "Error", "Failed to save commands!")
                 
     def add_command(self):
-        """Add a new command"""
-        # Create a new command
-        new_command = {
-            "Command": "!new",
-            "Permission": "Everyone",
-            "Response": "",
-            "SoundFile": "",
-            "Enabled": True,
-            "Info": "",
-            "Group": "GENERAL",
-            "Cooldown": 0,
-            "UserCooldown": 0,
-            "Cost": 0,
-            "Count": 0,
-            "Usage": "SC",
-            "Volume": 100
-        }
-        
-        # Add to both current commands and original commands list
-        self.commands.append(new_command)
-        self.original_commands.append(new_command.copy())
-        
-        self.refresh_table()
-        
-        # Select the new command
-        self.table.selectRow(self.table.rowCount() - 1)
+        """Add a new command (defaults from core.commands)."""
+        row = self.command_repo.add({"Command": "!new"})
+        self.original_commands.append(dict(self.commands[row]))
+        self.filter_commands()
+        self.table.selectRow(row)
         self.refresh_themed_commands()
-        
-        # Update Twitch bot if running
-        self.update_commands()
+        self.save_commands()  # раньше новая команда не сохранялась до первой правки
 
     def check_command_cost(self, username, command_cost):
         """Check if the user has enough currency to execute the command"""
@@ -1110,29 +1043,22 @@ class CommandEditor(QMainWindow):
     def delete_command(self):
         current_row = self.table.currentRow()
         if current_row >= 0 and current_row < len(self.commands):
-            # Get the command being deleted
-            cmd_to_delete = self.commands[current_row]
-            
-            # Remove from commands list
-            self.commands.pop(current_row)
-            
+            cmd_to_delete = self.command_repo.remove(current_row)
             # Remove from original commands list (find by Command name)
             for i, cmd in enumerate(self.original_commands):
                 if cmd["Command"] == cmd_to_delete["Command"]:
                     self.original_commands.pop(i)
                     break
-            
-            # Remove row from table
-            self.table.removeRow(current_row)
             self.refresh_themed_commands()
-            
-            # Save changes
             self.save_commands()
 
     def browse_file(self, line_edit):
         file_name, _ = QFileDialog.getOpenFileName(self, "Select Sound File", "", "Sound Files (*.mp3 *.wav *.ogg)")
         if file_name:
             line_edit.setText(file_name)
+            # setText не даёт editingFinished: сохраняем явно (S12)
+            column = 11 if line_edit is self.sound_file_edit else 12
+            self.update_command_field(file_name, column)
 
     def start_bot(self):
         if not self.bot:
@@ -1196,9 +1122,9 @@ class CommandEditor(QMainWindow):
                 
     def update_commands(self):
         """Update commands in Twitch tab"""
-        # No need to get commands from UI since self.commands is already updated
+        # Бот получает копии (снимок), а не словари редактора (шаг 2.3)
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-            self.twitch_tab.bot.update_commands(self.commands)
+            self.twitch_tab.bot.update_commands(self.command_repo.snapshot())
 
     def save_legacy_format(self):
         """Save commands in the original format for compatibility"""
@@ -1221,31 +1147,28 @@ class CommandEditor(QMainWindow):
 
     def load_saved_data(self):
         """Load saved commands and configuration"""
-        # Load commands from the commands file
-        self.commands = self.config_manager.load_commands()
-        
+        # Load commands from the commands file (fills the table via the listener)
+        try:
+            self.command_repo.load()
+        except Exception as e:
+            print(f"Error loading commands: {e}")
+
         # Load the last used file if specified in config
         current_file = self.config_manager.get_current_file()
         if current_file and os.path.exists(current_file):
             try:
-                with open(current_file, "r", encoding="utf-8") as f:
-                    self.commands = json.load(f)
-                    # Save loaded commands to the separate commands file
-                    self.config_manager.save_commands(self.commands)
+                self.command_repo.load(current_file)
+                self.command_repo.save()  # into the separate commands file
             except Exception as e:
                 print(f"Error loading last used file: {e}")
-                
+
         # Store the original order of commands
         self.original_commands = self.commands.copy()
-                
-        # Update the table with loaded commands
-        self.update_table()
-        
+
         # Update commands in Twitch tab if it exists
         if hasattr(self, 'twitch_tab'):
             self.twitch_tab.commands_data = self.commands
-            if self.twitch_tab.bot:
-                self.twitch_tab.bot.update_commands(self.commands)
+        self.update_commands()
 
     def auto_save(self):
         """Automatically save commands and configuration"""
@@ -1266,7 +1189,7 @@ class CommandEditor(QMainWindow):
 
                 # Save the commands first
                 print("Saving commands...")
-                storage.atomic_write_json(paths.commands_file(), self.commands)
+                self.command_repo.save()
 
                 # Always create backup on auto-save, don't check for significant changes
                 print("Creating command backup during auto-save...")
@@ -1293,8 +1216,7 @@ class CommandEditor(QMainWindow):
                         print("Failed to create auto-save comprehensive backup")
 
                 # Update commands in Twitch tab if it exists
-                if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-                    self.twitch_tab.bot.update_commands(self.commands)
+                self.update_commands()
 
             # Save other settings
             self.config_manager.set_volume(self.volume)
@@ -1311,7 +1233,17 @@ class CommandEditor(QMainWindow):
             print(f"Error during auto-save: {e}")
 
     def on_command_selected(self):
-        """Handle command selection in the table"""
+        """Handle command selection in the table.
+
+        Заполнение полей панели не должно записывать их обратно (поля теперь
+        подключены к сохранению, S12) - флаг _populating_details."""
+        self._populating_details = True
+        try:
+            self._show_selected_details()
+        finally:
+            self._populating_details = False
+
+    def _show_selected_details(self):
         selected_items = self.table.selectedItems()
         if not selected_items:
             return
@@ -1379,56 +1311,23 @@ class CommandEditor(QMainWindow):
                 self.themed_commands_view.select_from_table(row)
 
     def update_command_field(self, value, column):
-        """Update a specific field in the table and command data"""
+        """Поле панели Command Details -> репозиторий (S12: раньше эти поля
+        не были подключены и правки в них терялись)."""
+        if getattr(self, "_populating_details", False):
+            return
         selected_items = self.table.selectedItems()
-        if selected_items:
-            row = selected_items[0].row()
-            if row < len(self.commands):
-                # Update command data
-                if column == 0:  # Command
-                    self.commands[row]["Command"] = value
-                elif column == 1:  # Permission
-                    self.commands[row]["Permission"] = value
-                elif column == 2:  # Info
-                    self.commands[row]["Info"] = value
-                elif column == 3:  # Group
-                    self.commands[row]["Group"] = value
-                elif column == 4:  # Response
-                    self.commands[row]["Response"] = value
-                elif column == 5:  # Cooldown
-                    self.commands[row]["Cooldown"] = value
-                elif column == 6:  # UserCooldown
-                    self.commands[row]["UserCooldown"] = value
-                elif column == 7:  # Cost
-                    self.commands[row]["Cost"] = value
-                elif column == 8:  # Count
-                    self.commands[row]["Count"] = value
-                elif column == 9:  # Usage
-                    self.commands[row]["Usage"] = value
-                elif column == 10:  # Enabled
-                    self.commands[row]["Enabled"] = value
-                elif column == 11:  # SoundFile
-                    self.commands[row]["SoundFile"] = value
-                elif column == 12:  # FKSoundFile
-                    self.commands[row]["FKSoundFile"] = value
-                elif column == 13:  # Volume
-                    self.commands[row]["Volume"] = value
-                
-                # Update table
-                item = QTableWidgetItem(str(value))
-                self.table.setItem(row, column, item)
-                
-                # Save changes
-                self.save_commands()
-                
-                # Update commands in Twitch bot if it exists
-                if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-                    self.twitch_tab.bot.update_commands(self.commands)
-                    
-                # Refresh group settings tab if it's open or might need update
-                if hasattr(self, 'group_settings_tab'):
-                    self.group_settings_tab.refresh_groups()
-                    
+        if not selected_items:
+            return
+        row = selected_items[0].row()
+        if not (0 <= row < len(self.commands)) or not (0 <= column < len(COMMAND_FIELDS)):
+            return
+        key = COMMAND_FIELDS[column]
+        if self.command_repo.update(row, {key: value}):
+            self.save_commands()
+            self.refresh_themed_commands()
+            if key == "Group" and hasattr(self, 'group_settings_tab'):
+                self.group_settings_tab.refresh_groups()
+
     def on_enabled_changed(self, state):
         self.update_command_field(state == Qt.Checked, 10)  # Corrected column index
         
@@ -1464,92 +1363,15 @@ class CommandEditor(QMainWindow):
         self.update_command_field(value, 13)  # Corrected column index
 
     def save_commands(self):
-        """Save commands to file"""
+        """Записать команды на диск и передать боту.
+
+        Таблица больше НЕ читается: данные живут в CommandRepository, таблица
+        и виды тем только показывают их (этап 2). Раньше здесь каждое
+        сохранение переписывало словари из ячеек классической таблицы.
+        """
         try:
-            # Update commands from table
-            for i in range(self.table.rowCount()):
-                if i >= len(self.commands):  # Safety check
-                    continue
-                    
-                cmd = self.commands[i]
-                
-                # Get items from table, with None checks
-                command_item = self.table.item(i, 0)
-                permission_item = self.table.item(i, 1)
-                info_item = self.table.item(i, 2)
-                group_item = self.table.item(i, 3)
-                response_item = self.table.item(i, 4)
-                cooldown_item = self.table.item(i, 5)
-                user_cooldown_item = self.table.item(i, 6)
-                cost_item = self.table.item(i, 7)
-                count_item = self.table.item(i, 8)
-                usage_item = self.table.item(i, 9)
-                enabled_item = self.table.item(i, 10)
-                sound_file_item = self.table.item(i, 11)
-                fk_sound_file_item = self.table.item(i, 12)
-                volume_item = self.table.item(i, 13)
-                
-                # Update command data only if items exist
-                if command_item:
-                    cmd["Command"] = command_item.text()
-                if permission_item:
-                    cmd["Permission"] = permission_item.text()
-                if info_item:
-                    cmd["Info"] = info_item.text()
-                if group_item:
-                    cmd["Group"] = group_item.text()
-                if response_item:
-                    cmd["Response"] = response_item.text()
-                if cooldown_item:
-                    try:
-                        cmd["Cooldown"] = int(cooldown_item.text() or 0)
-                    except ValueError:
-                        cmd["Cooldown"] = 0
-                if user_cooldown_item:
-                    try:
-                        cmd["UserCooldown"] = int(user_cooldown_item.text() or 0)
-                    except ValueError:
-                        cmd["UserCooldown"] = 0
-                if cost_item:
-                    try:
-                        cmd["Cost"] = int(cost_item.text() or 0)
-                    except ValueError:
-                        cmd["Cost"] = 0
-                # Count is NOT read back from the table: the bot increments
-                # cmd["Count"] directly, and re-reading the stale cell here
-                # silently reset every usage counter on the next save.
-                # (Manual edits of the Count cell reach the dict through
-                # table_item_changed.)
-                if usage_item:
-                    cmd["Usage"] = usage_item.text()
-                if enabled_item:
-                    cmd["Enabled"] = enabled_item.text() == "✓"
-                if sound_file_item:
-                    cmd["SoundFile"] = sound_file_item.text()
-                if fk_sound_file_item:
-                    cmd["FKSoundFile"] = fk_sound_file_item.text()
-                if volume_item:
-                    try:
-                        cmd["Volume"] = int(volume_item.text() or 100)
-                    except ValueError:
-                        cmd["Volume"] = 100
-                
-            # Show the live usage counters in the table
-            self.table.blockSignals(True)
-            for i in range(min(self.table.rowCount(), len(self.commands))):
-                it = self.table.item(i, 8)
-                text = str(self.commands[i].get("Count", 0))
-                if it is not None and it.text() != text:
-                    it.setText(text)
-            self.table.blockSignals(False)
-
-            # Save to file (atomically: a crash never leaves half a commands.json)
-            storage.atomic_write_json(paths.commands_file(), self.commands)
-
-            # Update commands in Twitch tab if it exists
-            if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-                self.twitch_tab.bot.update_commands(self.commands)
-                
+            self.command_repo.save()
+            self.update_commands()
         except Exception as e:
             print(f"Error saving commands: {e}")
 
@@ -1560,9 +1382,8 @@ class CommandEditor(QMainWindow):
         редактор держат один и тот же объект (S10). Таблица перестраивается
         ДО сохранения, потому что save_commands() читает её (S11).
         """
-        self.commands[:] = list(new_commands)
+        self.command_repo.replace_all(new_commands)  # таблица и вид - через слушателя
         self.original_commands = self.commands.copy()
-        self.update_table()  # заодно обновляет тематический вид
         self.filter_commands()
         if hasattr(self, 'twitch_tab'):
             self.twitch_tab.commands_data = self.commands
@@ -1594,54 +1415,45 @@ class CommandEditor(QMainWindow):
 
     def apply_command_edit(self, row, changes):
         """Single entry point for edits made in the themed views.
-
-        Updates the command dict, the whole classic table row (save_commands
-        re-reads the table, so a partially written row used to revert the
-        edit on the next save), commands.json and the running bot.
-        """
+        Values are coerced by the repository (Volume 0-100, ints >= 0)."""
         if not (0 <= row < len(self.commands)) or not changes:
             return
-        cmd = self.commands[row]
-        old_group = cmd.get("Group")
-        for key, value in changes.items():
-            if key == "Volume":
-                try:
-                    value = int(max(0, min(100, round(float(value)))))
-                except (TypeError, ValueError):
-                    continue
-            elif key in ("Cooldown", "UserCooldown", "Cost", "Count"):
-                try:
-                    value = max(0, int(value))
-                except (TypeError, ValueError):
-                    continue
-            cmd[key] = value
-        self._write_row_to_table(row)
-        self.save_commands()  # writes commands.json + pushes to the bot
-        if cmd.get("Group") != old_group and hasattr(self, "group_settings_tab"):
-            self.group_settings_tab.refresh_groups()
+        done = self.command_repo.update(row, changes)
+        if done:
+            self.save_commands()  # writes commands.json + pushes to the bot
+            if "Group" in done and hasattr(self, "group_settings_tab"):
+                self.group_settings_tab.refresh_groups()
 
     def apply_bulk_command_edits(self, changes_by_row):
         """Apply {row: {key: value}} in one go (one save, one bot push).
         Returns the number of changed fields."""
-        n = 0
-        for row, changes in changes_by_row.items():
-            if not (0 <= row < len(self.commands)):
-                continue
-            for key, value in changes.items():
-                self.commands[row][key] = value
-                n += 1
-            self._write_row_to_table(row)
-        if n:
+        before = dict((r, dict(self.commands[r])) for r in changes_by_row
+                      if 0 <= r < len(self.commands))
+        rows = self.command_repo.update_many(changes_by_row)
+        n = sum(1 for r in rows for k in changes_by_row[r]
+                if self.commands[r].get(k) != before[r].get(k))
+        if rows:
             self.save_commands()
-            # classic detail fields of the selected row
             try:
-                sel = self.table.currentRow()
-                if sel in changes_by_row:
-                    self.update_details(sel, 0, -1, -1)
+                if self.table.currentRow() in rows:
+                    self.on_command_selected()
             except Exception:
                 pass
             self.refresh_themed_commands()
         return n
+
+    def _on_commands_changed(self, event, rows):
+        """Слушатель репозитория: перерисовать классическую таблицу.
+        Тематические виды обновляют те, кто правит (как и раньше)."""
+        if not hasattr(self, "table"):
+            return
+        if event == "changed" and rows and self.table.rowCount() == len(self.commands):
+            for row in rows:
+                self._write_row_to_table(row)
+        else:
+            self.update_table()
+            if hasattr(self, "search_input"):
+                self.filter_commands()
 
     def fix_sound_paths(self):
         """Open the "Fix sound paths" dialog (moved / renamed sound folders)."""
@@ -2465,8 +2277,7 @@ class CommandEditor(QMainWindow):
                     print(f"Error restoring config: {e}")
 
             # Update bot commands if running
-            if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-                self.twitch_tab.bot.update_commands(self.commands)
+            self.update_commands()
 
             QMessageBox.information(
                 self,

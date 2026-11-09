@@ -192,6 +192,10 @@ class TwitchBot(commands.Bot):
             self.is_running = True
             self.volume = 0.5
             self.message_callback = message_callback
+            # Команды у бота - снимок (копии) из CommandRepository. О каждом
+            # срабатывании сообщаем сюда; UI в своём потоке передаёт это в
+            # CommandRepository.record_use (шаг 2.3).
+            self.on_command_used = None
             
             # Аудио и статус
             self.player = None
@@ -794,10 +798,7 @@ class TwitchBot(commands.Bot):
                 await self.send_multiline_response(message.channel, response, username)
                 print(f"Sent response for queued command !{cmd_name}")
 
-            try:
-                cmd["Count"] = int(cmd.get("Count", 0) or 0) + 1
-            except (TypeError, ValueError):
-                pass
+            self._count_use(cmd)
 
             print(f"--- Finished execution of queued command: !{cmd_name} ---")
 
@@ -1261,7 +1262,7 @@ class TwitchBot(commands.Bot):
                     print(f"Set user cooldown for '{normalized_key}' and user {username}, {user_cd_sec}s")
                     
                 # Увеличиваем счетчик использований команды
-                cmd["Count"] += 1
+                self._count_use(cmd)
                 print(f"Incremented usage count for '{cmd_key}': {cmd['Count']}")
             else:
                 # Если команда не выполнена (например, из-за блокировки звука)
@@ -1747,6 +1748,19 @@ class TwitchBot(commands.Bot):
             # По умолчанию не модератор при ошибке
             return False
             
+    def _count_use(self, cmd):
+        """+1 к счётчику своей копии и сообщение редактору."""
+        try:
+            cmd["Count"] = int(cmd.get("Count", 0) or 0) + 1
+        except (TypeError, ValueError):
+            pass
+        callback = getattr(self, 'on_command_used', None)
+        if callback is not None:
+            try:
+                callback(cmd)
+            except Exception as e:
+                print(f"on_command_used failed: {e}")
+
     def _ui_message(self, text):
         """Служебное сообщение в окно чата программы (не в Twitch)."""
         try:

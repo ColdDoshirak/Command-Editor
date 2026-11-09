@@ -41,6 +41,7 @@ TEST_MODULES = [
     ("stage1", "test_storage"),
     ("stage1", "test_ranks"),
     ("stage0", "test_reconnect"),
+    ("stage2", "test_commands_repo"),
 ]
 
 
