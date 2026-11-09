@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Union
 
 from core.system_commands import merge_with_defaults, name_of as sys_cmd_name, QUEUE_COMMANDS
+from bot.dispatcher import CommandDispatcher
 
 
 def _patch_twitchio_keep_alive():
@@ -131,7 +132,8 @@ def _fit_chat(text, limit=_TWITCH_MSG_LIMIT):
     return text[:limit - 1].rstrip() + "…"
 
 
-class TwitchBot(commands.Bot):
+class TwitchBot(CommandDispatcher, commands.Bot):
+    _fit_chat = staticmethod(_fit_chat)  # для bot/dispatcher.py
 
     def __init__(self, channel, message_callback=None, commands_data=None, sound_channel=None, config_manager=None, currency_manager=None, **kwargs):
         # Загружаем настройки Twitch
@@ -1063,248 +1065,17 @@ class TwitchBot(commands.Bot):
 
                 return  # Command processed, exit the event_message method
 
-        # Далее обрабатываем кастомные команды как раньше
-
-        # Далее обрабатываем кастомные команды как раньше
+        # Обычные команды: один конвейер (bot/dispatcher.py, шаг 3.1)
         for cmd in getattr(self, "_commands_list", []):
             if not cmd.get("Enabled", False):
                 continue
-
-            # Сравниваем тоже без "!" и в lowercase, удаляем невидимые символы
-            raw_cmd_key = cmd["Command"].lstrip(self.prefix).lower()
-            cmd_key = self.normalize_command_key(raw_cmd_key)
-            
-            # Если ключи не совпадают, пропускаем команду
+            cmd_key = self.normalize_command_key(cmd["Command"].lstrip(self.prefix).lower())
             if cmd_key != key:
                 continue
-                
-            # Для отладки
-            print(f"Command matched: '{key}' with command configuration key '{cmd_key}'")
-            if raw_cmd_key != cmd_key:
-                print(f"  Command normalized in config: '{raw_cmd_key}' -> '{cmd_key}'")
-            print(f"  Command cost: {cmd.get('Cost', 0)}")
+            print(f"Command matched: '{key}' (cost {cmd.get('Cost', 0)})")
+            await self.run_command(message, cmd)
+            return
 
-            # Права проверяются до кулдауна и списания очков: отказ ничего
-            # не тратит и не запускает кулдаун.
-            if not await self.has_permission(message, cmd.get("Permission")):
-                await message.channel.send(f"@{username}: You don't have permission to use this command.")
-                return
-
-            # теперь Cooldown измеряется в минутах
-            cooldown_min = int(cmd.get("Cooldown", 0))
-            cooldown_sec = cooldown_min * 60
-            
-            # Используем нормализованный ключ для проверки кулдауна
-            normalized_key = self.normalize_command_key(cmd_key)
-            last_used = self.global_cooldowns.get(normalized_key, 0)
-            elapsed = current_time - last_used
-            
-            if cooldown_sec > 0 and elapsed < cooldown_sec:
-                remaining = int((cooldown_sec - elapsed))
-                await message.channel.send(
-                    f"@{username}: command is on cooldown. Try in {remaining} sec."
-                )
-                return
-
-            # UserCooldown тоже в минутах
-            user_cd_min = int(cmd.get("UserCooldown", 0))
-            user_cd_sec = user_cd_min * 60
-            if user_cd_sec > 0:
-                # Используем тот же нормализованный ключ для проверки пользовательского кулдауна
-                user_last = self.user_cooldowns.get(normalized_key, {}).get(username, 0)
-                u_elapsed = current_time - user_last
-                if u_elapsed < user_cd_sec:
-                    u_rem = int(user_cd_sec - u_elapsed)
-                    await message.channel.send(
-                        f"@{username}: you can use this command in {u_rem} sec."
-                    )
-                    return
-                
-            # Проверка стоимости ПЕРЕД фиксацией времени кулдауна
-            cost = int(cmd.get("Cost", 0))
-            points_deducted = False
-            
-            if cost > 0:
-                # Проверяем баланс перед списанием
-                current_points = self.currency_manager.get_points(username)
-                print(f"User {username} has {current_points} points, command costs {cost}")
-                
-                if current_points < cost:
-                    formatted_points = f"{float(current_points):.2f}"
-                    await message.channel.send(
-                        f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
-                    )
-                    return
-
-                # Списываем поинты только если достаточно средств
-                if self.currency_manager.pay_for_command(username, cost):
-                    points_deducted = True
-                    print(f"Deducted {cost} points from {username}")
-                else:
-                    # Этого не должно происходить, но на всякий случай
-                    print(f"Failed to deduct points from {username}")
-                    current_points = self.currency_manager.get_points(username)
-                    formatted_points = f"{float(current_points):.2f}"
-                    await message.channel.send(
-                        f"@{username}: Payment error. Cost: {cost} (you have {formatted_points})"
-                    )
-                    return
-                
-            # Выполняем саму команду
-            # Флаги для отслеживания выполнения частей команды
-            command_executed = False
-            has_response = False
-            has_sound = False
-            sound_played = False
-            
-            # Команда считается выполненной если либо был отправлен ответ,
-            # либо успешно проигран звук, либо оба действия
-
-            # Check if this group has queueing enabled
-            group = self._normalize_group(cmd.get("Group", "GENERAL"))
-            cat = self._category(group)
-            if cat.get("queue_enabled", False):
-                # Ensure queue and worker exist (we are in the bot loop here).
-                if group not in self.command_queues:
-                    print(f"Lazy initializing queue/worker for group: {group}")
-                    self.init_queues()
-                if group not in self.command_queues:
-                    self.command_queues[group] = asyncio.Queue()
-                self.queue_processing[group] = True
-                self._ensure_worker(group)
-
-                # Limit check and put_nowait run in the same tick (no await
-                # in between), so two viewers can never take the last slot.
-                free = self.queue_free_slots(group)
-                if free is not None and free <= 0:
-                    print(f"Queue full for group '{group}' (max queue size reached). Rejecting command.")
-                    if points_deducted and cost > 0:
-                        self.currency_manager.add_points(username, cost)
-                        self.currency_manager.save_users()
-                        await message.channel.send(f"@{username}: Queue for {group} is full. {cost} points refunded.")
-                    else:
-                        await message.channel.send(f"@{username}: Queue for {group} is full. Try again later.")
-                    return
-
-                try:
-                    self.command_queues[group].put_nowait((message, cmd))
-                except Exception as e:
-                    print(f"Error enqueuing command: {e}")
-                    if points_deducted and cost > 0:
-                        self.currency_manager.add_points(username, cost)
-                        self.currency_manager.save_users()
-                        await message.channel.send(f"@{username}: Error adding to queue. {cost} points refunded.")
-                    return
-
-                # Cooldowns start once the command is accepted into the queue
-                # (so a rejected command does not burn the viewer's cooldown).
-                normalized_key = self.normalize_command_key(cmd_key)
-                if cooldown_sec > 0:
-                    self.global_cooldowns[normalized_key] = current_time
-                if user_cd_sec > 0:
-                    self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
-
-                self._persist_queue_snapshot(group)
-                print(f"Enqueued command '{cmd_key}' to group '{group}'")
-
-                # Optional confirmation with the viewer's position (per group).
-                if cat.get("announce_enqueue", False):
-                    position = self.queue_pending_count(group)
-                    if position > 1:
-                        await message.channel.send(_fit_chat(
-                            f"@{username}: !{cmd_key} queued in {group}, position {position}."))
-                return
-
-            # NORMAL EXECUTION
-            # ... existing execution logic ...
-            # Отправка текста-ответа (многострочного)
-            resp = cmd.get("Response", "")
-            if resp and resp.strip():
-                has_response = True
-                await self.send_multiline_response(message.channel, resp, message.author.name)
-                command_executed = True
-                print(f"Sent multiline response for command '{cmd_key}'")
-                
-            # Проигрывание звука
-            sf = cmd.get("SoundFile", "").strip()
-            if sf:
-                has_sound = True
-                try:
-                    volume = float(cmd.get("Volume", 100))
-                except (TypeError, ValueError):
-                    volume = 100.0
-                # !volume группы действует и без очереди, как в очереди (S9)
-                override = self._group_volume_override(group)
-                if override is not None:
-                    volume = override * 100.0
-
-                # Канал группы (group уже нормализована выше)
-                channel_id = self._category(group).get("audio_channel", 0)
-                
-                sound_played = self.play_sound(sf, volume, channel_id)
-                if sound_played:
-                    print(f"Successfully played sound for command '{cmd_key}'")
-                    command_executed = True
-                else:
-                    print(f"Failed to play sound for command '{cmd_key}'")
-                    
-            # Применяем кулдауны и увеличиваем счетчик ТОЛЬКО если команда была успешно выполнена
-            if command_executed:
-                print(f"Command '{cmd_key}' was successfully executed by {username}")
-                # Фиксируем время кулдаунов, используя нормализованный ключ
-                normalized_key = self.normalize_command_key(cmd_key)
-                if cooldown_sec > 0:
-                    self.global_cooldowns[normalized_key] = current_time
-                    print(f"Set global cooldown for '{normalized_key}', {cooldown_sec}s")
-                if user_cd_sec > 0:
-                    self.user_cooldowns.setdefault(normalized_key, {})[username] = current_time
-                    print(f"Set user cooldown for '{normalized_key}' and user {username}, {user_cd_sec}s")
-                    
-                # Увеличиваем счетчик использований команды
-                self._count_use(cmd)
-                print(f"Incremented usage count for '{cmd_key}': {cmd['Count']}")
-            else:
-                # Если команда не выполнена (например, из-за блокировки звука)
-                print(f"Command '{cmd_key}' by {username} did not execute properly")
-                
-                # Определяем причину неисполнения команды для более понятного сообщения
-                reason = "Command could not be executed"
-                
-                # Детализируем причину в зависимости от типа команды и ситуации
-                if has_sound and not sound_played:
-                    if self.sound_channel.get_busy():
-                        reason = "Sound blocked: another sound is already playing"
-                    else:
-                        reason = "Sound file could not be played"
-                        
-                # Если команда имеет и текст и звук, и текст отправился, но звук заблокирован
-                if has_response and has_sound and not sound_played:
-                    reason = "Text response sent, but sound was blocked"
-                
-                # Возвращаем стоимость команды пользователю, если она была списана
-                if points_deducted and cost > 0:
-                    self.currency_manager.add_points(username, cost)
-                    print(f"Refunded {cost} points to {username} because {reason.lower()}")
-                    
-                    # Сохраняем изменения сразу после возврата
-                    self.currency_manager.save_users()
-                    print(f"Points refund saved to currency file for {username}")
-                    
-                    # Подготовка сообщения пользователю
-                    response_message = f"@{username}: {reason}. {cost} points refunded."
-                    
-                    # Специальный случай для звуковых команд без текста
-                    if has_sound and not has_response and not sound_played:
-                        # Проверяем, нужно ли вообще показывать сообщение о блокировке
-                        show_message = getattr(self, 'show_interruption_message', False)
-                        if show_message:
-                            await message.channel.send(response_message)
-                    else:
-                        # Для всех остальных случаев всегда показываем сообщение
-                        await message.channel.send(response_message)
-            
-            return  # Команда обработана
-            
         # Если не нашли команду среди своих - пробуем встроенные
         try:
             await self.handle_commands(message)
@@ -2462,82 +2233,15 @@ class TwitchBot(commands.Bot):
         import random
         selected_cmd = random.choice(commands_in_group)
 
-        # Process the selected command as if it was triggered directly
-        # We need to simulate the command execution with the selected command's settings
-        cmd_key = self.normalize_command_key(selected_cmd["Command"].lstrip('!'))
-
-        # Check cooldowns for the selected command
-        cooldown_min = int(selected_cmd.get("Cooldown", 0))
-        user_cooldown_min = int(selected_cmd.get("UserCooldown", 0))
-        cooldown_sec = cooldown_min * 60
-        user_cooldown_sec = user_cooldown_min * 60
-        current_time = time.time()
-
-        # Global cooldown check
-        if cooldown_sec > 0:
-            last_used = self.global_cooldowns.get(cmd_key, 0)
-            elapsed = current_time - last_used
-            if elapsed < cooldown_sec:
-                remaining = int(cooldown_sec - elapsed)
-                await message.channel.send(
-                    f"@{username}: command is on cooldown. Try in {remaining} sec."
-                )
-                return
-
-        # User cooldown check
-        if user_cooldown_sec > 0:
-            last_used = self.user_cooldowns.get(cmd_key, {}).get(username, 0)
-            elapsed = current_time - last_used
-            if elapsed < user_cooldown_sec:
-                remaining = int(user_cooldown_sec - elapsed)
-                await message.channel.send(
-                    f"@{username}: you can use this command in {remaining} sec."
-                )
-                return
-
-        # Check command cost
-        cost = int(selected_cmd.get("Cost", 0))
-        if cost > 0:
-            # Check if user has enough points
-            current_points = self.currency_manager.get_points(username)
-            if current_points < cost:
-                formatted_points = f"{float(current_points):.2f}"
-                await message.channel.send(
-                    f"@{username}: Not enough points. Cost: {cost} (you have {formatted_points})"
-                )
-                return
-
-            # Deduct points
-            if not self.currency_manager.pay_for_command(username, cost):
-                formatted_points = f"{float(current_points):.2f}"
-                await message.channel.send(
-                    f"@{username}: Payment error. Cost: {cost} (you have {formatted_points})"
-                )
-                return
-
         # Show picked command if enabled
         if sys_cmd.get("show_picked_command", True):
             response_template = sys_cmd.get("picked_command_response", "Picked {command}.")
             formatted_response = response_template.replace("{command}", selected_cmd['Command'])
             await message.channel.send(formatted_response)
 
-        # Execute the command's response
-        resp = selected_cmd.get("Response", "")
-        if resp and resp.strip():
-            await self.send_multiline_response(message.channel, resp, username)
-
-        # Execute the command's sound if any
-        sf = selected_cmd.get("SoundFile", "").strip()
-        if sf:
-            volume = int(selected_cmd.get("Volume", 100))
-            sound_played = self.play_sound(sf, volume)
-            if sound_played:
-                print(f"Successfully played sound for random command '{cmd_key}'")
-
-        # Update cooldowns after successful execution
-        if cooldown_sec > 0:
-            self.global_cooldowns[cmd_key] = current_time
-        if user_cooldown_sec > 0:
-            self.user_cooldowns.setdefault(cmd_key, {})[username] = current_time
+        # Выбранная команда идёт тем же конвейером, что набранная в чате:
+        # права, кулдауны, цена, очередь/канал/громкость группы, возврат
+        # очков, счётчик (раньше !random играл мимо очереди и не считался).
+        await self.run_command(message, selected_cmd)
 
         print(f"Random command executed: {selected_cmd['Command']} from group '{group_name}' by {username}")

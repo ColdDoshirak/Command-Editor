@@ -44,6 +44,7 @@ TEST_MODULES = [
     ("stage2", "test_commands_repo"),
     ("stage3", "test_events"),
     ("stage3", "test_system_commands"),
+    ("stage3", "test_dispatcher"),
 ]
 
 
