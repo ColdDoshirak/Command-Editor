@@ -17,7 +17,7 @@ with open(os.path.join(DATA, "command_editor.log"), "w", encoding="utf-8") as f:
 sys.path.insert(0, uikit.REPO)
 import app_log  # noqa: E402
 app_log.install_crash_handlers(DATA)
-kit = uikit.boot(DATA, OUT)
+kit = uikit.boot(DATA, OUT, catch_slot_errors=False)
 app_log.install_qt_message_handler()
 
 

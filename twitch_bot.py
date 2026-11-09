@@ -18,6 +18,7 @@ from core.system_commands import merge_with_defaults, name_of as sys_cmd_name, Q
 from bot.dispatcher import CommandDispatcher
 from bot.audio import SoundCache, may_start
 from bot.helix import HelixClient, logins as helix_logins
+from bot.ui_port import BotUi, CallbackUi
 from bot.queue import QueueMixin, _PersistedMessage, _QueueSlots  # noqa: F401
 
 
@@ -97,7 +98,7 @@ def _fit_chat(text, limit=_TWITCH_MSG_LIMIT):
 class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
     _fit_chat = staticmethod(_fit_chat)  # для bot/dispatcher.py
 
-    def __init__(self, channel, message_callback=None, commands_data=None, sound_channel=None, config_manager=None, currency_manager=None, **kwargs):
+    def __init__(self, channel, message_callback=None, commands_data=None, sound_channel=None, config_manager=None, currency_manager=None, ui=None, **kwargs):
         # Загружаем настройки Twitch
         if not config_manager:
             from config_manager import ConfigManager
@@ -157,11 +158,13 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             self.is_live = False
             self.is_running = True
             self.volume = 0.5
-            self.message_callback = message_callback
-            # Команды у бота - снимок (копии) из CommandRepository. О каждом
-            # срабатывании сообщаем сюда; UI в своём потоке передаёт это в
-            # CommandRepository.record_use (шаг 2.3).
-            self.on_command_used = None
+            # Всё, что бот сообщает окну программы, идёт через self.ui
+            # (bot/ui_port.py; в окне это BotBridge - сигналы Qt, шаг 4.2).
+            # О каждом срабатывании команды - ui.command_used(копия из
+            # снимка); окно передаёт это в CommandRepository.record_use.
+            if ui is None:
+                ui = CallbackUi(message_callback) if message_callback else BotUi()
+            self.ui = ui
             
             # Аудио и статус
             self.player = None
@@ -176,9 +179,6 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             
             # Отслеживание пользователей
             self.active_users = set([channel.lower()])  # Инициализируем с владельцем канала
-            
-            # Сигнал-хэндлер (будет установлен извне)
-            self.signal_handler = None
             
             # ⚠️ Используем переданный currency_manager или создаем новый если не передан
             self.currency_manager = currency_manager or CurrencyManager()
@@ -297,23 +297,18 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             mods = await self.get_channel_moderators()
             print(f"Retrieved {len(mods)} moderators")
             
-            # Отправляем список зрителей в интерфейс через сигналы
-            if hasattr(self, 'signal_handler') and self.signal_handler:
-                self.signal_handler.all_viewers_signal.emit(viewers)
-                self.signal_handler.chat_signal.emit(f"Connected to {self.channel}. Loaded {len(viewers)} viewers.")
-                
-                # Также обновляем активных зрителей (первоначально это тот же список)
-                # self.active_users уже был инициализирован в __init__, обновляем его
-                self.active_users = set(viewers)
-                self.signal_handler.active_viewers_signal.emit(list(self.active_users))
+            # первоначально активные зрители - тот же список
+            self.active_users = set(viewers)
+            self._notify("all_viewers", viewers)
+            self._notify("chat", f"Connected to {self.channel}. Loaded {len(viewers)} viewers.")
+            self._notify("active_viewers", list(self.active_users))
             
             # Проверка статуса стрима
             is_live = await self.check_if_live()
             # Сигналим UI о статусе стрима
             self.is_live = is_live
-            if hasattr(self, 'signal_handler') and self.signal_handler:
-                self.signal_handler.stream_status_signal.emit(is_live)
-            
+            self._notify("stream_status", is_live)
+
             # Запускаем периодическую проверку соединения, если не запущена
             if not self.connection_check_task or self.connection_check_task.done():
                 self.connection_check_task = asyncio.create_task(self._check_connection())
@@ -333,6 +328,15 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
         except Exception as e:
             print(f"CRITICAL ERROR in event_ready: {e}")
             import traceback; traceback.print_exc()
+
+    async def send_chat(self, text):
+        """Сообщение в чат канала из окна программы. False - канал ещё не
+        подключён (connected_channels читается здесь, в loop бота)."""
+        chans = self.connected_channels
+        if not chans:
+            return False
+        await chans[0].send(_fit_chat(text))
+        return True
 
     async def send_multiline_response(self, channel, response_text, username):
         """
@@ -370,8 +374,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
         await self.initialized_event.wait()
 
         # Выводим сообщение в UI
-        if self.message_callback:
-            self.message_callback(f"{message.author.name}: {message.content}")
+        self._notify("chat", f"{message.author.name}: {message.content}")
 
         # Получаем только первое слово в нижнем регистре как ключ команды
         content = message.content.strip()
@@ -666,8 +669,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             try:
                 is_live = await self.check_if_live()
                 self.is_live = is_live
-                if hasattr(self, 'signal_handler') and self.signal_handler:
-                    self.signal_handler.stream_status_signal.emit(is_live)
+                self._notify("stream_status", is_live)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -787,9 +789,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
                 # Сохраняем изменения в системе валюты
                 self.currency_manager.save_users()
             
-            # Отправляем сигнал с обновленным списком модераторов, если есть signal_handler
-            if hasattr(self, 'signal_handler') and self.signal_handler:
-                self.signal_handler.moderators_signal.emit(mods)
+            self._notify("moderators", mods)
 
             self._mods_cache = list(mods)
             self._mods_cache_time = time.time()
@@ -894,23 +894,19 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             cmd["Count"] = int(cmd.get("Count", 0) or 0) + 1
         except (TypeError, ValueError):
             pass
-        callback = getattr(self, 'on_command_used', None)
-        if callback is not None:
-            try:
-                callback(cmd)
-            except Exception as e:
-                print(f"on_command_used failed: {e}")
+        self._notify("command_used", cmd)
+
+    def _notify(self, what, *args):
+        """Сообщить окну (self.ui). Окно не может сломать бота: ошибки
+        только печатаются."""
+        try:
+            getattr(self.ui, what)(*args)
+        except Exception as e:
+            print(f"UI report {what} failed: {e}")
 
     def _ui_message(self, text):
         """Служебное сообщение в окно чата программы (не в Twitch)."""
-        try:
-            handler = getattr(self, 'signal_handler', None)
-            if handler is not None:
-                handler.chat_signal.emit(text)
-            elif self.message_callback:
-                self.message_callback(text)
-        except Exception as e:
-            print(f"UI message failed: {e}")
+        self._notify("chat", text)
 
     def _connection_alive(self):
         conn = getattr(self, '_connection', None)
@@ -982,8 +978,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
                 if r.subscriber and r.user in currency.users:
                     currency.users[r.user]['is_subscriber'] = True
                 print(r.ui)
-                if self.message_callback:
-                    self.message_callback(r.ui)
+                self._notify("chat", r.ui)
                 if r.chat:
                     try:
                         await channel.send(_fit_chat(r.chat))

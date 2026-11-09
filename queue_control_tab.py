@@ -7,7 +7,7 @@ Shows, per group:
   - Pause/Resume, Skip current, Remove selected, Clear
 
 Threading: the bot runs in its own thread with its own asyncio loop.
-Every mutation is sent to that loop with loop.call_soon_threadsafe; the UI
+Every mutation is sent to that loop through the window's BotBridge; the UI
 only reads snapshots (bot.queue_snapshot) for display. Pending entries are
 addressed by a stable id, so two identical commands in the queue are never
 confused (the old version removed/reordered by command name).
@@ -239,20 +239,15 @@ class QueueControlTab(QWidget):
             return None
         return bot
 
-    def _loop(self, bot):
-        loop = getattr(bot, 'loop', None)
-        if loop is None or loop.is_closed():
-            return None
-        return loop
-
     def _send(self, func, *args):
-        """Run a bot method in the bot loop, then refresh the view."""
-        bot = self._bot()
-        loop = self._loop(bot) if bot is not None else None
-        if loop is None:
+        """Run a bot method in the bot loop (through the window's
+        BotBridge), then refresh the view."""
+        tw = getattr(self.parent, 'twitch_tab', None)
+        bridge = getattr(tw, 'bridge', None)
+        if self._bot() is None or bridge is None:
             return
-        loop.call_soon_threadsafe(func, *args)
-        QTimer.singleShot(120, self.refresh_queue)
+        if bridge.call(func, *args):
+            QTimer.singleShot(120, self.refresh_queue)
 
     def _queue_groups(self):
         cats = self.config_manager.get_audio_categories()

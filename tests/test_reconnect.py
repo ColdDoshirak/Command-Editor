@@ -11,6 +11,7 @@ import asyncio
 from types import SimpleNamespace
 
 from harness import make_bot, make_command, FakeMessage, FakeChannel, new_tmpdir, drop_tmpdir
+from bot.ui_port import BotUi
 
 
 class _FakeConnection(object):
@@ -26,11 +27,9 @@ class _FakeConnection(object):
 
 def _ui(bot):
     said = []
-    bot.signal_handler = SimpleNamespace(
-        chat_signal=SimpleNamespace(emit=said.append),
-        stream_status_signal=SimpleNamespace(emit=lambda *_: None),
-        all_viewers_signal=SimpleNamespace(emit=lambda *_: None),
-        active_viewers_signal=SimpleNamespace(emit=lambda *_: None))
+    ui = BotUi()
+    ui.chat = said.append
+    bot.ui = ui
     return said
 
 

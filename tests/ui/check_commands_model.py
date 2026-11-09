@@ -92,7 +92,7 @@ def body(k):
     snap[0]["Group"] = "BOT-NORMALISED"
     check("bot changes do not reach the editor", w.commands[0]["Group"] != "BOT-NORMALISED")
     before = w.commands[0]["Count"]
-    t = threading.Thread(target=w.twitch_tab.signal_handler.command_used.emit, args=(snap[0],))
+    t = threading.Thread(target=w.twitch_tab.bridge.command_used, args=(snap[0],))
     t.start(); t.join(); pump(200)   # as the bot thread does
     check("usage count from the bot thread reaches the editor",
           w.commands[0]["Count"] == before + 1, (before, w.commands[0]["Count"]))

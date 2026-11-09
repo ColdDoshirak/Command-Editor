@@ -38,7 +38,7 @@ def _disable_network():
 
 
 class Kit(object):
-    def __init__(self, data_dir, out_dir, size=(1360, 820)):
+    def __init__(self, data_dir, out_dir, size=(1360, 820), catch_slot_errors=True):
         self.data_dir = os.path.abspath(data_dir)
         self.out_dir = os.path.abspath(out_dir) if out_dir else None
         self.results = []
@@ -50,6 +50,15 @@ class Kit(object):
         if REPO not in sys.path:
             sys.path.insert(0, REPO)
         _disable_network()
+
+        # An exception in a Qt slot makes PyQt5 abort the process (exit
+        # 0xC0000409) with no traceback. Record it as a failed check instead
+        # (check_crash_log tests the program's own hook and turns this off).
+        def _hook(etype, value, tb):
+            self.results.append(("FAIL", "exception in a Qt slot",
+                                 "".join(traceback.format_exception(etype, value, tb))))
+        if catch_slot_errors:
+            sys.excepthook = _hook
 
         from PyQt5.QtWidgets import QApplication
         import pygame

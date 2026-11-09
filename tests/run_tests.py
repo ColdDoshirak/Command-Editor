@@ -47,6 +47,7 @@ TEST_MODULES = [
     ("stage3", "test_dispatcher"),
     ("stage3", "test_audio"),
     ("stage3", "test_helix"),
+    ("stage4", "test_bot_ui"),
 ]
 
 

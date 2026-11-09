@@ -1,6 +1,6 @@
 from PyQt5 import sip
 from PyQt5.QtGui import QTextCursor, QColor
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QMetaType, Qt, QTimer, Q_ARG
+from PyQt5.QtCore import pyqtSlot, QMetaType, Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTextEdit, QGroupBox, QMessageBox, QDialog, QListWidget, QSplitter,
@@ -11,51 +11,37 @@ import threading
 import asyncio
 import time
 import webbrowser
-import requests
-import concurrent.futures
 from datetime import datetime
 
 from twitch_bot import TwitchBot
 from twitch_auth import TwitchAuthDialog
 from config_manager import ConfigManager
+from ui.bot_bridge import BotBridge
 
 # регистрируем QTextCursor для передачи в сигналах
 QMetaType.type("QTextCursor")
 
-class ChatSignalHandler(QObject):
-    chat_signal = pyqtSignal(str)
-    active_viewers_signal = pyqtSignal(list)
-    all_viewers_signal = pyqtSignal(list)
-    stream_status_signal = pyqtSignal(bool)
-    currency_updated = pyqtSignal()
-    moderators_signal = pyqtSignal(list)  # Новый сигнал для списка модераторов
-    # Результаты запросов из потока бота. Объект живёт в UI-потоке, поэтому
-    # emit из другого потока доставляется очередью Qt (C4).
-    viewers_ready = pyqtSignal(list)
-    command_used = pyqtSignal(object)   # бот выполнил команду (копию из снимка)
-    stream_status_ready = pyqtSignal(bool)
 
 class TwitchTab(QWidget):
     def __init__(self, parent=None, commands_data=None, config_manager=None):
         super().__init__(parent)
         self.parent = parent
         self.commands_data = commands_data or []
+        # Бот и окно разговаривают только через мост (ui/bot_bridge.py,
+        # шаг 4.2): от бота - сигналы Qt, к боту - bridge.call/submit.
+        self.bridge = BotBridge(self)
         self.bot = None
         self.bot_thread = None
         self.active_users = []
         self.currently_live = False
         self.moderators_list = []  # Список модераторов канала
 
-        self.signal_handler = ChatSignalHandler()
-        self.signal_handler.chat_signal.connect(self.add_to_chat_safe)
-        self.signal_handler.active_viewers_signal.connect(self.update_active_viewers)
-        self.signal_handler.all_viewers_signal.connect(self.update_all_viewers)
-        self.signal_handler.stream_status_signal.connect(self.update_stream_status)
-        self.signal_handler.currency_updated.connect(self.update_currency)
-        self.signal_handler.moderators_signal.connect(self.update_moderators_list)  # Подключаем новый сигнал
-        self.signal_handler.viewers_ready.connect(self._apply_viewers)
-        self.signal_handler.stream_status_ready.connect(self._apply_stream_status)
-        self.signal_handler.command_used.connect(self._on_command_used)
+        self.bridge.chat_line.connect(self.add_to_chat_safe)
+        self.bridge.active_viewers_ready.connect(self.update_active_viewers)
+        self.bridge.all_viewers_ready.connect(self.update_all_viewers)
+        self.bridge.stream_status_ready.connect(self.update_stream_status)
+        self.bridge.moderators_ready.connect(self.update_moderators_list)
+        self.bridge.command_ran.connect(self._on_command_used)
 
         # Use the shared config_manager from parent if provided, otherwise create own instance
         self.config_manager = config_manager if config_manager is not None else ConfigManager()
@@ -339,6 +325,18 @@ class TwitchTab(QWidget):
         if dlg.exec_() == QDialog.Accepted:
             self.load_settings()
 
+    @property
+    def bot(self):
+        """Бот, с которым говорит окно (тот, что подключён к мосту)."""
+        return self.bridge.bot
+
+    @bot.setter
+    def bot(self, bot):
+        if bot is None:
+            self.bridge.detach()
+        else:
+            self.bridge.attach(bot)
+
     def connect_bot(self):
         channel = self.channel_input.text().strip()
         if not channel:
@@ -353,11 +351,9 @@ class TwitchTab(QWidget):
         # Store parameters for bot initialization in the run_bot thread
         self.bot_params = {
             'channel': channel,
-            'message_callback': self.signal_handler.chat_signal.emit,
             'currency_manager': self.parent.currency_manager,
             # снимок (копии) из CommandRepository: бот не трогает словари редактора
             'commands_data': self._commands_snapshot(),
-            'signal_handler': self.signal_handler,
             'config_manager': self.config_manager
         }
         self.bot = None  # Will be created in the run_bot thread
@@ -376,11 +372,11 @@ class TwitchTab(QWidget):
         self.connection_status.setStyleSheet("color: green;")
         self.start_viewer_updates()
         self.refresh_viewers()
-        self.signal_handler.chat_signal.emit(f"Connected to {channel}")
+        self.add_to_chat_safe(f"Connected to {channel}")
         return True
 
     def run_bot(self):
-        # Создаём event loop только один раз для этого потока
+        """Поток бота: свой event loop, бот создаётся здесь же."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -388,43 +384,32 @@ class TwitchTab(QWidget):
             app_log.install_asyncio_handler(loop)
         except Exception as e:
             print(f"asyncio crash handler not installed: {e}")
+        bridge = self.bridge
+        bot = None
         try:
-            # Initialize the bot in the same thread as the event loop
-            channel = self.bot_params['channel']
-            self.bot = TwitchBot(
-                channel=channel,
-                message_callback=self.bot_params['message_callback'],
+            bot = TwitchBot(
+                channel=self.bot_params['channel'],
                 currency_manager=self.bot_params['currency_manager'],
-                config_manager=self.bot_params['config_manager']
+                config_manager=self.bot_params['config_manager'],
+                ui=bridge,
             )
             if self.bot_params['commands_data']:
-                self.bot.update_commands(self.bot_params['commands_data'])
-            self.bot.signal_handler = self.bot_params['signal_handler']
-            # из потока бота -> сигналом в UI-поток -> CommandRepository.record_use
-            self.bot.on_command_used = self.signal_handler.command_used.emit
-            
-            # Now run the bot (it will use the current thread's event loop)
-            loop.run_until_complete(self.bot.start())
+                bot.update_commands(self.bot_params['commands_data'])
+            self.bot = bot
+            loop.run_until_complete(bot.start())
         except Exception as e:
             print(f"Bot run error: {e}")
-            self.signal_handler.chat_signal.emit(f"Connection error: {e}")
-            
-            # В случае ошибки пытаемся остановить бота корректно
-            if hasattr(self, 'bot') and self.bot:
+            bridge.chat(f"Connection error: {e}")
+            if bot is not None:
                 try:
-                    loop.run_until_complete(self.bot.close())
+                    loop.run_until_complete(bot.close())
                 except Exception as close_error:
                     print(f"Error closing bot after run error: {close_error}")
         finally:
-            # Даже после закрытия event loop сохраняем ссылку на бота
-            # чтобы была возможность повторного подключения
-            # После Disconnect self.bot уже None (раньше - AttributeError здесь).
-            bot = self.bot
-            if (bot is None or not getattr(bot, 'is_running', False)) and hasattr(self, 'connect_button'):
-                # Выполняем в главном потоке
-                self.signal_handler.chat_signal.emit("Bot disconnected, reconnect manually")
-            
-            # Закрываем loop только если он не закрыт и программа завершается
+            # Disconnect уже отцепил бота (is_running = False) - молчим;
+            # иначе бот остановился сам, и пользователь должен это увидеть.
+            if bot is None or getattr(bot, 'is_running', False):
+                bridge.chat("Bot disconnected, reconnect manually")
             if not loop.is_closed():
                 loop.close()
 
@@ -443,37 +428,34 @@ class TwitchTab(QWidget):
         if repo is not None:
             repo.record_use(cmd)
 
-    def reload_bot_audio_categories(self):
-        """Apply new group/audio settings to the running bot without a restart.
+    # -- изменения настроек для работающего бота (всё - в loop бота) ----------
+    def push_commands(self, commands):
+        """Новый снимок команд работающему боту."""
+        self.bridge.call("update_commands", commands)
 
-        The bot lives in its own thread with its own event loop, so we schedule
-        the (synchronous) reload onto that loop via run_coroutine_threadsafe.
-        Safe to call from the GUI thread.
-        """
-        bot = self.bot
-        if not bot or not hasattr(bot, "reload_audio_categories"):
-            return
-        loop = getattr(bot, "loop", None)
-        if not loop or loop.is_closed():
-            return
-        try:
-            # reload_audio_categories is a coroutine; schedule it on the bot's
-            # event-loop thread (the bot runs in its own thread/loop).
-            asyncio.run_coroutine_threadsafe(
-                bot.reload_audio_categories(), loop
-            )
-        except RuntimeError as e:
-            print(f"Could not reload audio categories on bot loop: {e}")
+    def push_interruption(self, enabled, show_message=None):
+        self.bridge.call("set_interruption", enabled)
+        if show_message is not None:
+            self.bridge.call("set_show_interruption_message", show_message)
+
+    def push_show_interruption_message(self, enabled):
+        self.bridge.call("set_show_interruption_message", enabled)
+
+    def reload_bot_audio_categories(self):
+        """Новые настройки групп - работающему боту, без перезапуска."""
+        self.bridge.submit("reload_audio_categories")
 
     def disconnect(self):
         self.stop_viewer_updates()
-        if self.bot:
+        bot = self.bridge.detach()
+        if bot is not None:
             try:
-                self.bot.stop()
+                # stop() рассчитан на вызов из UI-потока: задачи и close()
+                # он сам отправляет в loop бота.
+                bot.stop()
             except Exception as e:
                 print(f"Error stopping bot: {e}")
-                self.signal_handler.chat_signal.emit(f"Error disconnecting: {e}")
-            self.bot = None
+                self.add_to_chat_safe(f"Error disconnecting: {e}")
         self.connect_button.setEnabled(True)
         self.disconnect_button.setEnabled(False)
         self.send_button.setEnabled(False)
@@ -483,44 +465,35 @@ class TwitchTab(QWidget):
         self.active_viewers_list.clear()
         self.active_viewers_count.setText("Active: 0")
         self.all_viewers_count.setText("All: 0")
-        self.signal_handler.chat_signal.emit("Disconnected from Twitch chat")
+        self.add_to_chat_safe("Disconnected from Twitch chat")
 
     def add_to_chat_safe(self, message):
         self.chat_display.append(message)
         self.chat_display.moveCursor(QTextCursor.End)
         self.chat_display.ensureCursorVisible()
 
-    def send_to_twitch_chat(self, message):
-        self.signal_handler.chat_signal.emit(message)
-        if self.bot and self.bot.connected_channels:
-            chan = self.bot.connected_channels[0]
-            asyncio.run_coroutine_threadsafe(chan.send(message), self.bot.loop)
+    def _connection_lost(self):
+        self.connection_status.setText("Connection lost (reconnecting...)")
+        self.connection_status.setStyleSheet("color: orange;")
 
     def send_message(self):
         text = self.message_input.text().strip()
-        if not text or not self.bot or not self.bot.connected_channels:
+        if not text or not self.bot:
             return
-        
-        # Проверяем, что event loop еще жив
-        if not hasattr(self.bot, 'loop') or not self.bot.loop or self.bot.loop.is_closed():
-            self.signal_handler.chat_signal.emit("Cannot send message: connection is being established or lost")
-            return
-        
-        chan = self.bot.connected_channels[0]
-        try:
-            asyncio.run_coroutine_threadsafe(chan.send(text), self.bot.loop)
+        nick = getattr(self.bot, 'nick', None) or "bot"
+
+        def done(sent, error):
+            if error is not None:
+                self.add_to_chat_safe(f"Error sending message: {error}")
+            elif not sent:
+                self.add_to_chat_safe("Cannot send message: not joined to the channel yet")
+        if self.bridge.submit("send_chat", text, on_done=done):
             self.message_input.clear()
-            self.signal_handler.chat_signal.emit(f"{self.bot.nick}: {text}")
-        except RuntimeError as e:
-            error_msg = f"Error sending message: {str(e)}"
-            self.signal_handler.chat_signal.emit(error_msg)
-            print(error_msg)
-            
-            # Если loop закрыт во время отправки, отключаем кнопки отправки
-            if "loop is closed" in str(e).lower():
-                self.send_button.setEnabled(False)
-                self.connection_status.setText("Disconnected (reconnecting...)")
-                self.connection_status.setStyleSheet("color: orange;")
+            self.add_to_chat_safe(f"{nick}: {text}")
+        else:
+            self.add_to_chat_safe("Cannot send message: connection is being established or lost")
+            self.send_button.setEnabled(False)
+            self._connection_lost()
 
     def open_token_generator(self):
         webbrowser.open("https://twitchtokengenerator.com/quick/FWj06omw7e")
@@ -537,40 +510,18 @@ class TwitchTab(QWidget):
 
     def check_connection(self):
         if not self.bot:
-            self.signal_handler.chat_signal.emit("Not connected")
+            self.add_to_chat_safe("Not connected")
             return
-        
-        # Проверяем, что event loop еще жив
-        if not hasattr(self.bot, 'loop') or not self.bot.loop or self.bot.loop.is_closed():
-            self.signal_handler.chat_signal.emit("Cannot check connection: event loop is closed or disconnected")
-            self.connection_status.setText("Disconnected (reconnecting...)")
-            self.connection_status.setStyleSheet("color: orange;")
-            return
-        
-        try:
-            asyncio.run_coroutine_threadsafe(self._check_stream_status(), self.bot.loop)
-        except RuntimeError as e:
-            error_msg = f"Error checking connection: {str(e)}"
-            self.signal_handler.chat_signal.emit(error_msg)
-            print(error_msg)
-            # Если loop закрыт, обновим индикатор состояния
-            if "closed" in str(e).lower():
-                self.connection_status.setText("Connection lost (reconnecting...)")
-                self.connection_status.setStyleSheet("color: orange;")
 
-    async def _check_stream_status(self):
-        if hasattr(self.bot, 'check_if_live'):
-            is_live = await self.bot.check_if_live()
-            self.signal_handler.stream_status_signal.emit(is_live)
-            self.bot.is_live = is_live
-            self.signal_handler.chat_signal.emit(
-                f"Stream status: {'LIVE' if is_live else 'OFFLINE'}"
-            )
-
-    async def get_all_viewers(self):
-        if not self.bot or not hasattr(self.bot, 'get_all_viewers'):
-            return []
-        return await self.bot.get_all_viewers()
+        def done(is_live, error):
+            if error is not None:
+                self.add_to_chat_safe(f"Error checking connection: {error}")
+                return
+            self.update_stream_status(bool(is_live))
+            self.add_to_chat_safe(f"Stream status: {'LIVE' if is_live else 'OFFLINE'}")
+        if not self.bridge.submit("check_if_live", on_done=done):
+            self.add_to_chat_safe("Cannot check connection: event loop is closed or disconnected")
+            self._connection_lost()
 
     def start_viewer_updates(self):
         self.viewer_update_frequency = getattr(self, 'viewer_update_frequency', 30)
@@ -589,110 +540,31 @@ class TwitchTab(QWidget):
             self.refresh_viewers()
             self.last_viewers_update = now
 
-        # Проверяем статус стрима при каждом обновлении зрителей
-        if self.bot and hasattr(self.bot, 'is_live'):
-            # Проверяем состояние event loop
-            if not hasattr(self.bot, 'loop') or not self.bot.loop or self.bot.loop.is_closed():
-                return
-                
-            try:
-                # B7: НЕ блокируем UI-поток. Раньше здесь было
-                # future.result(timeout=5) — интерфейс зависал на время
-                # запроса к Helix. Теперь результат доставляется по
-                # add_done_callback, а статус стрима обновляется
-                # фоновой задачей бота (_stream_status_loop).
-                future = asyncio.run_coroutine_threadsafe(
-                    self.bot.check_if_live(), self.bot.loop
-                )
-                future.add_done_callback(self._on_stream_status_done)
-                
-                # Периодически (каждые 10 минут) обновляем список модераторов
-                if hasattr(self, 'last_mod_check'):
-                    if now - self.last_mod_check > 600:  # 600 секунд = 10 минут
-                        # Обновляем список модераторов
-                        print("Updating moderators list...")
-                        asyncio.run_coroutine_threadsafe(
-                            self.bot.get_channel_moderators(), self.bot.loop
-                        )
-                        self.last_mod_check = now
-                else:
-                    # Первая проверка
-                    self.last_mod_check = now
-                    
-            except (RuntimeError, concurrent.futures.TimeoutError) as e:
-                error_msg = f"Error checking stream status: {str(e)}"
-                self.signal_handler.chat_signal.emit(error_msg)
-                print(error_msg)
-                # Если loop закрыт, обновим индикатор состояния
-                if isinstance(e, RuntimeError) and "closed" in str(e).lower():
-                    self.connection_status.setText("Connection lost (reconnecting...)")
-                    self.connection_status.setStyleSheet("color: orange;")
-                    
-        self.last_update_label.setText(f"Last: {time.strftime('%H:%M:%S')}")
-
-    def _on_stream_status_done(self, future):
-        """B7: доставить результат проверки статуса стрима в UI-поток,
-        не блокируя его. Вызывается в потоке бота, поэтому только сигнал."""
-        try:
-            exc = future.exception()
-            if exc is not None:
-                print(f"Stream status check failed: {exc}")
-                return
-            is_live = future.result()
-        except Exception as e:
-            print(f"Stream status callback error: {e}")
-            return
-        # Раньше здесь был QMetaObject.invokeMethod без @pyqtSlot -
-        # RuntimeError каждые 30 с, статус не обновлялся.
-        self.signal_handler.stream_status_ready.emit(bool(is_live))
-
-    def _apply_stream_status(self, is_live):
-        """B7: применить статус стрима в UI-потоке (вызывается через очередь)."""
+        # Статус стрима бот проверяет сам (_stream_status_loop) и сообщает
+        # через мост; раньше окно ещё и само спрашивало Helix каждые 30 с.
+        # Список модераторов - раз в 10 минут.
         if self.bot:
-            self.bot.is_live = is_live
-        self.signal_handler.stream_status_signal.emit(is_live)
+            last = getattr(self, 'last_mod_check', None)
+            if last is None:
+                self.last_mod_check = now
+            elif now - last > 600:
+                self.bridge.submit("get_channel_moderators")
+                self.last_mod_check = now
+
+        self.last_update_label.setText(f"Last: {time.strftime('%H:%M:%S')}")
 
     def refresh_viewers(self):
         if not self.bot:
             return
+        if not self.bridge.submit("get_all_viewers", on_done=self._viewers_done):
+            self.add_to_chat_safe("Cannot refresh viewers: connection is being established or lost")
 
-        # Проверяем, что event loop еще жив
-        if not hasattr(self.bot, 'loop') or not self.bot.loop or self.bot.loop.is_closed():
-            self.signal_handler.chat_signal.emit("Cannot refresh viewers: connection is being established or lost")
-            return
-
-        try:
-            # B7: НЕ блокируем UI-поток. Раньше здесь было
-            # future.result(timeout=10) — интерфейс зависал на время
-            # запроса к Helix. Теперь результат доставляется по
-            # add_done_callback (см. _on_viewers_done).
-            future = asyncio.run_coroutine_threadsafe(
-                self.bot.get_all_viewers(), self.bot.loop
-            )
-            future.add_done_callback(self._on_viewers_done)
-        except (RuntimeError, concurrent.futures.TimeoutError) as e:
-            error_msg = f"Error refreshing viewers: {str(e)}"
-            self.signal_handler.chat_signal.emit(error_msg)
-            print(error_msg)
-            self._apply_viewers(list(getattr(self.bot, 'active_users', [])))
-
-    def _on_viewers_done(self, future):
-        """B7: доставить список зрителей в UI без блокировки.
-
-        Вызывается в потоке бота (callback future), поэтому виджеты здесь
-        не трогаются: список уходит сигналом в UI-поток (C4).
-        """
-        try:
-            exc = future.exception()
-            if exc is not None:
-                print(f"Viewers refresh failed: {exc}")
-                viewers = list(getattr(self.bot, 'active_users', []))
-            else:
-                viewers = list(future.result())
-        except Exception as e:
-            print(f"Viewers callback error: {e}")
-            viewers = list(getattr(self.bot, 'active_users', []))
-        self.signal_handler.viewers_ready.emit(viewers)
+    def _viewers_done(self, viewers, error):
+        """UI-поток (мост): список зрителей пришёл - или запрос не удался."""
+        if error is not None or viewers is None:
+            print(f"Viewers refresh failed: {error}")
+            viewers = getattr(self.bot, 'active_users', [])
+        self._apply_viewers(list(viewers))
 
     def _apply_viewers(self, viewers):
         """Обновить виджеты зрителей и начисления (B7: не блокирует UI)."""
@@ -701,11 +573,9 @@ class TwitchTab(QWidget):
             self.all_viewers_list.addItem(v)
         self.all_viewers_count.setText(f"All: {len(viewers)}")
 
-        # Создаем функцию для отправки сообщений только в окно программы
         def show_service_message(message):
-            # Используем сигнал для отправки сообщений только в окно программы
-            if hasattr(self, 'signal_handler'):
-                self.signal_handler.chat_signal.emit(f"[POINTS] {message}")
+            # только в окно программы, не в Twitch
+            self.add_to_chat_safe(f"[POINTS] {message}")
 
         try:
             self.parent.currency_manager.process_currency_update(
@@ -863,18 +733,10 @@ class TwitchTab(QWidget):
                 currency_manager.save_users()
                 print(f"User {username} moderator status updated to: {is_moderator}")
         
-        # Обновляем в боте
-        if self.bot and hasattr(self.bot, 'currency_manager'):
-            if username in self.bot.currency_manager.users:
-                self.bot.currency_manager.users[username]['is_mod'] = is_moderator
-                self.bot.currency_manager.save_users()
-                print(f"Bot: User {username} moderator status updated to: {is_moderator}")
-        
-        # Критически важно: перезагружаем конфигурацию модераторов в боте
-        if self.bot and hasattr(self.bot, 'config_manager'):
-            # Перезагружаем конфигурацию модераторов
-            self.bot.config_manager.moderators_config = self.bot.config_manager.load_moderators_config()
-            print(f"Bot moderators config reloaded")
+        # У бота те же currency_manager и config_manager, что и у окна
+        # (этап 1): отдельно «обновлять в боте» больше нечего. Ручные
+        # списки модераторов перечитываем.
+        self.config_manager.moderators_config = self.config_manager.load_moderators_config()
 
     def restore_excluded_moderator(self):
         """Восстанавливает исключенного модератора"""
@@ -958,17 +820,8 @@ class TwitchTab(QWidget):
 
     def refresh_moderators(self):
         """Обновляет список модераторов"""
-        if self.bot and hasattr(self.bot, 'loop') and self.bot.loop and not self.bot.loop.is_closed():
-            try:
-                # Запрашиваем обновленный список модераторов
-                asyncio.run_coroutine_threadsafe(
-                    self.bot.get_channel_moderators(), self.bot.loop
-                )
-            except Exception as e:
-                print(f"Error refreshing moderators: {e}")
-                # Если не можем получить через API, показываем хотя бы ручной список
-                self.update_moderators_display_only()
-        else:            # Если бот не подключен, показываем только ручной список
+        # ответ придёт сигналом moderators_ready; без бота - ручной список
+        if not self.bridge.submit("get_channel_moderators"):
             self.update_moderators_display_only()
 
     def update_moderators_display_only(self):

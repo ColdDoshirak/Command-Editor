@@ -2211,11 +2211,10 @@ class NowPlayingBar(QFrame):
         return slot
 
     def _call(self, name, *args):
-        bot = self._bot()
-        loop = getattr(bot, "loop", None) if bot is not None else None
-        if loop is None or loop.is_closed():
-            return
-        loop.call_soon_threadsafe(getattr(bot, name), *args)
+        tt = getattr(self.editor, "twitch_tab", None)
+        bridge = getattr(tt, "bridge", None)
+        if self._bot() is not None and bridge is not None:
+            bridge.call(name, *args)
 
     def _toggle_pause(self, group):
         bot = self._bot()

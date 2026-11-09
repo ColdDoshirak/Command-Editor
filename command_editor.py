@@ -12,7 +12,6 @@ from PyQt5.QtCore import Qt, QTimer, QDateTime
 import PyQt5.QtCore as QtCore
 from PyQt5.QtGui import QPixmap, QFont, QTextCursor  # Add QTextCursor here
 import pygame
-from twitch_bot import TwitchBot
 from twitch_auth import TwitchAuthDialog
 from twitch_tab import TwitchTab
 from config_manager import ConfigManager
@@ -915,7 +914,7 @@ class CommandEditor(QMainWindow):
             # Disconnect any running Twitch bot
             if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
                 print("Stopping Twitch bot before closing…")
-                self.twitch_tab.bot.stop()   # ← вызываем .stop(), а не .disconnect()
+                self.twitch_tab.disconnect()
                 time.sleep(0.2)
 
             # Команды сохраняются ровно в том виде и порядке, что на экране.
@@ -1058,71 +1057,11 @@ class CommandEditor(QMainWindow):
             column = 11 if line_edit is self.sound_file_edit else 12
             self.update_command_field(file_name, column)
 
-    def start_bot(self):
-        if not self.bot:
-            channel = self.channel_edit.text().strip()
-            if not channel:
-                QMessageBox.warning(self, "Error", "Please enter a channel name")
-                return
-
-            try:
-                # создаём бота
-                self.bot = TwitchBot(
-                    channel,
-                    message_callback=self.twitch_tab.add_to_chat_safe,  # Используем безопасный метод
-                    currency_manager=self.currency_manager
-                )
-                self.twitch_tab.bot = self.bot  # Передаем ссылку на бота в TwitchTab
-
-                self.bot.update_commands(self.commands)
-
-                # Используем значения, загруженные в __init__
-                initial_interruption = self.allow_sound_interruption
-                initial_show_message = self.show_interruption_message
-
-                # Используем обновленные логи для ясности
-                print(f"Setting initial interruption from CommandEditor attribute: {initial_interruption}")
-                print(f"Setting initial show message from CommandEditor attribute: {initial_show_message}")
-
-                self.bot.set_interruption(initial_interruption)
-                self.bot.set_show_interruption_message(initial_show_message)
-
-                # Регистрация команд бота
-                try:
-                    self.bot.register_commands()
-                    print("Bot commands registered successfully")
-                except Exception as e:
-                    print(f"Error registering bot commands: {e}")
-
-                # запускаем в потоке
-                self.bot_thread = threading.Thread(target=self.bot.run)
-                self.bot_thread.daemon = True
-                self.bot_thread.start()
-                
-                self.start_bot_btn.setEnabled(False)
-                self.stop_bot_btn.setEnabled(True)
-                QMessageBox.information(self, "Success", "Bot started successfully!")
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Failed to start bot: {str(e)}")
-                if self.bot:
-                    self.bot = None
-                
-    def stop_bot(self):
-        if self.bot:
-            try:
-                self.bot.stop()
-                self.bot = None
-                self.start_bot_btn.setEnabled(True)
-                self.stop_bot_btn.setEnabled(False)
-                QMessageBox.information(self, "Success", "Bot stopped successfully!")
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Error stopping bot: {str(e)}")
-                
     def update_commands(self):
         """Update commands in Twitch tab"""
         # Бот получает копии (снимок), а не словари редактора (шаг 2.3)
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-            self.twitch_tab.bot.update_commands(self.command_repo.snapshot())
+            self.twitch_tab.push_commands(self.command_repo.snapshot())
 
     def save_legacy_format(self):
         """Save commands in the original format for compatibility"""
@@ -1498,12 +1437,6 @@ class CommandEditor(QMainWindow):
                 self.fix_sound_paths()
         return fixed, still
 
-    def disconnect_bot(self):
-        if self.bot:
-            # Сохраняем статистику команд перед отключением
-            self.save_commands()
-            # ... остальной код отключения
-
     def _has_significant_changes(self, old_commands, new_commands):
         """Determine if changes are significant enough to warrant a backup
         
@@ -1555,7 +1488,7 @@ class CommandEditor(QMainWindow):
         
         # Update the setting in Twitch bot if it exists
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-            self.twitch_tab.bot.set_interruption(self.allow_sound_interruption)
+            self.twitch_tab.push_interruption(self.allow_sound_interruption)
             self.twitch_tab.add_to_chat_safe(
                 f"Sound interruption setting changed: {'Enabled' if self.allow_sound_interruption else 'Disabled'}"
             )
@@ -1567,7 +1500,7 @@ class CommandEditor(QMainWindow):
         
         # Update the setting in Twitch bot if it exists
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
-            self.twitch_tab.bot.set_show_interruption_message(self.show_interruption_message)
+            self.twitch_tab.push_show_interruption_message(self.show_interruption_message)
             self.twitch_tab.add_to_chat_safe(
                 f"Interruption message: {'Enabled' if self.show_interruption_message else 'Disabled'}"
             )
