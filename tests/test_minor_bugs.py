@@ -91,3 +91,83 @@ async def test_about_tab_uses_the_shared_version_check():
     with open(os.path.join(REPO_DIR, "ui", "about_tab.py"), encoding="utf-8") as f:
         src = f.read()
     assert "V1.1.6a" not in src and "APP_VERSION" in src and "is_newer" in src
+
+
+async def test_rank_promotion_does_not_take_the_file_lock_under_users_lock():
+    """add_points (UI thread: watch-time payout) promoted a rank and saved while
+    holding users_lock -> waited for the file lock; save_users in the other
+    thread holds the file lock and waits for users_lock: both froze."""
+    import threading
+    from core import storage
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        cur.set_ranks([{"name": "Low", "required": 0}, {"name": "High", "required": 100}])
+        cur.users["bob"] = {"points": 50, "hours": 0, "rank": "Low"}
+        file_lock = storage.lock_for(cur.users_file)
+        file_lock.acquire()                       # "the bot thread is writing the file"
+        try:
+            t = threading.Thread(target=lambda: cur.add_points("bob", 100), daemon=True)
+            t.start()
+            t.join(0.5)
+            got = cur.users_lock.acquire(timeout=1.0)  # what that writer needs next
+            if got:
+                cur.users_lock.release()
+        finally:
+            file_lock.release()
+        t.join(5)
+        assert got, "lock order users_lock -> file lock: deadlock with a concurrent save"
+        assert cur.users["bob"]["rank"] == "High" and cur._save_pending
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_paying_for_a_command_does_not_save_under_users_lock():
+    import threading
+    from core import storage
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        cur.users["bob"] = {"points": 50, "hours": 0}
+        file_lock = storage.lock_for(cur.users_file)
+        file_lock.acquire()
+        result = []
+        try:
+            t = threading.Thread(target=lambda: result.append(cur.pay_for_command("bob", 10)), daemon=True)
+            t.start()
+            t.join(0.5)
+            got = cur.users_lock.acquire(timeout=1.0)
+            if got:
+                cur.users_lock.release()
+        finally:
+            file_lock.release()
+        t.join(5)
+        assert got, "pay_for_command saved while holding users_lock"
+        assert result == [True] and cur.users["bob"]["points"] == 40
+        with open(str(cur.users_file), encoding="utf-8") as f:
+            import json
+            assert json.load(f)["bob"]["points"] == 40, "the payment is still saved at once"
+        assert cur.pay_for_command("nobody", 5) is False and "nobody" not in cur.users
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_nothing_writes_to_disk_under_users_lock():
+    """Lock order is file lock -> users_lock (save_users). Writing under
+    users_lock inverts it: a deadlock with a save from the other thread."""
+    import ast
+    import os
+    from harness import REPO_DIR
+    writes = {"save_users", "enhanced_save_users", "create_backup", "save_ranks",
+              "set_ranks", "recheck_all_ranks", "save_currency_users", "atomic_write_json",
+              "atomic_write_text"}
+    bad = []
+    for rel in ("core/currency_manager.py", "bot/system_handlers.py", "bot/twitch_bot.py",
+                "bot/dispatcher.py", "core/backups.py"):
+        src = open(os.path.join(REPO_DIR, rel), encoding="utf-8").read()
+        for w in ast.walk(ast.parse(src)):
+            if isinstance(w, ast.With) and any("users_lock" in ast.dump(i.context_expr) for i in w.items):
+                for c in ast.walk(w):
+                    if isinstance(c, ast.Call) and getattr(c.func, "attr", None) in writes:
+                        bad.append("%s:%d %s" % (rel, c.lineno, c.func.attr))
+    assert not bad, bad

@@ -679,10 +679,15 @@ class CurrencyManager:
         return True
     
     def check_rank_promotion(self, username):
-        """Проверить, нужно ли повысить ранг пользователя"""
+        """Проверить, нужно ли повысить ранг пользователя.
+
+        Только помечает данные для сохранения - как и сами очки в add_points.
+        Раньше здесь был save_users(): его зовут под users_lock (add_points),
+        а save_users берёт блокировку файла, потом users_lock. Повышение
+        ранга во время записи из другого потока (бот / начисление из окна)
+        замораживало оба потока навсегда."""
         if self._apply_rank(username):
             self._save_pending = True
-            self.save_users(force=True)
             return True
         return False
 
@@ -805,23 +810,18 @@ class CurrencyManager:
         # read-modify-write из бот-потока пересекался с начислением из UI и
         # терял обновления (потеря баллов).
         with self.users_lock:
-            if username not in self.users:
-                self.users[username] = {
-                    'points': 0,
-                    'hours': 0,
-                    'last_seen': time.time()
-                }
-
-            if self.users[username]['points'] >= cost:
-                self.users[username]['points'] = self._format_points(
-                    self.users[username]['points'] - cost
-                )
-                # Сохраняем сразу (RLock реентерабелен — вызов под лок безопасен),
-                # чтобы списание не зависело от того, вызовет ли бот save_users.
-                self.save_users(force=True)
-                return True
-
-            return False
+            user = self.users.get(username)
+            # нет записи - нет очков (запись для неизвестного имени не создаём)
+            if not isinstance(user, dict) or user.get('points', 0) < cost:
+                return False
+            user['points'] = self._format_points(user['points'] - cost)
+            self._save_pending = True
+        # Сохраняем сразу, чтобы списание не зависело от того, вызовет ли бот
+        # save_users, - но ПОСЛЕ лока: save_users берёт блокировку файла, потом
+        # users_lock; запись под users_lock могла взаимно заблокироваться с
+        # записью из другого потока.
+        self.save_users(force=True)
+        return True
     
     def update_last_seen(self, username):
         """Update last_seen timestamp for a user without adding points"""
