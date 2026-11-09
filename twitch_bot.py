@@ -1823,121 +1823,36 @@ class TwitchBot(commands.Bot):
         print("Twitch requested a reconnect - twitchio is reconnecting")
         self._ui_message("Twitch asked to reconnect, reconnecting automatically...")
 
-    async def event_raid(self, raider):
-        """Вызывается при рейде на канал"""
+    async def event_raw_usernotice(self, channel, tags):
+        """Рейды и подписки приходят из чата как USERNOTICE (S7).
+
+        Раньше здесь были event_raid / event_subscription / event_follow -
+        в twitchio 2.x таких событий нет, они не вызывались ни разу. Награды
+        считает bot.events.usernotice_rewards по настройкам валюты; фолловы
+        через чат не приходят (будут через EventSub, решение 3).
+        """
         try:
-            print(f"RAID EVENT RECEIVED: {raider.name} with {raider.viewers} viewers")
-            
-            # Проверяем наличие currency_manager
-            if not hasattr(self, 'currency_manager'):
-                print("Currency manager not available, can't process raid rewards")
+            from bot.events import usernotice_rewards
+            currency = getattr(self, 'currency_manager', None)
+            if currency is None:
                 return
-                
-            # Получаем настройки для рейдов из валютной системы
-            raid_points_base = self.currency_manager.settings.get('raid_points', 10)
-            raid_points_per_viewer = self.currency_manager.settings.get('raid_points_per_viewer', 1)
-            
-            # Вычисляем количество очков за рейд
-            viewers = raider.viewers
-            points_to_award = raid_points_base + (viewers * raid_points_per_viewer)
-            
-            # Начисляем очки рейдеру
-            self.currency_manager.add_points(raider.name.lower(), points_to_award)
-            
-            # Format points for display
-            formatted_points = f"{float(points_to_award):.2f}"
-            
-            # Логируем событие
-            print(f"Raid reward: {raider.name} получил {formatted_points} очков за рейд с {viewers} зрителями")
-            
-            # Отправляем сообщение в чат
-            message = f"Спасибо за рейд, @{raider.name}! +{formatted_points} очков за рейд с {viewers} зрителями."
-            
-            if len(self.connected_channels) > 0:
-                try:
-                    channel = self.connected_channels[0]
-                    await channel.send(message)
-                except Exception as e:
-                    print(f"Error sending raid message to chat: {e}")
-            
-            # Уведомляем UI если есть callback
-            if self.message_callback:
-                self.message_callback(f"Raid: {raider.name} получил {formatted_points} очков за рейд с {viewers} зрителями")
-                
+            rewards = usernotice_rewards(tags, currency.settings)
+            for r in rewards:
+                currency.add_points(r.user, r.points)
+                if r.subscriber and r.user in currency.users:
+                    currency.users[r.user]['is_subscriber'] = True
+                print(r.ui)
+                if self.message_callback:
+                    self.message_callback(r.ui)
+                if r.chat:
+                    try:
+                        await channel.send(_fit_chat(r.chat))
+                    except Exception as e:
+                        print(f"Could not send thank-you message: {e}")
+            if rewards:
+                currency.save_users(force=True)
         except Exception as e:
-            print(f"CRITICAL ERROR in event_raid: {e}")
-            import traceback
-            traceback.print_exc()
-
-    async def event_subscription(self, subscription):
-        """Вызывается при подписке на канал"""
-        try:
-            sub_points = self.currency_manager.settings.get("sub_points", 20)
-            tier_multiplier = 1  # Tier 1
-            
-            # Разные множители для разных уровней подписки
-            if subscription.tier == "2000":
-                tier_multiplier = 2  # Tier 2
-            elif subscription.tier == "3000":
-                tier_multiplier = 5  # Tier 3
-                
-            points_to_award = sub_points * tier_multiplier
-            
-            # Добавляем очки подписчику
-            self.currency_manager.add_points(subscription.user.name, points_to_award)
-            
-            # Format points for display
-            formatted_points = f"{float(points_to_award):.2f}"
-            
-            # Отмечаем пользователя как подписчика
-            if subscription.user.name in self.currency_manager.users:
-                self.currency_manager.users[subscription.user.name]['is_subscriber'] = True
-            
-            # Сообщение в чат
-            await self.connected_channels[0].send(
-                f"Спасибо за подписку, {subscription.user.name}! Получено {formatted_points} очков."
-            )
-            
-            if self.message_callback:
-                self.message_callback(f"Sub: {subscription.user.name} получил {formatted_points} очков за подписку Tier {subscription.tier // 1000}")
-        except Exception as e:
-            print(f"CRITICAL ERROR in event_subscription: {e}")
-            import traceback
-            traceback.print_exc()
-
-    async def event_follow(self, follower):
-        """Вызывается при подписке пользователя на канал"""
-        try:
-            # Получаем количество очков за подписку из настроек
-            follow_points = self.currency_manager.settings.get("follow_points", 5)
-            
-            # Добавляем очки пользователю
-            self.currency_manager.add_points(follower.name, follow_points)
-            
-            # Format points for display
-            formatted_points = f"{float(follow_points):.2f}"
-            
-            # Логируем событие
-            print(f"[Follow] {follower.name} получил {formatted_points} очков за подписку")
-            
-            # Сообщение в чат (опционально)
-            if len(self.connected_channels) > 0:
-                try:
-                    channel = self.connected_channels[0]
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"Спасибо за подписку, {follower.name}! +{formatted_points} очков"),
-                        self.loop
-                    )
-                except Exception as e:
-                    print(f"Error sending follow message to chat: {e}")
-                    
-            # Уведомляем UI если есть callback
-            if self.message_callback:
-                self.message_callback(f"Follow: {follower.name} получил {formatted_points} очков за подписку")
-                
-        except Exception as e:
-            print(f"CRITICAL ERROR in event_follow: {e}")
-            import traceback
+            print(f"Error handling USERNOTICE {tags.get('msg-id') if tags else None}: {e}")
             traceback.print_exc()
 
     def register_commands(self):

@@ -143,6 +143,24 @@ async def main():
         ok = await wait_for(lambda: any("hello" in r for r in fake.replies()))
         check("answers a command", ok, fake.replies())
 
+        # S7: a raid arrives as USERNOTICE (format of real Twitch messages)
+        n = len(fake.replies())
+        await fake.sockets[-1].send_str(
+            "@badge-info=;badges=;color=#FF0000;display-name=Raider;emotes=;flags=;"
+            "id=11111111-2222-3333-4444-555555555555;login=raider;mod=0;msg-id=raid;"
+            "msg-param-displayName=Raider;msg-param-login=raider;msg-param-profileImageURL=x;"
+            "msg-param-viewerCount=42;room-id=1;subscriber=0;"
+            "system-msg=42\\sraiders\\sfrom\\sRaider\\shave\\sjoined!;tmi-sent-ts=1700000000000;"
+            "user-id=2;user-type= :tmi.twitch.tv USERNOTICE #testchan\r\n")
+        cur = bot.currency_manager
+        ok = await wait_for(lambda: cur.users.get("raider", {}).get("points", 0) > 0)
+        expected = cur.settings.get("raid_points", 10) + 42 * cur.settings.get("raid_points_per_viewer", 1)
+        check("raid USERNOTICE pays the raider (S7)",
+              ok and abs(cur.users["raider"]["points"] - expected) < 0.01,
+              (cur.users.get("raider"), expected))
+        ok = await wait_for(lambda: len(fake.replies()) > n)
+        check("raid thank-you sent to chat", ok and "Raider" in fake.replies()[-1], fake.replies()[-1:])
+
         # 1. the connection drops and Twitch is unreachable for a moment
         fake.down_until = time.monotonic() + 1.5
         await fake.sockets[-1].close()
