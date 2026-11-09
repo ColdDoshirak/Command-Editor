@@ -17,6 +17,7 @@ from typing import Union
 
 from core.system_commands import merge_with_defaults, name_of as sys_cmd_name, QUEUE_COMMANDS
 from bot.dispatcher import CommandDispatcher
+from bot.audio import SoundCache, may_start
 
 
 def _patch_twitchio_keep_alive():
@@ -171,7 +172,7 @@ class TwitchBot(CommandDispatcher, commands.Bot):
             self.show_interruption_message = self.config_manager.get_interruption_message()
             
             # Инициализация для проигрывания звуков
-            self.loaded_sounds = {}
+            self.loaded_sounds = SoundCache(limit=32)
             if sound_channel:
                 self.sound_channel = sound_channel
             else:
@@ -1171,30 +1172,17 @@ class TwitchBot(CommandDispatcher, commands.Bot):
                 print(f"Sound file not found: {filepath}")
                 return False
 
-            # Определяем канал
-            if channel_id > 0:
-                channel = pygame.mixer.Channel(channel_id)
-                # Для выделенных каналов (>0) мы не применяем логику прерывания,
-                # они играют параллельно.
-            else:
-                channel = self.sound_channel
-                # Проверка активного воспроизведения ТОЛЬКО для дефолтного канала (0)
-                if channel.get_busy():
-                    allow_interrupt = getattr(self, 'allow_sound_interruption', False)
-                    print(f"Checking interruption in play_sound. Allowed: {allow_interrupt}")
+            # Канал группы (>0) или общий (0). Правило прерывания - одно для
+            # всех каналов (bot/audio.py): раньше на канале группы без очереди
+            # новый звук всегда обрывал старый, настройку не спрашивая.
+            channel = pygame.mixer.Channel(channel_id) if channel_id > 0 else self.sound_channel
+            allow_interrupt = getattr(self, 'allow_sound_interruption', False)
+            if not may_start(channel, allow_interrupt):
+                print(f"Blocking sound on channel {channel_id}: another sound is playing")
+                return False
 
-                    if allow_interrupt:
-                        print("Interrupting sound on shared channel...")
-                        channel.fadeout(100)
-                    else:
-                        print("Blocking sound on shared channel...")
-                        return False
-
-            # Загрузка и воспроизведение звука
+            # Кэш с ограничением, замечает замену файла (bot/audio.py)
             snd = self.loaded_sounds.get(filepath)
-            if snd is None:
-                snd = pygame.mixer.Sound(filepath)
-                self.loaded_sounds[filepath] = snd
 
             # Применяем громкость команды (из параметра volume)
             vol = float(volume) / 100.0

@@ -50,6 +50,16 @@ class CommandDispatcher(object):
             else:
                 users[username] = old_user
 
+    def _channel_busy(self, channel_id):
+        try:
+            if channel_id and channel_id > 0:
+                import pygame
+                return pygame.mixer.Channel(channel_id).get_busy()
+            channel = getattr(self, "sound_channel", None)
+            return bool(channel is not None and channel.get_busy())
+        except Exception:
+            return False
+
     def _refund(self, username, cost):
         self.currency_manager.add_points(username, cost)
         self.currency_manager.save_users()
@@ -157,6 +167,7 @@ class CommandDispatcher(object):
         executed = has_response = has_sound = sound_played = False
 
         sound = str(cmd.get("SoundFile", "") or "").strip()
+        channel_id = self._category(group).get("audio_channel", 0)
         if sound:
             has_sound = True
             try:
@@ -166,7 +177,6 @@ class CommandDispatcher(object):
             override = self._group_volume_override(group)  # !volume works without a queue (S9)
             if override is not None:
                 volume = override * 100.0
-            channel_id = self._category(group).get("audio_channel", 0)
             sound_played = self.play_sound(sound, volume, channel_id)
             executed = executed or sound_played
             print(f"{'Played' if sound_played else 'Could not play'} sound for '{key}'")
@@ -185,7 +195,7 @@ class CommandDispatcher(object):
         # nothing ran (sound blocked or missing): refund and explain
         reason = "Command could not be executed"
         if has_sound and not sound_played:
-            busy = self.sound_channel.get_busy() if getattr(self, "sound_channel", None) else False
+            busy = self._channel_busy(channel_id)
             reason = ("Sound blocked: another sound is already playing" if busy
                       else "Sound file could not be played")
         if cost > 0:

@@ -35,6 +35,7 @@ import theme as _theme
 from app_log import setup_logging, install_print_bridge
 from core import paths, storage
 from core.commands import CommandRepository, FIELDS as COMMAND_FIELDS
+from bot.audio import SoundCache
 
 # Вместо sip.registerMetaType используем:
 QMetaType.type("QTextCursor")
@@ -580,8 +581,8 @@ class CommandEditor(QMainWindow):
         # Apply the selected UI theme (classic / sidebar / spreadsheet)
         self.apply_theme(self.theme)
         
-        # Словарь загруженных звуков
-        self.loaded_sounds = {}
+        # Загруженные звуки: кэш с ограничением (bot/audio.py)
+        self.loaded_sounds = SoundCache(limit=32)
         # Один канал для всех воспроизведений
         self.sound_channel = pygame.mixer.Channel(0)
         
@@ -885,11 +886,8 @@ class CommandEditor(QMainWindow):
                     QMessageBox.information(self, "Info", "Interruption disabled.")
                 return
 
-        # Загружаем Sound один раз
+        # Кэш с ограничением, замечает замену файла (bot/audio.py)
         snd = self.loaded_sounds.get(fn)
-        if snd is None:
-            snd = pygame.mixer.Sound(fn)
-            self.loaded_sounds[fn] = snd
 
         # Устанавливаем громкость из вашей колонки Volume
         vol = float(self.commands[selected[0].row()].get("Volume", 100)) / 100.0
