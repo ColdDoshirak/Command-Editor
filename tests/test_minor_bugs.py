@@ -69,3 +69,25 @@ async def test_history_auto_backup_skips_unchanged_commands():
             "a manual backup is always written"
     finally:
         drop_tmpdir(tmp)
+
+
+async def test_update_check_compares_versions_properly():
+    from core.version import is_newer, parse, APP_VERSION
+    assert parse("V1.1.6a") is not None and parse("V1.2.0-Beta3") is not None
+    assert is_newer("V1.2.0", "V1.1.6a")
+    assert not is_newer("V1.1.6a", "V1.2.0"), "an older tag is not an update"
+    assert not is_newer("V1.2.0", "V1.2.0")
+    assert is_newer("V1.2.0", "V1.2.0-Beta3"), "the release is newer than its beta"
+    assert is_newer("V1.2.0-Beta3", "V1.2.0-Beta2")
+    assert not is_newer("V1.2.0-Beta3", "V1.2.0")
+    assert not is_newer("V1.2.0", APP_VERSION), "2.0 is not asked to go back to 1.2"
+    assert is_newer("V2.0.0", APP_VERSION)
+    assert not is_newer("nightly", "V1.2.0"), "unparseable tag: no prompt"
+
+
+async def test_about_tab_uses_the_shared_version_check():
+    import os
+    from harness import REPO_DIR
+    with open(os.path.join(REPO_DIR, "ui", "about_tab.py"), encoding="utf-8") as f:
+        src = f.read()
+    assert "V1.1.6a" not in src and "APP_VERSION" in src and "is_newer" in src

@@ -11,6 +11,8 @@ import requests
 import json
 import webbrowser
 
+from core.version import APP_VERSION, is_newer
+
 class UpdateCheckerThread(QThread):
     """Thread for checking updates without blocking the UI"""
     update_available = pyqtSignal(str, str, str)  # new_version, download_url, release_notes
@@ -35,12 +37,12 @@ class UpdateCheckerThread(QThread):
             release_data = response.json()
             
             # Get version from tag name (remove 'v' prefix if present)
-            latest_version = release_data['tag_name'].lstrip('v')
+            latest_version = release_data['tag_name']
             download_url = release_data['html_url']
             release_notes = release_data.get('body', 'No release notes available.')
             
             # Compare versions
-            if self._is_newer_version(latest_version, self.current_version):
+            if is_newer(latest_version, self.current_version):
                 self.update_available.emit(latest_version, download_url, release_notes)
             else:
                 self.no_update.emit()
@@ -54,23 +56,6 @@ class UpdateCheckerThread(QThread):
         except Exception as e:
             self.error_occurred.emit(f"Unexpected error: {str(e)}")
     
-    def _is_newer_version(self, latest, current):
-        """Simple version comparison"""
-        try:
-            # Split versions into components and compare
-            latest_parts = [int(x) for x in latest.split('.')]
-            current_parts = [int(x) for x in current.split('.')]
-            
-            # Pad shorter version with zeros
-            max_len = max(len(latest_parts), len(current_parts))
-            latest_parts.extend([0] * (max_len - len(latest_parts)))
-            current_parts.extend([0] * (max_len - len(current_parts)))
-            
-            return latest_parts > current_parts
-        except Exception:
-            # Fallback to string comparison if version parsing fails
-            return latest != current
-
 class UpdateDialog(QDialog):
     """Dialog to show update information"""
     
@@ -155,7 +140,7 @@ class UpdateChecker:
     def __init__(self, parent=None, github_repo="ColdDoshirak/Command-Editor"):
         self.parent = parent
         self.github_repo = github_repo
-        self.current_version = "V1.1.6a"  # Default version, will be updated from about tab
+        self.current_version = APP_VERSION
         self.notification_widget = None
         self.check_button = None  # Reference to the check button for resetting state
         
@@ -228,7 +213,7 @@ class AboutTab(QWidget):
         super().__init__(parent)
         
         self.parent = parent
-        self.current_version = "V1.1.6a"  # Store current version
+        self.current_version = APP_VERSION  # core/version.py
         
         # Initialize update checker
         self.update_checker = UpdateChecker(parent=self)
