@@ -513,11 +513,10 @@ class CurrencyManager:
             self.users[username]['points'] = self._format_points(self.users[username]['points'] + amount)
             self.users[username]['last_seen'] = time.time()
             
-            # Применение бонуса для регуляров
-            if self.users[username].get("is_regular"):
-                bonus = self._parse_amount(self.settings.get("regular_bonus", 0))
-                self.users[username]['points'] = self._format_points(self.users[username]['points'] + bonus)
-                
+            # Бонус регулярам здесь НЕ начисляется (S2, решение 2): add_points
+            # вызывают и возвраты, и переводы, и ручные начисления. Бонус -
+            # только пропорциональный, в process_currency_update.
+
             current_points = self.users[username]['points']
             
             # Проверки ранга и автоматического получения статуса регуляра внутри блокировки

@@ -369,3 +369,30 @@ async def test_damaged_config_is_kept_aside():
             assert "midnight" in f.read()
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- S2: regular bonus only on timed payouts (decision 2, option A) ---------
+async def test_s2_add_points_has_no_regular_bonus():
+    tmp = new_tmpdir()
+    try:
+        cur = _payout_currency(tmp)
+        cur.settings["regular_bonus"] = 5
+        cur.users["viewer"]["is_regular"] = True
+        cur.add_points("viewer", 10)       # refund / transfer / manual add
+        assert cur.users["viewer"]["points"] == 10, cur.users["viewer"]
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_s2_timed_payout_gets_bonus_once():
+    import time
+    tmp = new_tmpdir()
+    try:
+        cur = _payout_currency(tmp)          # 10 points per 5 minutes
+        cur.settings["regular_bonus"] = 5    # +5 per 5 minutes for regulars
+        cur.users["viewer"]["is_regular"] = True
+        cur.last_update_time = time.time() - 300   # exactly one interval
+        cur.process_currency_update(is_live=True, all_viewers=["viewer"])
+        assert abs(cur.users["viewer"]["points"] - 15) < 0.05, cur.users["viewer"]
+    finally:
+        drop_tmpdir(tmp)
