@@ -32,6 +32,7 @@ SCRIPTS = [
     "check_crash_log.py",
     "check_single_config.py",
     "check_ranks.py",
+    "check_twitch_reconnect.py",
 ]
 TIMEOUT = 180
 

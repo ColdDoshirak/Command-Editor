@@ -398,26 +398,6 @@ class TwitchTab(QWidget):
                 self.bot.update_commands(self.bot_params['commands_data'])
             self.bot.signal_handler = self.bot_params['signal_handler']
             
-            # Регистрируем обработчик события, который будет вызываться при обновлении event loop
-            def update_loop_reference(new_loop):
-                print("Event loop reference updated in twitch_tab")
-                loop = new_loop
-                
-            # Сохраняем оригинальный метод _create_new_loop_and_reconnect
-            original_create_new_loop = self.bot._create_new_loop_and_reconnect
-            
-            # Заменяем его на нашу версию с обновлением ссылки
-            async def enhanced_create_new_loop(*args, **kwargs):
-                result = await original_create_new_loop(*args, **kwargs)
-                # Получаем текущий event loop после переподключения
-                current_loop = asyncio.get_event_loop()
-                # Обновляем ссылку в twitch_tab
-                update_loop_reference(current_loop)
-                return result
-                
-            # Заменяем метод на улучшенную версию
-            self.bot._create_new_loop_and_reconnect = enhanced_create_new_loop
-            
             # Now run the bot (it will use the current thread's event loop)
             loop.run_until_complete(self.bot.start())
         except Exception as e:

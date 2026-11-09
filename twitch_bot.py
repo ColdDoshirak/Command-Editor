@@ -16,6 +16,67 @@ from datetime import datetime, timezone
 from typing import Union
 
 
+def _patch_twitchio_keep_alive():
+    """Обход бага twitchio 2.x: переподключение после штатного закрытия.
+
+    Когда Twitch закрывает WebSocket кадром close, aiohttp отдаёт сообщение
+    типа CLOSE с числовым кодом (1000) в msg.data. WSConnection._keep_alive
+    проверяет только CLOSED и вызывает data.split(...) у числа - задача
+    падает с AttributeError, до _connect() дело не доходит, бот молчит
+    навсегда (воспроизведено: tests/ui/check_twitch_reconnect.py).
+
+    Здесь - тот же цикл, но любое закрывающее сообщение (CLOSE, CLOSING,
+    CLOSED, ERROR) завершает его, после чего, как и в оригинале, вызывается
+    _connect() с его экспоненциальной задержкой.
+    """
+    try:
+        import aiohttp
+        import twitchio
+        from functools import partial
+        from twitchio import websocket as tw_ws
+    except Exception:
+        return False  # нет настоящего twitchio (офлайн-тесты со заглушками)
+    if not str(getattr(twitchio, "__version__", "")).startswith("2."):
+        return False
+    conn_cls = getattr(tw_ws, "WSConnection", None)
+    if conn_cls is None or getattr(conn_cls, "_ce_keep_alive_patched", False):
+        return False
+    closing = (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,
+               aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR)
+
+    async def _keep_alive(self):
+        await self._ws_ready_event.wait()
+        self._ws_ready_event.clear()
+
+        if not self._last_ping:
+            self._last_ping = time.time()
+        while not self._websocket.closed and not self._reconnect_requested:
+            msg = await self._websocket.receive()
+            if msg.type in closing:
+                tw_ws.log.error(f"Websocket connection was closed: {msg.type} {msg.data} {msg.extra}")
+                break
+            data = msg.data
+            if data and isinstance(data, str):
+                tw_ws.log.debug(f" < {data}")
+                self.dispatch("raw_data", data)
+                for event in data.split("\r\n"):
+                    if not event:
+                        continue
+                    task = asyncio.create_task(self._process_data(event))
+                    task.add_done_callback(partial(self._task_callback, event))
+                    self._background_tasks.append(task)
+
+        if not self._reconnect_requested:  # RECONNECT уже запустил _connect сам
+            self._background_tasks.append(asyncio.create_task(self._connect()))
+
+    conn_cls._keep_alive = _keep_alive
+    conn_cls._ce_keep_alive_patched = True
+    return True
+
+
+_patch_twitchio_keep_alive()
+
+
 class _PersistedMessage:
     """Lightweight stand-in for a twitchio message, used to rehydrate queued
     commands from persistence after a restart. It carries just enough surface
@@ -134,14 +195,10 @@ class TwitchBot(commands.Bot):
             
             # Аудио и статус
             self.player = None
-            self.last_heartbeat = time.time()
             self.paused = False
             
-            # Отслеживание соединения
-            self.reconnect_task = None
+            # Наблюдение за соединением (переподключается сам twitchio, C2)
             self.connection_check_task = None
-            self.reconnect_attempts = 0
-            self.max_reconnect_attempts = 5
             # B7: фоновая проверка статуса стрима в loop бота — UI больше
             # не блокируется на future.result(timeout=5) каждые 10-300 с.
             self.stream_status_task = None
@@ -892,11 +949,6 @@ class TwitchBot(commands.Bot):
                 await asyncio.sleep(0.1)
 
     async def event_message(self, message):
-        # When we receive a message, we know the connection is active
-        # Reset the heartbeat and reconnection attempt counters
-        self.last_heartbeat = time.time()
-        self.reconnect_attempts = 0
-        
         # Игнорируем эхо собственного бота
         if message.echo:
             return
@@ -1297,14 +1349,14 @@ class TwitchBot(commands.Bot):
 
             # Отключаемся от канала
             if hasattr(self, 'loop') and self.loop:
-                # Cancel the reconnect and connection tasks first if they exist
-                if self.reconnect_task and not self.reconnect_task.done():
-                    self.reconnect_task.cancel()
-                if self.connection_check_task and not self.connection_check_task.done():
-                    self.connection_check_task.cancel()
-                # B7: фоновая проверка статуса стрима
-                if getattr(self, 'stream_status_task', None) and not self.stream_status_task.done():
-                    self.stream_status_task.cancel()
+                # stop() вызывается из UI-потока: задачи asyncio отменяем
+                # через loop бота, а не напрямую (инвариант потоков).
+                for task in (self.connection_check_task, getattr(self, 'stream_status_task', None)):
+                    if task is not None and not task.done():
+                        try:
+                            self.loop.call_soon_threadsafe(task.cancel)
+                        except RuntimeError:
+                            pass  # loop уже закрыт
                 
                 # Now disconnect
                 try:
@@ -1695,302 +1747,68 @@ class TwitchBot(commands.Bot):
             # По умолчанию не модератор при ошибке
             return False
             
-    async def _check_connection(self):
-        """Check and maintain connection"""
+    def _ui_message(self, text):
+        """Служебное сообщение в окно чата программы (не в Twitch)."""
         try:
-            connection_check_failures = 0  # Счётчик неудачных проверок
-            last_successful_check = time.time()  # Время последней успешной проверки
-            
-            while self.is_running:
-                try:
-                    await asyncio.sleep(10)  # Проверка каждые 10 секунд
-                    
-                    # Периодически очищаем кулдауны
-                    if time.time() % 300 < 10:  # Примерно каждые 5 минут
-                        self.cleanup_cooldowns()
-                    
-                    # Активная проверка соединения с Twitch IRC
-                    connection_alive = False
-                    
-                    # 1. Попытка активной проверки - отправка PING команды
-                    try:
-                        if hasattr(self, '_ws') and self._ws and self._ws.socket and not self._ws.socket.closed:
-                            # Если есть подключенные каналы, считаем что соединение активно
-                            if len(self.connected_channels) > 0:
-                                # Но проверяем это отправкой PING.
-                                # Мы уже выполняемся внутри loop бота, поэтому
-                                # отправляем PING напрямую через await.
-                                # (Раньше здесь был
-                                # run_coroutine_threadsafe(...).result(timeout=3)
-                                # из того же loop: loop-поток ждал корутину,
-                                # которую должен запустить сам же loop —
-                                # самодедлок на 3 с каждые 10 с, из-за которого
-                                # очередь звуков и !skip/!volume буксовали.)
-                                try:
-                                    await asyncio.wait_for(
-                                        self._ws.send("PING :tmi.twitch.tv"),
-                                        timeout=3
-                                    )
-                                    # Если PING отправлен успешно, соединение живо
-                                    connection_alive = True
-                                    last_successful_check = time.time()
-                                    connection_check_failures = 0  # Сбрасываем счётчик неудач
-                                except Exception as e:
-                                    print(f"PING check failed: {e}")
-                                    connection_check_failures += 1
-                    except Exception as ws_error:
-                        print(f"WebSocket check error: {ws_error}")
-                        connection_check_failures += 1
-                    
-                    # 2. Проверка API Twitch (но не блокируем на ошибках API).
-                    # Синхронный requests.get выполняется в executor, чтобы
-                    # не блокировать loop (до 3 с на таймаут).
-                    try:
-                        if self._helix_headers:
-                            response = await self.loop.run_in_executor(
-                                None,
-                                lambda: requests.get(
-                                    "https://api.twitch.tv/helix/users",
-                                    headers=self._helix_headers,
-                                    params={"login": self.channel},
-                                    timeout=3  # Короткий таймаут
-                                ),
-                            )
-                            
-                            # Если API доступен и ответ успешен, это хороший признак
-                            if response.status_code == 200:
-                                if not connection_alive:  # Если основная проверка не прошла
-                                    connection_alive = True
-                                    last_successful_check = time.time()
-                                    connection_check_failures = 0  # Сбрасываем счётчик неудач
-                            else:
-                                print(f"API check returned status code: {response.status_code}")
-                                connection_check_failures += 1
-                    except Exception as api_error:
-                        print(f"API check error: {api_error}")
-                        # Не считаем это критической ошибкой для IRC соединения
-                    
-                    # Проверяем время с момента последней успешной проверки
-                    time_since_last_success = time.time() - last_successful_check
-                    
-                    # Выводим информацию о состоянии
-                    print(f"Connection check: Connected={connection_alive}, " + 
-                          f"Failures={connection_check_failures}, " +
-                          f"Time since last success={time_since_last_success:.1f}s")
-                    
-                    # Принимаем решение о необходимости переподключения
-                    # - Если накопилось 3+ неудачных проверки подряд
-                    # - ИЛИ прошло больше 30 секунд с последней успешной проверки
-                    if connection_check_failures >= 3 or time_since_last_success > 30:
-                        print(f"Connection lost: failures={connection_check_failures}, " +
-                              f"last_success={time_since_last_success:.1f}s ago")
-                        
-                        # Уведомляем интерфейс о потере соединения
-                        if hasattr(self, 'signal_handler') and self.signal_handler:
-                            self.signal_handler.chat_signal.emit("Connection lost, attempting to reconnect...")
-                        
-                        # Инициируем переподключение
-                        if not self.reconnect_task or self.reconnect_task.done():
-                            self.reconnect_task = asyncio.create_task(self._reconnect())
-                        
-                        # Сбрасываем счётчики для следующей серии проверок после переподключения
-                        connection_check_failures = 0
-                    else:
-                        # Обновляем время последнего хартбита, даже если текущая проверка не удалась
-                        # (но была успешная проверка недавно)
-                        self.last_heartbeat = time.time()
-                        
-                except asyncio.CancelledError:
-                    raise  # Пробрасываем отмену задачи дальше
-                except Exception as e:
-                    print(f"Error in connection check: {e}")
-                    connection_check_failures += 1
-                    await asyncio.sleep(3)  # Короткая пауза перед повторной попыткой
-                    
-        except asyncio.CancelledError:
-            print("Connection check task cancelled")
+            handler = getattr(self, 'signal_handler', None)
+            if handler is not None:
+                handler.chat_signal.emit(text)
+            elif self.message_callback:
+                self.message_callback(text)
         except Exception as e:
-            print(f"CRITICAL ERROR in _check_connection: {e}")
-            traceback.print_exc()
-            # Пытаемся восстановить соединение при критической ошибке
-            if not self.reconnect_task or self.reconnect_task.done():
-                self.reconnect_task = asyncio.create_task(self._reconnect())
-            
-    async def _create_new_loop_and_reconnect(self):
-        """Создать новый event loop и переподключиться"""
-        try:
-            # Создаем новый event loop
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            self.loop = new_loop
-            
-            print("Created new event loop for reconnection")
-            
-            # Запускаем переподключение
-            await self._reconnect()
-            
-        except Exception as e:
-            print(f"Error creating new event loop: {e}")
-            traceback.print_exc()
-            
-    async def _reconnect(self):
-        """Attempt to reconnect"""
-        try:
-            # Block event_message during reconnection
-            self.initialized_event.clear()
+            print(f"UI message failed: {e}")
 
-            # IMPROVED CHECK FOR ACTIVE CONNECTION: If we have a working WebSocket and channels, abort reconnect
-            if (hasattr(self, '_ws') and self._ws and hasattr(self._ws, 'socket') and 
-                    self._ws.socket and not self._ws.socket.closed and 
-                    len(getattr(self, 'connected_channels', [])) > 0):
-                print("Connection already established - canceling reconnect attempt")
-                self.reconnect_attempts = 0  # Reset counter
-                self.last_heartbeat = time.time()  # Update last heartbeat
-                
-                # Signal to UI that connection is already good
-                if hasattr(self, 'signal_handler') and self.signal_handler:
-                    self.signal_handler.chat_signal.emit("Connection is already established and working")
-                    
-                # Make sure connection check task is running
-                if not self.connection_check_task or self.connection_check_task.done():
-                    self.connection_check_task = asyncio.create_task(self._check_connection())
-                    
-                return  # Exit and don't attempt reconnection
-            
-            # Increment attempt counter
-            self.reconnect_attempts += 1
-            
-            if self.reconnect_attempts >= self.max_reconnect_attempts:
-                print(f"Failed to reconnect after {self.max_reconnect_attempts} attempts")
-                self.is_running = False
-                
-                # Signal to UI about reconnection failure
-                if hasattr(self, 'signal_handler') and self.signal_handler:
-                    self.signal_handler.chat_signal.emit("Reconnection failed after multiple attempts. Please reconnect manually.")
-                return
-                
-            print(f"Reconnect attempt {self.reconnect_attempts}/{self.max_reconnect_attempts}")
-            
-            # Signal to UI about reconnection attempt
-            if hasattr(self, 'signal_handler') and self.signal_handler:
-                self.signal_handler.chat_signal.emit(f"Attempting to reconnect... (try {self.reconnect_attempts}/{self.max_reconnect_attempts})")
-            
-            # Close existing connection if present
-            try:
-                if hasattr(self, '_ws') and self._ws and hasattr(self._ws, 'socket') and self._ws.socket and not self._ws.socket.closed:
-                    await self.close()
-                    await asyncio.sleep(1)  # Brief pause after closing connection
-            except Exception as e:
-                print(f"Error closing connection during reconnect: {e}")
-                # Continue reconnection attempt even if closing fails
-            
-            await asyncio.sleep(3)  # Pause before new connection attempt
-            
-            try:
-                # Update token before reconnection (may resolve expired token issues)
-                config = self.config_manager.get_twitch_config()
-                token = config.get('access_token')
-                if token:
-                    if not token.startswith('oauth:'):
-                        token = f'oauth:{token}'
-                    self._token = token
-                
-                # Connect
-                print("Starting connection sequence...")
-                await self.connect()
-                
-                # Check connection success
-                if hasattr(self, '_ws') and self._ws and hasattr(self._ws, 'socket') and self._ws.socket and not self._ws.socket.closed:
-                    print("Connection established, joining channel...")
-                    await self.join_channels([self.channel])
-                    
-                    # Verify successful channel join
-                    if len(self.connected_channels) > 0:
-                        print(f"Successfully joined channel {self.channel} - reconnection complete")
-                        # Update last heartbeat
-                        print("Join successful, updating heartbeat...")
-                        self.last_heartbeat = time.time()
-                        self.reconnect_attempts = 0  # Reset attempt counter
-                        
-                        # Signal to UI about successful reconnection
-                        if hasattr(self, 'signal_handler') and self.signal_handler:
-                            self.signal_handler.chat_signal.emit("Reconnected successfully!")
-                        
-                        # Reset any pending reconnect tasks to avoid multiple attempts
-                        if self.reconnect_task and not self.reconnect_task.done():
-                            self.reconnect_task.cancel()
-                            self.reconnect_task = None
-                        
-                        # Restart connection check if not running
-                        print("Restarting connection check task...")
-                        if not self.connection_check_task or self.connection_check_task.done():
-                            self.connection_check_task = asyncio.create_task(self._check_connection())
-                        
-                        # НОВЫЙ КОД: Запрашиваем обновление списка зрителей после успешного переподключения
-                        print("Fetching viewers after reconnection...")
-                        try:
-                            # Получаем список зрителей
-                            viewers = await self.get_all_viewers()
-                            print(f"Retrieved {len(viewers)} viewers after reconnection")
-                            
-                            # Если есть сигнал-хэндлер, обновляем список
-                            if hasattr(self, 'signal_handler') and self.signal_handler:
-                                self.signal_handler.all_viewers_signal.emit(viewers)
-                                self.signal_handler.chat_signal.emit(f"Updated viewer list: {len(viewers)} viewers")
-                        except Exception as viewers_error:
-                            print(f"Error fetching viewers after reconnection: {viewers_error}")
-                        
-                        # Также проверяем статус стрима после переподключения
-                        try:
-                            is_live = await self.check_if_live()
-                            self.is_live = is_live
-                            if hasattr(self, 'signal_handler') and self.signal_handler:
-                                self.signal_handler.stream_status_signal.emit(is_live)
-                                self.signal_handler.chat_signal.emit(f"Stream status updated: {'LIVE' if is_live else 'OFFLINE'}")
-                        except Exception as stream_error:
-                            print(f"Error updating stream status after reconnection: {stream_error}")
-                                
-                        # Successfully connected, exit method
-                        self.initialized_event.set()
-                        return
-                    else:
-                        # If no connected channels after join, raise exception
-                        raise ConnectionError("Failed to join channel after connection")
-                else:
-                    # If connection failed, plan another attempt
-                    raise ConnectionError("WebSocket connection was not properly established")
-                    
-            except Exception as e:
-                print(f"Error during reconnect: {e}")
-                # If connection failed, try again after delay
-                if self.is_running:
-                    retry_delay = min(10 * self.reconnect_attempts, 30)  # Increasing delay, max 30 seconds
-                    print(f"Will retry in {retry_delay} seconds...")
-                    
-                    if hasattr(self, 'signal_handler') and self.signal_handler:
-                        self.signal_handler.chat_signal.emit(f"Reconnection failed. Retrying in {retry_delay} seconds...")
-                    
-                    await asyncio.sleep(retry_delay)
-                    # Use create_task but store the reference to avoid multiple reconnection attempts
-                    if not self.reconnect_task or self.reconnect_task.done():
-                        self.reconnect_task = asyncio.create_task(self._reconnect())
-            
-        except Exception as e:
-            print(f"CRITICAL ERROR in _reconnect: {e}")
-            traceback.print_exc()
-            
-            # If critical error during reconnection, try again
-            if self.is_running:
-                # Increased delay after critical error
-                retry_delay = 15
-                if hasattr(self, 'signal_handler') and self.signal_handler:
-                    self.signal_handler.chat_signal.emit(f"Critical connection error. Retrying in {retry_delay} seconds...")
-                
-                await asyncio.sleep(retry_delay)
-                # Use create_task but store the reference
-                if not self.reconnect_task or self.reconnect_task.done():
-                    self.reconnect_task = asyncio.create_task(self._reconnect())
-    
+    def _connection_alive(self):
+        conn = getattr(self, '_connection', None)
+        if conn is None:
+            return False
+        try:
+            # Только открытый сокет: is_ready twitchio 2.10 после повторного
+            # входа больше не выставляет (его логика 353 - для первого входа).
+            return bool(conn.is_alive)
+        except Exception:
+            return False
+
+    async def _check_connection(self):
+        """Следить за соединением и сообщать интерфейсу (C2, решение 4).
+
+        Переподключается сам twitchio: heartbeat aiohttp замечает обрыв,
+        WSConnection._keep_alive вызывает _connect() с экспоненциальной
+        задержкой, после входа снова приходит event_ready. Здесь только
+        статус для UI и периодическая уборка кулдаунов. Раньше тут было
+        самописное переподключение: оно сбрасывало initialized_event и не
+        всегда возвращало его, искало self._ws (в twitchio 2.10 его нет) -
+        и бот замолкал насовсем.
+        """
+        was_alive = self._connection_alive()
+        lost_at = None
+        last_cleanup = time.time()
+        try:
+            while self.is_running:
+                await asyncio.sleep(getattr(self, '_watch_interval', 10))
+                now = time.time()
+                if now - last_cleanup >= 300:
+                    last_cleanup = now
+                    self.cleanup_cooldowns()
+                alive = self._connection_alive()
+                if was_alive and not alive:
+                    lost_at = now
+                    print("Connection to Twitch lost - twitchio is reconnecting")
+                    self._ui_message("Connection to Twitch lost, reconnecting automatically...")
+                elif alive and not was_alive and lost_at is not None:
+                    print(f"Connection to Twitch restored after {now - lost_at:.0f}s")
+                    self._ui_message("Connection to Twitch restored.")
+                    lost_at = None
+                was_alive = alive
+        except asyncio.CancelledError:
+            print("Connection watch task cancelled")
+
+    async def event_reconnect(self):
+        """Twitch попросил переподключиться (RECONNECT) - twitchio делает это
+        сам; обработку сообщений не останавливаем."""
+        print("Twitch requested a reconnect - twitchio is reconnecting")
+        self._ui_message("Twitch asked to reconnect, reconnecting automatically...")
+
     async def event_raid(self, raider):
         """Вызывается при рейде на канал"""
         try:

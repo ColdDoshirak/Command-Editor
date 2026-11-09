@@ -40,6 +40,7 @@ TEST_MODULES = [
     ("stage0", "test_crash_log"),
     ("stage1", "test_storage"),
     ("stage1", "test_ranks"),
+    ("stage0", "test_reconnect"),
 ]
 
 
