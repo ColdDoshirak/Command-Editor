@@ -43,6 +43,7 @@ TEST_MODULES = [
     ("stage0", "test_reconnect"),
     ("stage2", "test_commands_repo"),
     ("stage3", "test_events"),
+    ("stage3", "test_system_commands"),
 ]
 
 

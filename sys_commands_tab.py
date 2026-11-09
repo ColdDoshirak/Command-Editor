@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                            QMenu, QMessageBox)
 from PyQt5.QtCore import Qt
 from config_manager import ConfigManager
+import copy
+from core.system_commands import DEFAULT_SYSTEM_COMMANDS, merge_with_defaults
 
 
 class SysCommandsTab(QWidget):
@@ -17,155 +19,8 @@ class SysCommandsTab(QWidget):
         self.config_manager = shared if shared is not None else ConfigManager()
         
         # Define original system commands with their default settings
-        self.original_commands = [
-            {
-                "command": "!points",
-                "permission": "Everyone",
-                "response": "",
-                "enabled": True,
-                "info": "Show user's points balance",
-                "group": "SYSTEM",
-                "cooldown": 5,
-                "user_cooldown": 5,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!add_points",
-                "permission": "Moderator",
-                "response": "",
-                "enabled": True,
-                "info": "Add points to a user",
-                "group": "SYSTEM",
-                "cooldown": 0,
-                "user_cooldown": 0,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!remove_points",
-                "permission": "Moderator",
-                "response": "",
-                "enabled": True,
-                "info": "Remove points from a user",
-                "group": "SYSTEM",
-                "cooldown": 0,
-                "user_cooldown": 0,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!top",
-                "permission": "Everyone",
-                "response": "",
-                "enabled": True,
-                "info": "Show top players by points",
-                "group": "SYSTEM",
-                "cooldown": 10,
-                "user_cooldown": 30,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!give",
-                "permission": "Everyone",
-                "response": "",
-                "enabled": True,
-                "info": "Transfer points to another user",
-                "group": "SYSTEM",
-                "cooldown": 0,
-                "user_cooldown": 5,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!uptime",
-                "permission": "Everyone",
-                "response": "",
-                "enabled": True,
-                "info": "Show stream uptime",
-                "group": "SYSTEM",
-                "cooldown": 5,
-                "user_cooldown": 10,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!queue",
-                "permission": "Everyone",
-                "response": "",
-                "enabled": True,
-                "info": "Show pending commands in queue",
-                "group": "SYSTEM",
-                "cooldown": 5,
-                "user_cooldown": 10,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!skip",
-                "permission": "Moderator",
-                "response": "",
-                "enabled": True,
-                "info": "Skip current sound (global or group)",
-                "group": "SYSTEM",
-                "cooldown": 0,
-                "user_cooldown": 0,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!clear",
-                "permission": "Moderator",
-                "response": "",
-                "enabled": True,
-                "info": "Clear all commands from a group queue",
-                "group": "SYSTEM",
-                "cooldown": 0,
-                "user_cooldown": 0,
-                "cost": 0,
-                "usage": "Chat",
-                "is_original": True
-            },
-            {
-                "command": "!volume",
-                "permission": "Moderator",
-                "response": "",
-                "enabled": True,
-                "info": "Set volume for audio group (usage: !volume [GROUP] <0-100>)",
-                "group": "SYSTEM",
-                "cooldown": 0,
-                "user_cooldown": 0,
-                "cost": 0,
-                "usage": "Chat",
-                "default_group": "SONG",  # Default group for volume command
-                "is_original": True
-            },
-            {
-                "command": "!random",
-                "permission": "Everyone",
-                "response": "",
-                "enabled": False,  # Default disabled as requested
-                "info": "Execute a random command from the configured group",
-                "group": "SYSTEM",
-                "cooldown": 10,
-                "user_cooldown": 10,
-                "cost": 0,
-                "usage": "Chat",
-                "random_group": "ALL",  # Default group for random command
-                "show_picked_command": True,  # Show which command was picked
-                "is_original": True,
-                "is_default_disabled": True  # Mark this as default disabled
-            }
-        ]
+        # Значения по умолчанию - в core.system_commands (нужны и боту без Qt)
+        self.original_commands = copy.deepcopy(DEFAULT_SYSTEM_COMMANDS)
         
         # Load system commands from config
         self.system_commands = self.load_system_commands()
@@ -347,53 +202,12 @@ class SysCommandsTab(QWidget):
         self.table.setEditTriggers(QTableWidget.DoubleClicked)
         
     def load_system_commands(self):
-        """Load system commands from config, initializing with original commands if needed"""
-        system_commands = self.config_manager.load_system_commands()
-
-        # If no system commands exist in config, initialize with original commands
-        if not system_commands:
-            system_commands = self.original_commands.copy()
+        """Load system commands: every original once (stored settings win),
+        then duplicates; one-time migration of queue command cooldowns
+        (core.system_commands)."""
+        system_commands, changed = merge_with_defaults(self.config_manager.load_system_commands())
+        if changed:
             self.save_system_commands(system_commands)
-        else:
-            # Clean the loaded commands first - remove any duplicates by command name
-            cleaned_commands = {}
-            duplicates = []
-
-            # Separate originals and duplicates, keeping only one of each original command
-            for cmd in system_commands:
-                cmd_key = cmd["command"]
-                if cmd.get("is_duplicate", False):
-                    # Always keep duplicates
-                    duplicates.append(cmd)
-                elif cmd_key not in cleaned_commands:
-                    # Keep the first original command we find
-                    cleaned_commands[cmd_key] = cmd
-                # Skip additional originals with the same name
-
-            # Now merge with required original commands
-            final_commands = []
-
-            # Add all required original commands, using existing settings if available
-            for orig_cmd in self.original_commands:
-                cmd_key = orig_cmd["command"]
-                if cmd_key in cleaned_commands:
-                    # Use existing command but ensure it's marked as original
-                    existing_cmd = cleaned_commands[cmd_key].copy()
-                    existing_cmd["is_original"] = True
-                    # If this command should be disabled by default and hasn't been explicitly enabled, keep it disabled
-                    if orig_cmd.get("is_default_disabled", False) and not existing_cmd.get("was_manually_enabled", False):
-                        existing_cmd["enabled"] = False
-                    final_commands.append(existing_cmd)
-                else:
-                    # Add new original command
-                    final_commands.append(orig_cmd.copy())
-
-            # Add all duplicate commands
-            final_commands.extend(duplicates)
-
-            system_commands = final_commands
-            self.save_system_commands(system_commands)
-
         return system_commands
     
     def save_system_commands(self, commands=None):

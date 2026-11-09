@@ -15,6 +15,8 @@ from currency_manager import CurrencyManager
 from datetime import datetime, timezone
 from typing import Union
 
+from core.system_commands import merge_with_defaults, name_of as sys_cmd_name, QUEUE_COMMANDS
+
 
 def _patch_twitchio_keep_alive():
     """Обход бага twitchio 2.x: переподключение после штатного закрытия.
@@ -981,22 +983,18 @@ class TwitchBot(commands.Bot):
             print("Empty command after normalization, ignoring")
             return
             
-        # Queue Management Commands
-        if key in ["queue", "skip", "clear", "volume"]:
-            await self.handle_queue_commands(message, key, content)
-            return
-        
-
-
-        # Check for system commands from the sys_commands tab
-        system_commands = self.config_manager.load_system_commands()
+        # Системные команды. !queue/!skip/!clear/!volume - такие же, как
+        # остальные: Enabled, права, кулдаун и цена из Sys.Commands (S8;
+        # раньше они перехватывались здесь до настроек). Без файла настроек
+        # действуют значения по умолчанию (core.system_commands).
+        system_commands, _ = merge_with_defaults(self.config_manager.load_system_commands())
         for sys_cmd in system_commands:
             # Skip disabled commands
             if not sys_cmd.get("enabled", False):
                 continue
-                
+
             # Get the command name (original or custom name for duplicates)
-            cmd_name = sys_cmd.get("command_name", sys_cmd["command"])
+            cmd_name = sys_cmd_name(sys_cmd)
             cmd_key = self.normalize_command_key(cmd_name.lstrip('!'))
             
             # Check if the message matches this system command
@@ -1053,15 +1051,16 @@ class TwitchBot(commands.Bot):
                         )
                         return
                 
-                # Execute the command based on its type
-                await self.execute_system_command(message, username, sys_cmd, content)
-                
-                # Update cooldowns after successful execution
+                # Кулдаун - ДО выполнения: пока ответ отправляется (await),
+                # второй вызов той же команды уже видит кулдаун.
                 if cooldown_sec > 0:
                     self.global_cooldowns[cmd_key] = current_time
                 if user_cooldown_sec > 0:
                     self.user_cooldowns.setdefault(cmd_key, {})[username] = current_time
-                
+
+                # Execute the command based on its type
+                await self.execute_system_command(message, username, sys_cmd, content)
+
                 return  # Command processed, exit the event_message method
 
         # Далее обрабатываем кастомные команды как раньше
@@ -2073,11 +2072,7 @@ class TwitchBot(commands.Bot):
                     await reply("All queues are empty.")
             return
 
-        # Moderator check for control commands
-        is_mod = await self.has_permission(message, "moderator")
-        if not is_mod:
-            await reply("You don't have permission to use this command.")
-            return
+        # Права проверены по настройкам Sys.Commands до вызова (S8).
 
         # !skip            - skip what is playing (the only active queue, else channel 0)
         # !skip GROUP      - skip the group's current item
@@ -2189,7 +2184,12 @@ class TwitchBot(commands.Bot):
         """Execute a system command based on its type and configuration"""
         command_type = sys_cmd.get("command", "").lower()
         command_name = sys_cmd.get("command_name", sys_cmd["command"]).lower()
-        
+
+        # Обработчик выбирается по исходной команде: копии (!next -> !skip)
+        # работают так же, как оригинал.
+        if command_type in QUEUE_COMMANDS:
+            await self.handle_queue_commands(message, command_type.lstrip('!'), full_content)
+            return
 
         # Special handling for different system commands
         if command_name == "!random" or command_type == "!random":
