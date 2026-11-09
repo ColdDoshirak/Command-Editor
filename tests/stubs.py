@@ -60,12 +60,18 @@ class _FakeMixer(object):
         self.num_channels = 16
 
     def Channel(self, index):
+        # like pygame: only channels below set_num_channels exist
+        if not (0 <= index < self.num_channels):
+            raise IndexError("invalid channel index")
         if index not in self._channels:
             self._channels[index] = _FakeChannel(index)
         return self._channels[index]
 
     def set_num_channels(self, n):
         self.num_channels = n
+
+    def get_num_channels(self):
+        return self.num_channels
 
     def get_busy(self):
         return any(c.get_busy() for c in self._channels.values())

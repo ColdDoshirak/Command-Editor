@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, QTableWidgetIte
                              QHeaderView, QPushButton, QHBoxLayout, QMessageBox,
                              QCheckBox, QSpinBox, QLabel)
 from PyQt5.QtCore import Qt
+from bot.audio import GROUP_CHANNELS
 
 
 # (header, tooltip)
@@ -114,7 +115,7 @@ class GroupSettingsTab(QWidget):
             size.setSpecialValueText("unlimited")
             size.setValue(int(cat.get("max_queue_size", 0) or 0))
             channel = QSpinBox()
-            channel.setRange(0, 32)
+            channel.setRange(0, GROUP_CHANNELS - 1)
             channel.setSpecialValueText("shared")
             channel.setValue(int(cat.get("audio_channel", 0) or 0))
             persist = QCheckBox()

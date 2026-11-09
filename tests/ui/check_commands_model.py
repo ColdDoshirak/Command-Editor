@@ -140,6 +140,20 @@ def body(k):
     w.play_sound_btn.click(); pump(50)
     check("preview: second press stops", w.play_sound_btn.text() == "Play Sound"
           and not w.preview.is_playing())
+    import pygame
+    from bot.audio import PREVIEW_CHANNEL, GROUP_CHANNELS
+    pump(300)                                    # let the fade-out finish
+    w.play_sound_btn.click(); pump(50)
+    check("preview plays on its own mixer channel, not the bot's shared 0",
+          PREVIEW_CHANNEL >= GROUP_CHANNELS and pygame.mixer.get_num_channels() > PREVIEW_CHANNEL
+          and pygame.mixer.Channel(PREVIEW_CHANNEL).get_busy() and not pygame.mixer.Channel(0).get_busy())
+    w.play_sound_btn.click(); pump(300)
+    try:
+        pygame.mixer.Channel(GROUP_CHANNELS - 1)
+        ok32 = True
+    except IndexError:
+        ok32 = False
+    check("the highest group channel Group Settings offers exists", ok32)
 
     # ---- the bot works on copies -----------------------------------------------------
     snap = w.twitch_tab._commands_snapshot()

@@ -120,3 +120,25 @@ class SoundPreview(object):
         self.channel.play(snd)
         self._mine = True
         return "playing"
+
+
+# ---- mixer channels -----------------------------------------------------------
+# Group Settings lets a group use channel 0..32 (0 = the shared channel). The
+# bot used to create only 32 channels (0..31), so a group on 32 never played.
+# The editor's Play Sound used channel 0 - the bot's shared channel - and so
+# cut or was blocked by stream sounds; it has a channel of its own now.
+GROUP_CHANNELS = 33                 # channels 0..32 for the groups
+PREVIEW_CHANNEL = GROUP_CHANNELS    # the editor's Play Sound only
+MIXER_CHANNELS = GROUP_CHANNELS + 1
+
+
+def ensure_channels():
+    """Make sure the mixer has MIXER_CHANNELS channels (never fewer than now:
+    the editor and the bot both call this)."""
+    import pygame
+    try:
+        have = pygame.mixer.get_num_channels()
+    except Exception:
+        have = 0
+    if have < MIXER_CHANNELS:
+        pygame.mixer.set_num_channels(MIXER_CHANNELS)

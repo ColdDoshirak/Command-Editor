@@ -12,6 +12,10 @@ from stubs import set_sound_duration
 from bot.audio import SoundCache
 
 
+def _mixer():
+    return sys.modules["pygame"].mixer
+
+
 async def test_cache_is_bounded_lru():
     loads = []
     cache = SoundCache(limit=3, loader=lambda p: loads.append(p) or ("snd", p))
@@ -118,5 +122,28 @@ async def test_preview_plays_stops_and_reports():
         ch.busy = False                        # the sound ended by itself
         assert not prev.is_playing()
         assert prev.toggle(p, 100, True) == "playing", "after the end a press plays again"
+    finally:
+        drop_tmpdir(tmp)
+
+
+# ---- stage 6: mixer channels ----------------------------------------------------
+
+async def test_group_channel_32_exists_and_preview_has_its_own():
+    """Group Settings lets you pick channel 0..32, the bot made only 0..31
+    (Channel(32) -> IndexError: that group's sounds never played). The editor's
+    Play Sound shared channel 0 with the bot's common sounds."""
+    from bot import audio
+    tmp = new_tmpdir()
+    try:
+        make_sound_file(tmp, "a.mp3")
+        cmd = make_command("!a", "FX", SoundFile=os.path.join(tmp, "a.mp3"))
+        bot, _cm, _ = make_bot(tmp, [cmd], {"FX": {"queue_enabled": False, "audio_channel": 32}})
+        await bot.event_message(FakeMessage("u", "!a", FakeChannel()))
+        assert len(_mixer().Channel(32).play_log) == 1, "a group on channel 32 must play"
+        assert audio.PREVIEW_CHANNEL > 32 and audio.PREVIEW_CHANNEL < _mixer().get_num_channels()
+        assert audio.GROUP_CHANNELS == 33
+        _mixer().set_num_channels(64)            # someone asked for more
+        audio.ensure_channels()
+        assert _mixer().get_num_channels() == 64, "never lowers the number of channels"
     finally:
         drop_tmpdir(tmp)

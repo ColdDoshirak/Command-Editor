@@ -23,7 +23,7 @@ from core.app_log import setup_logging, install_print_bridge
 from core import paths
 from core.commands import CommandRepository
 from ui.backups_tab import HistoryTab, FullBackupsTab
-from bot.audio import SoundCache, SoundPreview
+from bot.audio import SoundCache, SoundPreview, ensure_channels, PREVIEW_CHANNEL
 from ui.update_notification import UpdateNotificationWidget
 from ui.theme_switch import ThemeSwitchMixin
 from ui.classic_commands import ClassicCommandsMixin
@@ -214,7 +214,10 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         # Загруженные звуки: кэш с ограничением (bot/audio.py)
         self.loaded_sounds = SoundCache(limit=32)
         # Один канал для всех воспроизведений
-        self.sound_channel = pygame.mixer.Channel(0)
+        # свой канал предпросмотра: раньше это был общий канал 0 бота, и
+        # Play Sound обрывал звук зрителя или упирался в него
+        ensure_channels()
+        self.sound_channel = pygame.mixer.Channel(PREVIEW_CHANNEL)
         # Кнопка Play Sound (bot/audio.SoundPreview); конец звука замечает
         # таймер в UI-потоке
         self.preview = SoundPreview(self.sound_channel, self.loaded_sounds)

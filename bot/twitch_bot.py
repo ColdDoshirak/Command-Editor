@@ -11,7 +11,7 @@ from typing import Union
 
 from core.system_commands import merge_with_defaults, name_of as sys_cmd_name
 from bot.dispatcher import CommandDispatcher
-from bot.audio import SoundCache, may_start
+from bot.audio import SoundCache, may_start, ensure_channels
 from bot.helix import HelixClient, logins as helix_logins
 from bot.ui_port import BotUi, CallbackUi
 from bot.queue import QueueMixin
@@ -135,7 +135,7 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
                 self.sound_channel = sound_channel
             else:
                 # Initialize multiple channels
-                pygame.mixer.set_num_channels(32)
+                ensure_channels()   # 0..32 for the groups + the editor's preview
                 self.sound_channel = pygame.mixer.Channel(0)  # Канал 0 — дефолтный (общий)
             
             # Отладочное сообщение
