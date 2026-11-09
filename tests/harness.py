@@ -47,6 +47,15 @@ paths.set_app_dir(_SESSION_HOME)
 
 from config_manager import ConfigManager  # noqa: E402
 from twitch_bot import TwitchBot  # noqa: E402
+from bot import helix as _helix  # noqa: E402
+
+
+async def _no_helix(self, url, params, headers):
+    raise ConnectionError("network disabled in offline tests")
+
+
+# offline tests never reach the Twitch API (tests inject HelixClient(fetch=...))
+_helix.HelixClient._aiohttp_fetch = _no_helix
 
 # Track repo-dir files created by ConfigManager.__init__ (it writes defaults
 # next to config_manager.py). Cleaned up by cleanup_repo_dir().

@@ -10,7 +10,6 @@ from twitchio.ext.commands import errors
 from config_manager import ConfigManager
 from pathlib import Path
 import traceback
-import requests
 from currency_manager import CurrencyManager
 from datetime import datetime, timezone
 from typing import Union
@@ -18,6 +17,7 @@ from typing import Union
 from core.system_commands import merge_with_defaults, name_of as sys_cmd_name, QUEUE_COMMANDS
 from bot.dispatcher import CommandDispatcher
 from bot.audio import SoundCache, may_start
+from bot.helix import HelixClient, logins as helix_logins
 from bot.queue import QueueMixin, _PersistedMessage, _QueueSlots  # noqa: F401
 
 
@@ -197,21 +197,16 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
                 "Authorization": f"Bearer {bare_token}"
             }
             
-            # Получаем broadcaster_id
-            try:
-                resp = requests.get(
-                    "https://api.twitch.tv/helix/users",
-                    headers=self._helix_headers,
-                    params={"login": channel}
-                )
-                data = resp.json()
-                self.broadcaster_id = data["data"][0]["id"]
-                self.moderator_id = self.broadcaster_id
-            except Exception as e:
-                print(f"Error fetching broadcaster ID: {e}")
-                self.broadcaster_id = None
-                self.moderator_id = None
-            
+            # broadcaster_id запрашивается асинхронно в event_ready
+            # (_ensure_broadcaster_id). Раньше - синхронный requests.get здесь,
+            # без таймаута.
+            self.broadcaster_id = None
+            self.moderator_id = None
+            self._helix = HelixClient(lambda: self._helix_headers)
+            # список модераторов из Helix кэшируется (шаг 3.3)
+            self._mods_cache = []
+            self._mods_cache_time = 0.0
+
             print(f"Bot initialized with channel: {channel}")
             
             # Для отслеживания кулдаунов команд
@@ -292,6 +287,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
         # Ensure self.loop references the correct asyncio loop for run_coroutine_threadsafe
         self.loop = asyncio.get_event_loop()
         try:
+            await self._ensure_broadcaster_id()
             # Загрузка списка зрителей сразу при первом подключении
             viewers = await self.get_all_viewers()
             print(f"Initial viewers loaded: {len(viewers)} viewers")
@@ -617,35 +613,42 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             traceback.print_exc()
             return False  # В случае ошибки
 
-    async def get_all_viewers(self) -> list:
-        """Get chatters via Helix API /chat/chatters.
+    # ------------------------------------------------------------------
+    # Twitch API (Helix over aiohttp, bot/helix.py)
+    # ------------------------------------------------------------------
+    MODS_CACHE_SECONDS = 300
 
-        B7: синхронный requests.get — в executor, не блокируем loop бота
-        (раньше каждый опрос зрителей держал loop до 5 с, из-за чего
-        буксовали очередь и !skip/!volume).
-        """
+    async def _ensure_broadcaster_id(self):
+        if self.broadcaster_id:
+            return self.broadcaster_id
+        status, data = await self._helix.get("users", login=self.channel)
+        try:
+            if status == 200 and data.get("data"):
+                self.broadcaster_id = str(data["data"][0]["id"])
+                self.moderator_id = self.broadcaster_id
+        except Exception as e:
+            print(f"Error reading broadcaster ID: {e}")
+        if not self.broadcaster_id:
+            print(f"Could not get broadcaster ID for {self.channel} (status {status})")
+        return self.broadcaster_id
+
+    async def close(self):
+        try:
+            await self._helix.close()
+        except Exception:
+            pass
+        await super().close()
+
+    async def get_all_viewers(self) -> list:
+        """Chatters via Helix /chat/chatters; falls back to the active users."""
         viewers = []
         if self.broadcaster_id and self.moderator_id:
-            try:
-                loop = asyncio.get_event_loop()
-                resp = await loop.run_in_executor(
-                    None,
-                    lambda: requests.get(
-                        "https://api.twitch.tv/helix/chat/chatters",
-                        headers=self._helix_headers,
-                        params={
-                            "broadcaster_id": self.broadcaster_id,
-                            "moderator_id": self.moderator_id
-                        },
-                        timeout=5
-                    ),
-                )
-                data = resp.json()
-                for user in data.get("data", []):
-                    viewers.append(user.get("user_login", "").lower())
-            except Exception as e:
-                print(f"Error getting chatters via Helix: {e}")
-        # fallback на активных, если Helix не сработал
+            status, data = await self._helix.get(
+                "chat/chatters", broadcaster_id=self.broadcaster_id, moderator_id=self.moderator_id)
+            if status == 200:
+                viewers = helix_logins(data)
+            elif status:
+                print(f"Error getting chatters via Helix: status {status}")
         if not viewers:
             viewers = list(getattr(self, "active_users", [self.channel.lower()]))
         self.all_viewers = viewers
@@ -672,32 +675,17 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             await asyncio.sleep(self.stream_status_interval)
 
     async def check_if_live(self, *args) -> bool:
-        """Проверяем, идет ли стрим в текущий момент через Helix API.
-
-        B7: синхронный requests.get выполняется в executor, чтобы НЕ
-        блокировать loop бота (раньше каждый запрос держал loop до 5 с,
-        из-за чего буксовали очередь и !skip/!volume).
-        """
+        """Проверяем, идет ли стрим в текущий момент через Helix API
+        (aiohttp, bot/helix.py - loop бота не блокируется)."""
         try:
             if not self.broadcaster_id or not self._helix_headers:
                 print("Cannot check stream status: missing broadcaster_id or API headers")
                 return False
 
-            # Запрашиваем данные о стриме (в executor, не блокируем loop)
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: requests.get(
-                    "https://api.twitch.tv/helix/streams",
-                    headers=self._helix_headers,
-                    params={"user_id": self.broadcaster_id},
-                    timeout=5
-                ),
-            )
+            status, data = await self._helix.get("streams", user_id=self.broadcaster_id)
 
             # Если запрос успешен
-            if response.status_code == 200:
-                data = response.json()
+            if status == 200 and data is not None:
                 stream_info = data.get("data", [])
                 # Если есть данные, значит стрим идёт
                 is_live = len(stream_info) > 0
@@ -714,7 +702,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
 
                 return is_live
             else:
-                print(f"Error checking stream status: API returned {response.status_code}")
+                print(f"Error checking stream status: API returned {status}")
                 # В случае ошибки API сохраняем текущий статус
                 return self.is_live
 
@@ -724,30 +712,14 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             return self.is_live
 
     async def get_user_id(self, login: str) -> Union[str, None]:
-        """Вернуть user_id пользователя по его логину через Twitch API."""
+        """user_id by login via Helix (None if unknown or the API failed)."""
+        status, data = await self._helix.get("users", login=login)
         try:
-            cfg = self.config_manager.get_twitch_config()
-            cid = cfg.get('client_id')
-            token = cfg.get('access_token')
-            if token.startswith('oauth:'):
-                token = token.split(':',1)[1]
-            if not cid or not token:
-                return None
-            headers = {
-                'Client-ID': cid,
-                'Authorization': f'Bearer {token}'
-            }
-            url = f'https://api.twitch.tv/helix/users?login={login}'
-            r = requests.get(url, headers=headers, timeout=5)
-            if r.status_code == 200:
-                data = r.json().get('data',[])
-                if data:
-                    return data[0]['id']
-            return None
+            if status == 200 and data.get("data"):
+                return data["data"][0]["id"]
         except Exception as e:
-            print(f"CRITICAL ERROR in get_user_id: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"Error reading user id for {login}: {e}")
+        return None
 
     async def get_channel_moderators(self):
         """Получает список модераторов канала через API и объединяет с ручным списком"""
@@ -763,16 +735,9 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             # Пытаемся получить модераторов через API
             if self.broadcaster_id and self._helix_headers:
                 # Запрашиваем данные о модераторах
-                response = requests.get(
-                    "https://api.twitch.tv/helix/moderation/moderators",
-                    headers=self._helix_headers,
-                    params={"broadcaster_id": self.broadcaster_id},
-                    timeout=5
-                )
-                
-                # Если запрос успешен
-                if response.status_code == 200:
-                    data = response.json()
+                status, data = await self._helix.get(
+                    "moderation/moderators", broadcaster_id=self.broadcaster_id)
+                if status == 200 and data is not None:
                     # Перебираем всех модераторов
                     for mod in data.get("data", []):
                         mod_name = mod.get("user_login", "").lower()
@@ -789,7 +754,7 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
                             self.currency_manager.users[mod_name]['is_mod'] = True
                             print(f"User {mod_name} marked as moderator (API)")
                 else:
-                    print(f"Error fetching moderators: API returned {response.status_code}")
+                    print(f"Error fetching moderators: API returned {status}")
             else:
                 print("Cannot fetch moderators: missing broadcaster_id or API headers")
             
@@ -825,7 +790,9 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
             # Отправляем сигнал с обновленным списком модераторов, если есть signal_handler
             if hasattr(self, 'signal_handler') and self.signal_handler:
                 self.signal_handler.moderators_signal.emit(mods)
-                
+
+            self._mods_cache = list(mods)
+            self._mods_cache_time = time.time()
             return mods
                 
         except Exception as e:
@@ -903,7 +870,11 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
                 
         # Используем get_channel_moderators для получения актуального списка модераторов
         try:
-            moderators = await self.get_channel_moderators()
+            # Список модераторов кэшируется на MODS_CACHE_SECONDS: раньше
+            # каждая команда зрителя-не-модератора шла в Twitch API (C3).
+            if time.time() - self._mods_cache_time > self.MODS_CACHE_SECONDS:
+                await self.get_channel_moderators()
+            moderators = self._mods_cache
             is_in_mod_list = username in moderators
             print(f"DEBUG: User {username} in channel moderators list: {is_in_mod_list}")
             if is_in_mod_list:

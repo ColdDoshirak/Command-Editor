@@ -27,6 +27,15 @@ def _disable_network():
     requests.request = _no_net
     requests.Session.request = _no_net
 
+    # the bot's Twitch API calls (aiohttp, bot/helix.py)
+    if REPO not in sys.path:
+        sys.path.insert(0, REPO)
+    from bot import helix
+
+    async def _no_helix(self, url, params, headers):
+        raise ConnectionError("network disabled in UI checks")
+    helix.HelixClient._aiohttp_fetch = _no_helix
+
 
 class Kit(object):
     def __init__(self, data_dir, out_dir, size=(1360, 820)):
