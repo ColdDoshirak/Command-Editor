@@ -73,3 +73,50 @@ def may_start(channel, allow_interrupt):
     except Exception:
         pass
     return True
+
+
+class SoundPreview(object):
+    """The editor's "Play Sound" button: one sound at a time on one channel.
+
+    No threads: the window asks is_playing() from a timer in its own thread
+    (before, a helper thread polled the channel and changed the button text
+    itself - a Qt widget touched outside the UI thread).
+    """
+
+    def __init__(self, channel, cache):
+        self.channel = channel
+        self.cache = cache
+        self._mine = False      # this preview started what the channel plays
+
+    def is_playing(self):
+        if self._mine and not self.channel.get_busy():
+            self._mine = False
+        return self._mine
+
+    def stop(self):
+        if self.is_playing():
+            try:
+                self.channel.fadeout(100)
+            except Exception:
+                pass
+        self._mine = False
+
+    def toggle(self, path, volume, allow_interrupt):
+        """Press of the button. Returns "stopped" (it was playing), "missing"
+        (no such file), "blocked" (the channel is busy and interrupting is
+        off) or "playing"."""
+        if self.is_playing():
+            self.stop()
+            return "stopped"
+        if not path or not os.path.exists(path):
+            return "missing"
+        if not may_start(self.channel, allow_interrupt):
+            return "blocked"
+        snd = self.cache.get(path)
+        try:
+            snd.set_volume(max(0.0, min(1.0, float(volume) / 100.0)))
+        except (TypeError, ValueError):
+            snd.set_volume(1.0)
+        self.channel.play(snd)
+        self._mine = True
+        return "playing"

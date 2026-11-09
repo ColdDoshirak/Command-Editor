@@ -68,3 +68,55 @@ async def test_group_channel_respects_no_interrupt():
         assert played == ["a.mp3", "b.mp3"], played
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- step 4.3: the editor's "Play Sound" button (bot/audio.SoundPreview) -----
+
+class _Chan(object):
+    def __init__(self):
+        self.busy = False
+        self.played = []
+        self.faded = 0
+
+    def play(self, snd):
+        self.played.append(snd)
+        self.busy = True
+
+    def get_busy(self):
+        return self.busy
+
+    def fadeout(self, ms):
+        self.faded += 1
+        self.busy = False
+
+
+class _Snd(object):
+    def __init__(self, path):
+        self.path = path
+        self.volume = None
+
+    def set_volume(self, v):
+        self.volume = v
+
+
+async def test_preview_plays_stops_and_reports():
+    from bot.audio import SoundPreview
+    tmp = new_tmpdir()
+    try:
+        p = os.path.join(tmp, "s.wav")
+        open(p, "wb").close()
+        ch = _Chan()
+        prev = SoundPreview(ch, SoundCache(loader=_Snd))
+        assert prev.toggle(os.path.join(tmp, "missing.wav"), 100, True) == "missing"
+        assert prev.toggle(p, 40, True) == "playing" and prev.is_playing()
+        assert ch.played[-1].volume == 0.4
+        assert prev.toggle(p, 40, True) == "stopped", "second press stops"
+        assert ch.faded == 1 and not prev.is_playing()
+        ch.busy = True                         # someone else plays on the channel
+        assert prev.toggle(p, 100, False) == "blocked", "no interrupting -> do not start"
+        assert prev.toggle(p, 100, True) == "playing" and ch.faded == 2
+        ch.busy = False                        # the sound ended by itself
+        assert not prev.is_playing()
+        assert prev.toggle(p, 100, True) == "playing", "after the end a press plays again"
+    finally:
+        drop_tmpdir(tmp)

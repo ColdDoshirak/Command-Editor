@@ -65,7 +65,7 @@ def body(k):
     with open(backup, "w", encoding="utf-8") as f:
         json.dump([fixture.command("!restored", Response="r")], f)
     w.history_manager.restore_backup = lambda p: json.load(open(p, encoding="utf-8"))
-    w.restore_backup(backup); pump(300)
+    w.history_tab.restore(backup); pump(300)
     check("restore_backup: commands restored",
           [c["Command"] for c in w.commands] == ["!restored"], [c["Command"] for c in w.commands])
     same_list_everywhere("restore_backup")
@@ -79,7 +79,7 @@ def body(k):
         json.dump({"commands": [fixture.command("!full1"), fixture.command("!full2")],
                    "currency_users": {"alice": {"points": 777, "hours": 1}}}, f)
     w.currency_manager._save_pending = False
-    w.restore_comprehensive_backup(full); pump(400)
+    w.backup_tab.restore(full); pump(400)
     check("full restore: commands restored",
           [c["Command"] for c in w.commands] == ["!full1", "!full2"],
           [c["Command"] for c in w.commands])

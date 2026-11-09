@@ -1,17 +1,12 @@
 import json
 import os
 import configparser
-import logging
-from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                           QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
-                           QTableView, QAbstractItemView,
-                           QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
-                           QFileDialog, QMessageBox, QSlider, QGroupBox, QTabWidget,
-                           QDialog, QHeaderView, QMenu, QScrollArea, QTextEdit)
-from PyQt5.QtCore import Qt, QTimer, QDateTime
-import PyQt5.QtCore as QtCore
-from PyQt5.QtGui import QPixmap, QFont, QTextCursor  # Add QTextCursor here
+                             QHBoxLayout, QPushButton, QTableView, QAbstractItemView,
+                             QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
+                             QFileDialog, QMessageBox, QSlider, QGroupBox, QTabWidget,
+                             QDialog, QHeaderView, QTextEdit)
+from PyQt5.QtCore import Qt, QTimer, QDateTime, QMetaType
 import pygame
 from ui.twitch_auth import TwitchAuthDialog
 from ui.twitch_tab import TwitchTab
@@ -19,26 +14,24 @@ from core.config_manager import ConfigManager
 from ui.about_tab import AboutTab
 from core.history_manager import HistoryManager
 from pathlib import Path
-import threading
 import time
 from ui.currency_tab import CurrencyTab
 from ui.user_currency_tab import UserCurrencyTab
 from ui.ranks_tab import RanksTab
-from ui.sys_commands_tab import SysCommandsTab  # Import the new system commands tab
-from ui.group_settings_tab import GroupSettingsTab  # Import the new group settings tab
+from ui.sys_commands_tab import SysCommandsTab
+from ui.group_settings_tab import GroupSettingsTab
 from ui.queue_control_tab import QueueControlTab  # Live queue management tab
 from core.currency_manager import CurrencyManager
-from PyQt5 import sip  # правильный импорт
-from PyQt5.QtCore import QMetaType
 import webbrowser
 from ui import theme as _theme
 from core.app_log import setup_logging, install_print_bridge
-from core import paths, storage
+from core import paths
 from core.commands import CommandRepository, FIELDS as COMMAND_FIELDS
 from ui.commands_model import CommandsTableModel, display_text
-from bot.audio import SoundCache
+from ui.backups_tab import HistoryTab, FullBackupsTab
+from bot.audio import SoundCache, SoundPreview
 
-# Вместо sip.registerMetaType используем:
+# регистрируем QTextCursor для передачи в сигналах
 QMetaType.type("QTextCursor")
 
 class UpdateNotificationWidget(QLabel):
@@ -515,14 +508,14 @@ class CommandEditor(QMainWindow):
 
         self.about_tab = AboutTab(parent=self)
         self.tab_widget.addTab(self.about_tab, "About")
-        self.history_tab = self.create_history_tab()
+        self.history_tab = HistoryTab(self)
         self.tab_widget.addTab(self.history_tab, "History")
         
         # Connect tab change signal
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
 
         # Create comprehensive backup tab
-        self.backup_tab = self.create_comprehensive_backup_tab()
+        self.backup_tab = FullBackupsTab(self)
         self.tab_widget.addTab(self.backup_tab, "Backups")
         
         # Load saved commands and configuration
@@ -543,7 +536,7 @@ class CommandEditor(QMainWindow):
 
         # Set up system auto-backup timer
         self.system_auto_backup_timer = QTimer()
-        self.system_auto_backup_timer.timeout.connect(self.create_comprehensive_backup_auto)
+        self.system_auto_backup_timer.timeout.connect(lambda: self.backup_tab.create_auto())
 
         # Set up currency auto-save timer
         self.currency_auto_backup_timer = QTimer()
@@ -584,6 +577,12 @@ class CommandEditor(QMainWindow):
         self.loaded_sounds = SoundCache(limit=32)
         # Один канал для всех воспроизведений
         self.sound_channel = pygame.mixer.Channel(0)
+        # Кнопка Play Sound (bot/audio.SoundPreview); конец звука замечает
+        # таймер в UI-потоке
+        self.preview = SoundPreview(self.sound_channel, self.loaded_sounds)
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setInterval(100)
+        self._preview_timer.timeout.connect(self._sync_preview_button)
         
         # Create update notification widget
         self.update_notification = UpdateNotificationWidget(self)
@@ -776,52 +775,30 @@ class CommandEditor(QMainWindow):
             QMessageBox.information(self, "Info", "No new sound files to assign.")
 
     def play_or_stop_sound(self):
-        """Play or stop the sound file of the selected command"""
-        # Если кнопка в режиме остановки, значит звук уже играет и его надо остановить
-        if self.play_sound_btn.text() == "Stop Sound":
-            self.sound_channel.fadeout(100)  # Плавно останавливаем звук
-            self.play_sound_btn.setText("Play Sound")
-            return
-            
-        # Иначе - проигрываем звук
+        """Play Sound / Stop Sound для выбранной команды.
+
+        Раньше конец звука ждал отдельный поток и сам менял текст кнопки -
+        виджет Qt из чужого потока (тот же класс багов, что C4)."""
         row = self._selected_row()
-        if row < 0:
+        if not self.preview.is_playing() and not (0 <= row < len(self.commands)):
             QMessageBox.warning(self, "Warning", "No command selected.")
             return
-
-        fn = self.commands[row]["SoundFile"]
-        if not fn or not os.path.exists(fn):
+        cmd = self.commands[row] if 0 <= row < len(self.commands) else {}
+        fn = cmd.get("SoundFile", "")
+        state = self.preview.toggle(fn, cmd.get("Volume", 100), self.allow_sound_interruption)
+        if state == "missing":
             QMessageBox.warning(self, "Warning", f"Sound file not found: {fn}")
-            return
+        elif state == "blocked" and self.show_interruption_message:
+            QMessageBox.information(self, "Info", "Interruption disabled.")
+        if state == "playing":
+            self._preview_timer.start()
+        self._sync_preview_button()
 
-        # Прерываем текущий звук через fadeout если включена опция прерывания
-        if self.sound_channel.get_busy():
-            if self.allow_sound_interruption:
-                self.sound_channel.fadeout(100)  # 100 мс плавного угасания
-            else:
-                if self.show_interruption_message:
-                    QMessageBox.information(self, "Info", "Interruption disabled.")
-                return
-
-        # Кэш с ограничением, замечает замену файла (bot/audio.py)
-        snd = self.loaded_sounds.get(fn)
-
-        # Устанавливаем громкость из вашей колонки Volume
-        vol = float(self.commands[row].get("Volume", 100)) / 100.0
-        snd.set_volume(vol)
-
-        # Воспроизводим на нашем канале
-        self.sound_channel.play(snd)
-        self.play_sound_btn.setText("Stop Sound")
-
-        # Отслеживаем конец и сбрасываем кнопку
-        def watch_end():
-            while self.sound_channel.get_busy():
-                time.sleep(0.05)
-            if self.play_sound_btn.text() == "Stop Sound":
-                self.play_sound_btn.setText("Play Sound")
-
-        threading.Thread(target=watch_end, daemon=True).start()
+    def _sync_preview_button(self):
+        playing = self.preview.is_playing()
+        self.play_sound_btn.setText("Stop Sound" if playing else "Play Sound")
+        if not playing:
+            self._preview_timer.stop()
 
     def closeEvent(self, event):
         try:
@@ -932,8 +909,7 @@ class CommandEditor(QMainWindow):
         if self.config_manager.save_commands(self.commands):
             # Always create a backup when manually saving
             if self.history_manager.save_backup(self.commands):
-                # Refresh the backup list
-                self.refresh_backup_list()
+                self.history_tab.refresh()
                 QMessageBox.information(self, "Success", "Commands saved and backup created successfully!")
             else:
                 QMessageBox.information(self, "Success", "Commands saved successfully, but backup creation failed.")
@@ -1032,16 +1008,6 @@ class CommandEditor(QMainWindow):
 
             # Save commands
             if self.commands:
-                # Get existing commands for comparison
-                existing_commands = []
-                try:
-                    if os.path.exists(paths.commands_file()):
-                        with open(paths.commands_file(), 'r', encoding='utf-8') as f:
-                            existing_commands = json.load(f)
-                except Exception as e:
-                    print(f"Error reading existing commands for comparison: {e}")
-                    existing_commands = []
-
                 # Save the commands first
                 print("Saving commands...")
                 self.command_repo.save()
@@ -1052,8 +1018,7 @@ class CommandEditor(QMainWindow):
 
                 if backup_successful:
                     print("Auto-save command backup created successfully")
-                    # Always refresh the backup list when a new backup is created
-                    self.refresh_backup_list()
+                    self.history_tab.refresh()
                     print("Command backup list refreshed")
                 else:
                     print("Failed to create auto-save command backup")
@@ -1061,12 +1026,10 @@ class CommandEditor(QMainWindow):
                 # Create comprehensive system backup if enabled
                 if self.system_auto_backup_enabled:
                     print("Creating comprehensive system backup during auto-save...")
-                    system_backup_path = self.create_comprehensive_backup()
+                    system_backup_path = self.backup_tab.create()   # keeps the newest N
                     if system_backup_path:
                         print(f"Auto-save comprehensive backup created: {system_backup_path}")
-                        # Clean up old comprehensive backups after successful creation
-                        self._cleanup_old_comprehensive_backups()
-                        self.refresh_comprehensive_backups()
+                        self.backup_tab.refresh()
                     else:
                         print("Failed to create auto-save comprehensive backup")
 
@@ -1480,26 +1443,6 @@ class CommandEditor(QMainWindow):
         except Exception as e:
             print(f"Error during automatic currency auto-save: {e}")
 
-    def create_comprehensive_backup_auto(self):
-        """Automatically create comprehensive backup at scheduled intervals"""
-        try:
-            print("Running automatic comprehensive backup...")
-
-            # Create the backup
-            backup_path = self.create_comprehensive_backup()
-
-            if backup_path:
-                print(f"Automatic comprehensive backup created: {backup_path}")
-                # Clean up old comprehensive backups after successful creation
-                self._cleanup_old_comprehensive_backups()
-                # Refresh the backup list
-                self.refresh_comprehensive_backups()
-            else:
-                print("Failed to create automatic comprehensive backup")
-
-        except Exception as e:
-            print(f"Error during automatic comprehensive backup: {e}")
-
     def filter_commands(self):
         """Filter displayed commands based on search text"""
         search_text = self.search_input.text().lower()
@@ -1517,192 +1460,6 @@ class CommandEditor(QMainWindow):
             self.table.setRowHidden(row, not match_found)
         self.refresh_themed_commands()
 
-    def create_history_tab(self):
-        """Create the History tab for command backups"""
-        tab = QWidget()
-        layout = QVBoxLayout()
-        
-        # Header
-        header_layout = QHBoxLayout()
-        header_label = QLabel("Command History")
-        font = QFont()
-        font.setPointSize(14)
-        font.setBold(True)
-        header_label.setFont(font)
-        
-        # Create backup button
-        create_backup_btn = QPushButton("Create Backup Now")
-        create_backup_btn.clicked.connect(self.create_backup)
-        
-        header_layout.addWidget(header_label)
-        header_layout.addStretch()
-        header_layout.addWidget(create_backup_btn)
-        layout.addLayout(header_layout)
-        
-        # Description
-        description = QLabel("The system automatically saves backups when you make significant changes. You can restore previous versions from here.")
-        description.setWordWrap(True)
-        layout.addWidget(description)
-        
-        # Create table for backups
-        self.backup_table = QTableWidget()
-        self.backup_table.setColumnCount(4)
-        self.backup_table.setHorizontalHeaderLabels(["Date & Time", "Size (KB)", "Actions", ""])
-        self.backup_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.backup_table.setSelectionBehavior(QTableWidget.SelectRows)
-        
-        # Load backup list
-        self.refresh_backup_list();
-        
-        layout.addWidget(self.backup_table)
-        
-        # Auto-backup settings
-        backup_settings = QGroupBox("Backup Settings")
-        backup_settings_layout = QHBoxLayout()
-        
-        # Max backups setting
-        max_backups_label = QLabel("Maximum number of backups:")
-        self.max_backups_spin = QSpinBox()
-        self.max_backups_spin.setMinimum(1)
-        self.max_backups_spin.setMaximum(100)
-        self.max_backups_spin.setValue(self.history_manager.max_backups)
-        self.max_backups_spin.valueChanged.connect(self.update_max_backups)
-        
-        backup_settings_layout.addWidget(max_backups_label)
-        backup_settings_layout.addWidget(self.max_backups_spin)
-        backup_settings_layout.addStretch()
-        
-        backup_settings.setLayout(backup_settings_layout)
-        layout.addWidget(backup_settings)
-        
-        tab.setLayout(layout)
-        return tab
-
-    def refresh_backup_list(self):
-        """Refresh the list of backups in the table"""
-        self.backup_table.setRowCount(0)
-        
-        backups = self.history_manager.get_backups()
-        
-        for i, backup in enumerate(backups):
-            self.backup_table.insertRow(i)
-            
-            # Date & Time
-            self.backup_table.setItem(i, 0, QTableWidgetItem(backup["readable_time"]))
-            
-            # Size
-            self.backup_table.setItem(i, 1, QTableWidgetItem(f"{backup['size']} KB"))
-            
-            # Restore button
-            restore_btn = QPushButton("Restore")
-            restore_btn.clicked.connect(lambda checked, path=backup["path"]: self.restore_backup(path))
-            
-            # View button
-            view_btn = QPushButton("View")
-            view_btn.clicked.connect(lambda checked, path=backup["path"]: self.view_backup(path))
-            
-            # Add buttons to table
-            self.backup_table.setCellWidget(i, 2, restore_btn)
-            self.backup_table.setCellWidget(i, 3, view_btn)
-
-    def create_backup(self):
-        """Create a backup of current commands"""
-        if not self.commands:
-            QMessageBox.warning(self, "Warning", "No commands to backup.")
-            return
-            
-        if self.history_manager.save_backup(self.commands):
-            self.refresh_backup_list()
-            QMessageBox.information(self, "Success", "Backup created successfully!")
-        else:
-            QMessageBox.warning(self, "Error", "Failed to create backup.")
-            
-    def restore_backup(self, backup_path):
-        """Restore commands from a backup file"""
-        if not backup_path:
-            return
-            
-        reply = QMessageBox.question(
-            self,
-            "Confirm Restore",
-            "Restoring will replace your current commands. Continue?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            commands = self.history_manager.restore_backup(backup_path)
-            
-            if commands:
-                self.replace_commands(commands)
-                QMessageBox.information(self, "Success", "Commands restored successfully!")
-            else:
-                QMessageBox.warning(self, "Error", "Failed to restore backup.")
-
-    def view_backup(self, backup_path):
-        """View contents of a backup file"""
-        if not backup_path:
-            return
-            
-        try:
-            with open(backup_path, 'r', encoding='utf-8') as f:
-                commands = json.load(f)
-                
-            # Create a dialog to show the backup contents
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Backup Contents")
-            dialog.setMinimumSize(800, 600)
-            
-            dialog_layout = QVBoxLayout()
-            
-            # Create a table to show commands
-            backup_view = QTableWidget()
-            backup_view.setColumnCount(7)  # Increased to 7 columns to include Cooldown
-            backup_view.setHorizontalHeaderLabels([
-                "Command", "Sound File", "Response", "Group", 
-                "Enabled", "Volume", "Cooldown"  # Added Cooldown column
-            ])
-            backup_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-            
-            # Populate table
-            backup_view.setRowCount(len(commands))
-            for i, cmd in enumerate(commands):
-                backup_view.setItem(i, 0, QTableWidgetItem(cmd["Command"]))
-                backup_view.setItem(i, 1, QTableWidgetItem(cmd["SoundFile"]))
-                backup_view.setItem(i, 2, QTableWidgetItem(cmd["Response"]))
-                backup_view.setItem(i, 3, QTableWidgetItem(cmd.get("Group", "")))
-                backup_view.setItem(i, 4, QTableWidgetItem("✓" if cmd["Enabled"] else "✗"))
-                backup_view.setItem(i, 5, QTableWidgetItem(str(cmd.get("Volume", 100))))
-                backup_view.setItem(i, 6, QTableWidgetItem(str(cmd.get("Cooldown", 0))))  # Added Cooldown value
-                
-            dialog_layout.addWidget(backup_view)
-            
-            # Add close button
-            close_btn = QPushButton("Close")
-            close_btn.clicked.connect(dialog.close)
-            dialog_layout.addWidget(close_btn)
-            
-            dialog.setLayout(dialog_layout)
-            dialog.exec_()
-            
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to view backup: {str(e)}")
-
-    def update_max_backups(self, value):
-        """Update the maximum number of backups to keep"""
-        self.history_manager.max_backups = value
-        # Save this setting to config file
-        self.config_manager.set_max_backups(value)
-
-    def update_max_comprehensive_backups(self, value):
-        """Update the maximum number of comprehensive backups to keep"""
-        try:
-            self.config_manager.set_max_comprehensive_backups(value)
-            self._cleanup_old_comprehensive_backups()
-            print(f"Updated max comprehensive backups to: {value}")
-        except Exception as e:
-            print(f"Error updating max comprehensive backups: {e}")
-
     def handle_no_users_data(self, users_data):
         if not users_data:
             print("No currency users data available")
@@ -1711,611 +1468,11 @@ class CommandEditor(QMainWindow):
             self.last_update.setText(f"Last update: {now}")
             return
 
-    def create_comprehensive_backup_tab(self):
-        """Create a comprehensive backup tab for full system backups"""
-        tab = QWidget()
-        layout = QVBoxLayout()
-
-        # Header
-        header_layout = QHBoxLayout()
-        header_label = QLabel("Comprehensive System Backups")
-        font = QFont()
-        font.setPointSize(14)
-        font.setBold(True)
-        header_label.setFont(font)
-
-        header_layout.addWidget(header_label)
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
-
-        # Description
-        description = QLabel(
-            "Create and manage full system backups that include all commands, moderator settings, "
-            "currency user data, and application settings. This allows you to restore the entire "
-            "application state in case of major issues."
-        )
-        description.setWordWrap(True)
-        layout.addWidget(description)
-
-        # Backup creation section
-        create_group = QGroupBox("Create Backup")
-        create_layout = QVBoxLayout()
-
-        create_info = QLabel(
-            "A comprehensive backup includes:\n"
-            "• All commands and their settings\n"
-            "• Currency users and points\n"
-            "• Moderator settings\n"
-            "• Application configuration\n"
-            "• Rank settings"
-        )
-        create_info.setStyleSheet("color: gray;")
-        create_layout.addWidget(create_info)
-
-        # Create backup button
-        self.create_system_backup_btn = QPushButton("Create Full System Backup")
-        self.create_system_backup_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                padding: 10px;
-                font-size: 12px;
-                font-weight: bold;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:pressed {
-                background-color: #3d8b40;
-            }
-        """)
-        self.create_system_backup_btn.clicked.connect(self.create_comprehensive_backup)
-        create_layout.addWidget(self.create_system_backup_btn)
-
-        create_group.setLayout(create_layout)
-        layout.addWidget(create_group)
-
-        # Backup settings section
-        settings_group = QGroupBox("Backup Settings")
-        settings_layout = QVBoxLayout()
-
-        # Max comprehensive backups setting
-        max_backups_layout = QHBoxLayout()
-        max_backups_label = QLabel("Maximum Backups:")
-        self.max_comprehensive_backups_spin = QSpinBox()
-        self.max_comprehensive_backups_spin.setMinimum(1)
-        self.max_comprehensive_backups_spin.setMaximum(50)
-        self.max_comprehensive_backups_spin.setValue(self.config_manager.get_max_comprehensive_backups())
-        self.max_comprehensive_backups_spin.valueChanged.connect(self.update_max_comprehensive_backups)
-        max_backups_layout.addWidget(max_backups_label)
-        max_backups_layout.addWidget(self.max_comprehensive_backups_spin)
-        max_backups_layout.addStretch()
-        settings_layout.addLayout(max_backups_layout)
-
-        settings_group.setLayout(settings_layout)
-        layout.addWidget(settings_group)
-
-        # Backup list section
-        list_group = QGroupBox("Available Backups")
-        list_layout = QVBoxLayout()
-
-        # Controls
-        controls_layout = QHBoxLayout()
-        controls_layout.addWidget(QLabel("Status:"))
-        self.system_backup_status_label = QLabel("Loading...")
-        controls_layout.addWidget(self.system_backup_status_label)
-
-        refresh_btn = QPushButton("Refresh List")
-        refresh_btn.clicked.connect(self.refresh_comprehensive_backups)
-        controls_layout.addWidget(refresh_btn)
-
-        controls_layout.addStretch()
-        list_layout.addLayout(controls_layout)
-
-        # Backup list container
-        self.system_backup_list_layout = QVBoxLayout()
-        self.system_backup_list_widget = QWidget()
-        self.system_backup_list_widget.setLayout(self.system_backup_list_layout)
-        list_layout.addWidget(self.system_backup_list_widget)
-
-        list_group.setLayout(list_layout)
-        layout.addWidget(list_group)
-
-        # Load initial backup list
-        QTimer.singleShot(500, self.refresh_comprehensive_backups)
-
-        # Add spacer
-        layout.addStretch()
-
-        tab.setLayout(layout)
-        return tab
-
-
-    def refresh_comprehensive_backups(self):
-        """Refresh the list of comprehensive backups"""
-        try:
-            from PyQt5.QtWidgets import QFrame
-
-            # Clear existing items
-            layout = self.system_backup_list_layout
-            while layout.count():
-                item = layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-
-            # Get backup directory
-            backup_dir = paths.comprehensive_backups_dir()
-            if not backup_dir.exists():
-                self.system_backup_status_label.setText("No backups found")
-                self.system_backup_status_label.setStyleSheet("color: gray;")
-                return
-
-            # Get backup files
-            backup_files = list(backup_dir.glob("system_backup_*.json"))
-            backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-
-            if not backup_files:
-                no_backups_label = QLabel("No comprehensive backups found.")
-                no_backups_label.setStyleSheet("color: gray; font-style: italic;")
-                layout.addWidget(no_backups_label)
-                self.system_backup_status_label.setText("No backups")
-                self.system_backup_status_label.setStyleSheet("color: gray;")
-                return
-
-            # Update status
-            self.system_backup_status_label.setText(f"{len(backup_files)} backups available")
-            self.system_backup_status_label.setStyleSheet("color: #3B82F6;")
-
-            # Add each backup
-            for i, backup_file in enumerate(backup_files):
-                try:
-                    # Load metadata
-                    meta_file = backup_file.with_suffix('.json.meta')
-                    metadata = {}
-                    if meta_file.exists():
-                        with open(meta_file, 'r', encoding='utf-8') as f:
-                            metadata = json.load(f)
-
-                    # Create backup frame
-                    frame = QFrame()
-                    frame.setFrameStyle(QFrame.Box)
-                    frame.setLineWidth(1)
-                    frame_layout = QVBoxLayout()
-
-                    # Header with backup info
-                    header_layout = QHBoxLayout()
-                    backup_name = backup_file.stem
-
-                    time_label = QLabel(f"📦 {backup_name}")
-                    time_label.setStyleSheet("font-weight: bold;")
-                    header_layout.addWidget(time_label)
-
-                    # Size info
-                    size_bytes = metadata.get('total_size', backup_file.stat().st_size)
-                    if size_bytes < 1024:
-                        size_str = f"{size_bytes} B"
-                    elif size_bytes < 1024 * 1024:
-                        size_str = f"{size_bytes / 1024:.1f} KB"
-                    else:
-                        size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-
-                    size_label = QLabel(f"💾 {size_str}")
-                    header_layout.addWidget(size_label)
-
-                    # Content info
-                    content_info = (f"📋 {metadata.get('commands_count', '?')} cmds, "
-                                  f"👥 {metadata.get('users_count', '?')} users, "
-                                  f"🛡️ {metadata.get('moderators_count', '?')} mods")
-                    content_label = QLabel(content_info)
-                    header_layout.addWidget(content_label)
-
-                    # Timestamp if available
-                    if 'backup_time' in metadata:
-                        timestamp = datetime.fromtimestamp(metadata['backup_time'])
-                        time_str = timestamp.strftime("%H:%M %d/%m/%Y")
-                        time_info_label = QLabel(f"⏰ {time_str}")
-                        time_info_label.setStyleSheet("color: gray;")
-                        header_layout.addWidget(time_info_label)
-
-                    header_layout.addStretch()
-                    frame_layout.addLayout(header_layout)
-
-                    # Action buttons
-                    buttons_layout = QHBoxLayout()
-                    buttons_layout.addSpacing(10)
-
-                    # Restore button
-                    restore_btn = QPushButton("Restore System")
-                    restore_btn.setToolTip("Restore the entire system from this backup")
-                    restore_btn.clicked.connect(lambda checked, path=backup_file: self.restore_comprehensive_backup(path))
-                    buttons_layout.addWidget(restore_btn)
-
-                    # View info button
-                    info_btn = QPushButton("Details")
-                    info_btn.setToolTip("Show detailed backup information")
-                    info_btn.clicked.connect(lambda checked, b=backup_file: self.show_comprehensive_backup_info(b))
-                    buttons_layout.addWidget(info_btn)
-
-                    buttons_layout.addStretch()
-                    frame_layout.addLayout(buttons_layout)
-
-                    frame.setLayout(frame_layout)
-
-                    # Style the frame (latest backup in green). Selector by
-                    # objectName: a bare "QFrame {}" also matched every QLabel
-                    # inside (QLabel is a QFrame) and the fixed near-white
-                    # background made the card white in the dark theme.
-                    if i == 0:
-                        frame.setObjectName("latestBackup")
-                        frame.setStyleSheet("""
-                            QFrame#latestBackup {
-                                border: 2px solid #4CAF50;
-                                border-radius: 5px;
-                                background-color: rgba(76, 175, 80, 0.10);
-                            }
-                        """)
-
-                    layout.addWidget(frame)
-                    layout.addSpacing(5)
-
-                except Exception as e:
-                    print(f"Error loading backup {backup_file}: {e}")
-                    # Add error item
-                    error_label = QLabel(f"⚠️ Error loading backup: {backup_file.name}")
-                    error_label.setStyleSheet("color: red;")
-                    layout.addWidget(error_label)
-
-        except Exception as e:
-            print(f"Error refreshing comprehensive backups: {e}")
-            self.system_backup_status_label.setText("Error loading backups")
-            self.system_backup_status_label.setStyleSheet("color: red;")
-
-    def restore_comprehensive_backup(self, backup_file):
-        """Restore the entire system from a comprehensive backup"""
-        try:
-            reply = QMessageBox.question(
-                self,
-                "⚠️ Dangerous Operation",
-                "This will REPLACE your entire current system state with the backup data.\n\n"
-                "This includes:\n"
-                "• All commands\n"
-                "• All user points and hours\n"
-                "• Moderator settings\n"
-                "• Application configuration\n\n"
-                "Are you ABSOLUTELY sure you want to continue?\n\n"
-                "It is recommended to create a manual backup first!",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-
-            if reply != QMessageBox.Yes:
-                return
-
-            # Additional confirmation
-            reply2 = QMessageBox.question(
-                self,
-                "Final Confirmation",
-                "This action cannot be undone easily.\n\n"
-                "Do you really want to restore the entire system?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-
-            if reply2 != QMessageBox.Yes:
-                return
-
-            # Load backup data
-            with open(backup_file, 'r', encoding='utf-8') as f:
-                backup_data = json.load(f)
-
-            # Restore commands
-            if 'commands' in backup_data:
-                self.replace_commands(backup_data['commands'])
-
-            # Restore currency users
-            if 'currency_users' in backup_data and hasattr(self, 'currency_manager'):
-                self.currency_manager.users = backup_data['currency_users']
-                # force: без него save_users() выходит, если не было
-                # отложенного сохранения, и восстановленное не пишется (S5)
-                self.currency_manager.save_users(force=True)
-
-                # Refresh currency tabs
-                if hasattr(self, 'user_currency_tab'):
-                    self.user_currency_tab.populate_table()
-
-            # Restore moderators
-            if 'moderators' in backup_data:
-                try:
-                    manual_mods = backup_data['moderators'].get('manual', [])
-                    excluded_mods = backup_data['moderators'].get('excluded', [])
-
-                    # Save to config
-                    for mod in manual_mods:
-                        self.config_manager.add_manual_moderator(mod)
-                    for mod in excluded_mods:
-                        self.config_manager.add_excluded_moderator(mod)
-
-                    # Refresh moderator display
-                    if hasattr(self, 'twitch_tab') and hasattr(self.twitch_tab, 'update_moderators_display_only'):
-                        self.twitch_tab.update_moderators_display_only()
-
-                except Exception as e:
-                    print(f"Error restoring moderators: {e}")
-
-            # Restore ranks
-            if 'ranks' in backup_data and hasattr(self, 'currency_manager'):
-                self.currency_manager.ranks = backup_data['ranks']
-                self.currency_manager.save_ranks()
-
-                # Refresh ranks tab
-                if hasattr(self, 'ranks_tab'):
-                    self.ranks_tab.load_ranks()
-
-            # Restore config settings
-            if 'config' in backup_data:
-                config_data = backup_data['config']
-                try:
-                    if 'volume' in config_data:
-                        self.config_manager.set_volume(config_data['volume'])
-                    if 'sound_interruption' in config_data:
-                        self.config_manager.set_sound_interruption(config_data['sound_interruption'])
-                    if 'interruption_message' in config_data:
-                        self.config_manager.set_interruption_message(config_data['interruption_message'])
-                    if 'auto_save' in config_data:
-                        auto_save = config_data['auto_save']
-                        self.config_manager.set_auto_save(auto_save.get('enabled', True), auto_save.get('interval', 300))
-                    if 'max_backups' in config_data:
-                        self.config_manager.set_max_backups(config_data['max_backups'])
-                    if 'twitch_config' in config_data:
-                        # Merge twitch config carefully
-                        twitch_config = config_data['twitch_config']
-                        # Only update non-sensitive fields
-                        if 'channel' in twitch_config:
-                            self.config_manager.set_twitch_channel(twitch_config['channel'])
-                except Exception as e:
-                    print(f"Error restoring config: {e}")
-
-            # Update bot commands if running
-            self.update_commands()
-
-            QMessageBox.information(
-                self,
-                "Restoration Complete",
-                "System has been successfully restored from backup!\n\n"
-                "Please restart the application to ensure all changes take effect."
-            )
-
-        except Exception as e:
-            print(f"Error during comprehensive restoration: {e}")
-            QMessageBox.critical(
-                self,
-                "Restoration Failed",
-                f"Failed to restore system from backup:\n\n{str(e)}"
-            )
-
-    def show_comprehensive_backup_info(self, backup_file):
-        """Show detailed information about a comprehensive backup"""
-        try:
-            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QGroupBox
-
-            # Load backup data
-            with open(backup_file, 'r', encoding='utf-8') as f:
-                backup_data = json.load(f)
-
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Comprehensive Backup Details")
-            dialog.setModal(True)
-            dialog.setMinimumSize(600, 400)
-
-            layout = QVBoxLayout()
-
-            # Backup info
-            info_group = QGroupBox("Backup Information")
-            info_layout = QVBoxLayout()
-
-            backup_info = backup_data.get('backup_info', {})
-            info_text = f"""
-            <b>Timestamp:</b> {backup_info.get('timestamp', 'Unknown')}
-            <b>Version:</b> {backup_info.get('version', 'Unknown')}
-            <b>Description:</b> {backup_info.get('description', 'Unknown')}
-            """
-            info_label = QLabel(info_text)
-            info_label.setTextFormat(1)  # Rich text
-            info_layout.addWidget(info_label)
-
-            info_group.setLayout(info_layout)
-            layout.addWidget(info_group)
-
-            # Content summary
-            content_group = QGroupBox("Content Summary")
-            content_layout = QVBoxLayout()
-
-            commands_count = len(backup_data.get('commands', []))
-            users_count = len(backup_data.get('currency_users', {}))
-            moderators_count = len(backup_data.get('moderators', {}).get('manual', []))
-            ranks_count = len(backup_data.get('ranks', []))
-
-            content_text = f"""
-            <b>Commands:</b> {commands_count}
-            <b>Currency Users:</b> {users_count}
-            <b>Moderators:</b> {moderators_count}
-            <b>Ranks:</b> {ranks_count}
-            """
-            content_label = QLabel(content_text)
-            content_label.setTextFormat(1)  # Rich text
-            content_layout.addWidget(content_label)
-
-            content_group.setLayout(content_layout)
-            layout.addWidget(content_group)
-
-            # Buttons
-            buttons = QDialogButtonBox(QDialogButtonBox.Ok)
-            buttons.accepted.connect(dialog.accept)
-            layout.addWidget(buttons)
-
-            dialog.setLayout(layout)
-            dialog.exec_()
-
-        except Exception as e:
-            print(f"Error showing comprehensive backup info: {e}")
-            QMessageBox.warning(
-                self,
-                "Error",
-                f"Failed to show backup details:\n\n{str(e)}"
-            )
-
     def resizeEvent(self, event):
         """Handle window resize and update notification position"""
         super().resizeEvent(event)
         if hasattr(self, 'update_notification') and self.update_notification.isVisible():
             self.update_notification.update_position()
-
-    def create_comprehensive_backup_method(self):
-        """Create a comprehensive backup of the entire application state"""
-        return self.create_comprehensive_backup()
-
-    def create_comprehensive_backup(self):
-        """Create a comprehensive backup of the entire system"""
-        try:
-            # Create backup directory
-            backup_dir = paths.comprehensive_backups_dir()
-            backup_dir.mkdir(parents=True, exist_ok=True)
-
-            # Generate timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_name = f"system_backup_{timestamp}"
-            backup_path = backup_dir / backup_name
-
-            backup_data = {
-                "backup_info": {
-                    "timestamp": datetime.now().isoformat(),
-                    "version": "1.0",
-                    "description": "Comprehensive system backup created during operation"
-                },
-                "commands": self.commands.copy() if self.commands else [],
-                "currency_users": {},
-                "moderators": {},
-                "config": {},
-                "ranks": [],
-                "command_history": {},
-                "currency_settings": {}
-            }
-
-            # Add currency data if available
-            if hasattr(self, 'currency_manager') and self.currency_manager.users:
-                backup_data["currency_users"] = self.currency_manager.users.copy()
-                backup_data["ranks"] = getattr(self.currency_manager, 'ranks', [])
-
-            # Add currency settings
-            if hasattr(self, 'currency_manager'):
-                backup_data["currency_settings"] = {
-                    "settings": getattr(self.currency_manager, 'settings', {}),
-                    "backup_dir": str(getattr(self.currency_manager, 'backup_dir', '')),
-                    "max_backups": getattr(self.currency_manager, 'max_currency_backups', 10)
-                }
-
-            # Add moderator data
-            try:
-                backup_data["moderators"] = {
-                    "manual": self.config_manager.get_manual_moderators() if hasattr(self.config_manager, 'get_manual_moderators') else [],
-                    "excluded": self.config_manager.get_excluded_moderators() if hasattr(self.config_manager, 'get_excluded_moderators') else []
-                }
-            except:
-                backup_data["moderators"] = {"manual": [], "excluded": []}
-
-            # Add configuration
-            try:
-                backup_data["config"] = {
-                    "volume": self.config_manager.get_volume(),
-                    "sound_interruption": self.config_manager.get_sound_interruption(),
-                    "interruption_message": self.config_manager.get_interruption_message(),
-                    "auto_save": self.config_manager.get_auto_save(),
-                    "max_backups": self.config_manager.get_max_backups(),
-                    "twitch_config": self.config_manager.get_twitch_config() if hasattr(self.config_manager, 'get_twitch_config') else {}
-                }
-            except Exception as e:
-                print(f"Error backing up config: {e}")
-                backup_data["config"] = {}
-
-            # Add command history if available
-            try:
-                if hasattr(self, 'history_manager'):
-                    backup_data["command_history"] = {
-                        "max_backups": self.history_manager.max_backups,
-                        "backup_dir": str(self.history_manager.history_folder)
-                    }
-            except Exception as e:
-                print(f"Error backing up command history metadata: {e}")
-
-            # Save backup data
-            storage.atomic_write_json(backup_path.with_suffix('.json'), backup_data, indent=2)
-
-            # Create metadata
-            metadata = {
-                "backup_time": time.time(),
-                "backup_name": backup_name,
-                "commands_count": len(backup_data["commands"]),
-                "users_count": len(backup_data["currency_users"]),
-                "moderators_count": len(backup_data["moderators"].get("manual", [])),
-                "total_size": backup_path.with_suffix('.json').stat().st_size,
-                "version": backup_data["backup_info"]["version"]
-            }
-
-            storage.atomic_write_json(backup_path.with_suffix('.json.meta'), metadata,
-                                      indent=2, ensure_ascii=True)
-
-            print(f"[COMPREHENSIVE BACKUP] Created backup: {backup_path.name}")
-            
-            # Clean up old comprehensive backups after successful creation
-            self._cleanup_old_comprehensive_backups()
-            
-            return backup_path
-
-        except Exception as e:
-            print(f"Error creating comprehensive backup: {e}")
-            return None
-
-    def _cleanup_old_comprehensive_backups(self):
-        """Remove old comprehensive backups keeping only the most recent ones"""
-        try:
-            from pathlib import Path
-
-            # Get backup directory
-            backup_dir = paths.comprehensive_backups_dir()
-            if not backup_dir.exists():
-                return
-
-            # Get backup files
-            backup_files = list(backup_dir.glob("system_backup_*.json"))
-
-            # Get max comprehensive backups setting
-            max_backups = self.config_manager.get_max_comprehensive_backups()
-
-            if len(backup_files) <= max_backups:
-                return
-
-            # Sort by modification time (newest first)
-            backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-
-            # Remove old backups
-            for old_backup in backup_files[max_backups:]:
-                try:
-                    old_backup.unlink()
-                    # Also remove metadata file if it exists
-                    meta_file = old_backup.with_suffix('.json.meta')
-                    if meta_file.exists():
-                        meta_file.unlink()
-                    print(f"[COMPREHENSIVE BACKUP] Removed old backup: {old_backup.name}")
-                except Exception as e:
-                    print(f"[COMPREHENSIVE BACKUP] Error removing old backup {old_backup}: {e}")
-
-        except Exception as e:
-            print(f"[COMPREHENSIVE BACKUP] Error during cleanup: {e}")
-
-    def restore_comprehensive_backup_method(self, backup_path):
-        """Restore from a comprehensive backup (wrapper for the method)"""
-        return self.restore_comprehensive_backup(backup_path)
 
     def on_tab_changed(self, index):
         """Handle tab changes to refresh data if needed"""

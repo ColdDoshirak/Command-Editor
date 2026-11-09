@@ -114,6 +114,22 @@ def body(k):
     w.delete_command(); pump()
     check("deleted command gone from disk", len(_disk()) == n)
 
+    # ---- Play Sound (step 4.3): no helper thread, button reset in the UI thread -------
+    row = next(i for i, c in enumerate(w.commands) if c["SoundFile"] and os.path.exists(c["SoundFile"]))
+    w.table.selectRow(row); pump()
+    threads = threading.active_count()
+    w.play_sound_btn.click(); pump(50)
+    check("preview: playing", w.play_sound_btn.text() == "Stop Sound", w.play_sound_btn.text())
+    check("preview: no helper thread", threading.active_count() == threads,
+          (threads, threading.active_count()))
+    pump(1200)                                   # fixture sounds are 0.3 s
+    check("preview: button reset after the sound ends", w.play_sound_btn.text() == "Play Sound",
+          w.play_sound_btn.text())
+    w.play_sound_btn.click(); pump(50)
+    w.play_sound_btn.click(); pump(50)
+    check("preview: second press stops", w.play_sound_btn.text() == "Play Sound"
+          and not w.preview.is_playing())
+
     # ---- the bot works on copies -----------------------------------------------------
     snap = w.twitch_tab._commands_snapshot()
     check("bot gets copies", snap[0] == w.commands[0] and snap[0] is not w.commands[0])

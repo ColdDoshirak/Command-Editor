@@ -40,7 +40,7 @@ def body(k):
     check("classic fix-paths button", hasattr(w, "fix_paths_btn"))
 
     # ---- latest backup card ---------------------------------------------
-    w.create_comprehensive_backup(); w.refresh_comprehensive_backups(); pump(200)
+    w.backup_tab.create(); w.backup_tab.refresh(); pump(200)
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete); pump(100)
     frames = [f for f in w.backup_tab.findChildren(QFrame) if f.objectName() == "latestBackup"]
     check("latest backup card found", len(frames) == 1, len(frames))
