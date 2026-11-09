@@ -1,14 +1,10 @@
 import asyncio
-import json
 import os
 import time
 import pygame
-import concurrent.futures
 import threading
 from twitchio.ext import commands
 from twitchio.ext.commands import errors
-from core.config_manager import ConfigManager
-from pathlib import Path
 import traceback
 from core.currency_manager import CurrencyManager
 from datetime import datetime, timezone
@@ -19,7 +15,7 @@ from bot.dispatcher import CommandDispatcher
 from bot.audio import SoundCache, may_start
 from bot.helix import HelixClient, logins as helix_logins
 from bot.ui_port import BotUi, CallbackUi
-from bot.queue import QueueMixin, _PersistedMessage, _QueueSlots  # noqa: F401
+from bot.queue import QueueMixin
 
 
 def _patch_twitchio_keep_alive():
@@ -988,94 +984,6 @@ class TwitchBot(QueueMixin, CommandDispatcher, commands.Bot):
                 currency.save_users(force=True)
         except Exception as e:
             print(f"Error handling USERNOTICE {tags.get('msg-id') if tags else None}: {e}")
-            traceback.print_exc()
-
-    def register_commands(self):
-        """Регистрация встроенных команд бота"""
-        try:
-            @self.command(name="points")
-            async def cmd_points(ctx):
-                """Показать баланс пользователя"""
-                user = ctx.author.name.lower()
-                currency_name = self.currency_manager.get_currency_name()
-                points = self.currency_manager.get_points(user)
-                hours = self.currency_manager.get_hours(user)
-                rank = self.currency_manager.get_rank(user)
-                
-                # Format points with 2 decimal places and hours in the format "1h15m"
-                formatted_points = f"{float(points):.2f}"
-                formatted_hours = self.currency_manager.format_hours(hours)
-                
-                rank_text = f" [{rank}]" if rank else ""
-                await ctx.send(f"{ctx.author.name}{rank_text} - Hours: {formatted_hours} - {currency_name}: {formatted_points}")
-
-            @self.command(name="points_add")
-            async def cmd_points_add(ctx, target: str = None, amount: int = None):
-                """Добавить очки пользователю (только для модераторов)"""
-                username = ctx.author.name.lower()
-                print(f"DEBUG: Command !points_add called by user: {username}")
-                
-                is_mod = await self.is_user_moderator(username)
-                print(f"DEBUG: is_user_moderator returned {is_mod} for user {username}")
-                
-                if not is_mod:
-                    print(f"DEBUG: DENYING command access to {username}")
-                    await ctx.send(f"@{ctx.author.name}: You don't have permission to use this command")
-                    return
-                
-                print(f"DEBUG: GRANTING command access to {username}")
-                
-                if not target or not amount:
-                    await ctx.send("Usage: !points_add <username> <amount>")
-                    return
-
-                try:
-                    target = target.lower()
-                    # Убираем @ если есть
-                    if target.startswith("@"):
-                        target = target[1:]
-
-                    amount = int(amount)
-                    self.currency_manager.add_points(target, amount)
-                    await ctx.send(f"Successfully given {target} {amount} {self.currency_manager.get_currency_name()}")
-                except ValueError:
-                    await ctx.send("Amount must be a number")
-
-            @self.command(name="points_remove")
-            async def cmd_points_remove(ctx, target: str = None, amount: int = None):
-                """Удалить очки у пользователя (только для модераторов)"""
-                username = ctx.author.name.lower()
-                print(f"DEBUG: Command !points_remove called by user: {username}")
-                
-                is_mod = await self.is_user_moderator(username)
-                print(f"DEBUG: is_user_moderator returned {is_mod} for user {username}")
-                
-                if not is_mod:
-                    print(f"DEBUG: DENYING command access to {username}")
-                    await ctx.send(f"@{ctx.author.name}: You don't have permission to use this command")
-                    return
-                
-                print(f"DEBUG: GRANTING command access to {username}")
-
-                if not target or not amount:
-                    await ctx.send("Usage: !points_remove <username> <amount>")
-                    return
-
-                try:
-                    target = target.lower()
-                    # Убираем @ если есть
-                    if target.startswith("@"):
-                        target = target[1:]
-
-                    amount = int(amount)
-                    self.currency_manager.add_points(target, -amount)
-                    await ctx.send(f"Successfully removed {amount} {self.currency_manager.get_currency_name()} from {target}")
-                except ValueError:
-                    await ctx.send("Amount must be a number")
-
-            print("Built-in bot commands registered successfully.")
-        except Exception as e:
-            print(f"Error registering built-in commands: {e}")
             traceback.print_exc()
 
     def normalize_command_key(self, key):

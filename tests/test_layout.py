@@ -43,5 +43,4 @@ async def test_bot_has_no_qt_and_does_not_import_the_window():
 
 async def test_only_the_entry_point_stays_at_the_top():
     top = sorted(n for n in os.listdir(REPO_DIR) if n.endswith(".py"))
-    # moderators_manager.py: dead code, removed in stage 5
-    assert set(top) <= {"command_editor.py", "moderators_manager.py"}, top
+    assert top == ["command_editor.py"], top

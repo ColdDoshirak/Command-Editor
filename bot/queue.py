@@ -74,16 +74,6 @@ class QueueMixin(object):
             return False
         return running is getattr(self, 'loop', None)
 
-    def _call_in_loop(self, func, *args):
-        """Run func in the bot loop: directly if already there (or the loop
-        is not running yet — then we are in the thread that owns it),
-        otherwise schedule it thread-safely. Returns True if run directly."""
-        if self._loop_is_running() and not self._in_loop_thread():
-            self.loop.call_soon_threadsafe(func, *args)
-            return False
-        func(*args)
-        return True
-
     def _category(self, group):
         """Group settings dict, looked up case-insensitively."""
         categories = self.config_manager.get_audio_categories() or {}
@@ -354,10 +344,6 @@ class QueueMixin(object):
         print(f"Queue: skipped current item for group {group}")
         return True
 
-    # Backwards-compatible name used by older UI code.
-    def _ui_skip_next(self, group):
-        self.skip_queue_current(group)
-
     def set_queue_paused(self, group, paused):
         if paused:
             self.queue_paused.add(group)
@@ -404,19 +390,6 @@ class QueueMixin(object):
                 return self._remove_queue_item(group, item)
         return False
 
-    def _stop_group_sound(self, group):
-        """Остановить звук группы (dedicated-канал или общий 0)."""
-        try:
-            channel_id = self._category(group).get('audio_channel', 0)
-            if channel_id and channel_id > 0:
-                ch = pygame.mixer.Channel(channel_id)
-                if ch.get_busy():
-                    ch.stop()
-            elif self.sound_channel is not None and self.sound_channel.get_busy():
-                self.sound_channel.stop()
-        except Exception as e:
-            print(f"Error stopping group sound for {group}: {e}")
-
     def clear_queue(self, group):
         """Drop every pending entry of the group. Returns how many."""
         q = self.command_queues.get(group)
@@ -433,9 +406,6 @@ class QueueMixin(object):
         print(f"Queue: cleared {removed} items from group {group}")
         self._persist_queue_snapshot(group)
         return removed
-
-    def _ui_clear_queue(self, group):
-        self.clear_queue(group)
 
     def reorder_queue_by_ids(self, group, ids):
         """Reorder pending entries to match ``ids`` (from queue_snapshot).
@@ -468,22 +438,6 @@ class QueueMixin(object):
         if i == j:
             return
         ids.insert(j, ids.pop(i))
-        self.reorder_queue_by_ids(group, ids)
-
-    def _ui_reorder_queue(self, group, order):
-        """Old name-based reorder (kept for compatibility)."""
-        q = self.command_queues.get(group)
-        if q is None:
-            return
-        remaining = list(q._queue)
-        ids = []
-        for name in order:
-            name = str(name).lstrip('!')
-            for it in remaining:
-                if str(it[1].get('Command', '')).lstrip('!') == name:
-                    ids.append(id(it))
-                    remaining.remove(it)
-                    break
         self.reorder_queue_by_ids(group, ids)
 
     def _group_volume_override(self, group):

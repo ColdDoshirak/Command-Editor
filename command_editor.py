@@ -3,7 +3,7 @@ import os
 import configparser
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QCheckBox,
                              QFileDialog, QMessageBox, QTabWidget, QDialog)
-from PyQt5.QtCore import Qt, QTimer, QDateTime, QMetaType
+from PyQt5.QtCore import Qt, QTimer, QMetaType
 import pygame
 from ui.twitch_auth import TwitchAuthDialog
 from ui.twitch_tab import TwitchTab
@@ -444,12 +444,6 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         else:
             QMessageBox.warning(self, "Error", "Failed to save commands!")
                 
-    def check_command_cost(self, username, command_cost):
-        """Check if the user has enough currency to execute the command"""
-        if command_cost <= 0:
-            return True
-        return self.currency_manager.pay_for_command(username, command_cost)
-
     def update_commands(self):
         """Update commands in Twitch tab"""
         # Бот получает копии (снимок), а не словари редактора (шаг 2.3)
@@ -650,43 +644,6 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
                 self.fix_sound_paths()
         return fixed, still
 
-    def _has_significant_changes(self, old_commands, new_commands):
-        """Determine if changes are significant enough to warrant a backup
-        
-        Returns:
-            bool: True if significant changes detected, False otherwise
-        """
-        # If no previous commands, this is significant
-        if not old_commands:
-            return True
-            
-        # If command count changed by more than 1, it's significant
-        if abs(len(old_commands) - len(new_commands)) > 1:
-            return True
-        
-        # Check for changes in command names, sound files, or responses
-        old_map = {cmd["Command"]: cmd for cmd in old_commands}
-        new_map = {cmd["Command"]: cmd for cmd in new_commands}
-        
-        # If any commands were added or removed
-        if set(old_map.keys()) != set(new_map.keys()):
-            return True
-        
-        # Check for significant changes in existing commands
-        for cmd_name, new_cmd in new_map.items():
-            if cmd_name in old_map:
-                old_cmd = old_map[cmd_name]
-                
-                # Check if sound file changed
-                if old_cmd.get("SoundFile", "") != new_cmd.get("SoundFile", ""):
-                    return True
-                    
-                # Check if response changed
-                if old_cmd.get("Response", "") != new_cmd.get("Response", ""):
-                    return True
-        
-        return False
-
     def on_interruption_toggle(self, state):
         """Handle interruption toggle change"""
         self.allow_sound_interruption = (state == Qt.Checked)
@@ -808,14 +765,6 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
 
         except Exception as e:
             print(f"Error during automatic currency auto-save: {e}")
-
-    def handle_no_users_data(self, users_data):
-        if not users_data:
-            print("No currency users data available")
-            # Обновить метку времени последнего обновления
-            now = QDateTime.currentDateTime().toString("HH:mm:ss")
-            self.last_update.setText(f"Last update: {now}")
-            return
 
     def resizeEvent(self, event):
         """Handle window resize and update notification position"""

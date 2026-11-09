@@ -306,9 +306,6 @@ class ClassicCommandsMixin(object):
         self.commands_model.endResetModel()
         self.refresh_themed_commands()
 
-    def refresh_table(self):
-        self.update_table()
-
     def _selected_row(self):
         """Строка, выбранная в классической таблице, или -1."""
         sm = self.table.selectionModel()
@@ -336,23 +333,6 @@ class ClassicCommandsMixin(object):
                 if self.command_repo.update(row, {"Response": self.response_edit.toPlainText()}):
                     self.save_commands()
                     self.refresh_themed_commands()
-
-    def update_details(self, current_row, current_col, previous_row, previous_col):
-        if current_row >= 0 and current_row < len(self.commands):
-            cmd = self.commands[current_row]
-            self.command_edit.setText(cmd["Command"])
-            self.permission_combo.setCurrentText(cmd["Permission"])
-            self.info_edit.setText(cmd["Info"])
-            self.group_edit.setText(cmd["Group"])
-            self.response_edit.setPlainText(cmd["Response"])
-            self.cooldown_spin.setValue(cmd["Cooldown"])
-            self.user_cooldown_spin.setValue(cmd["UserCooldown"])
-            self.cost_spin.setValue(cmd["Cost"])
-            self.count_spin.setValue(cmd["Count"])
-            self.usage_combo.setCurrentText(cmd["Usage"])
-            self.enabled_check.setChecked(cmd["Enabled"])
-            self.sound_file_edit.setText(cmd["SoundFile"])
-            self.fk_sound_file_edit.setText(str(cmd["FKSoundFile"]))
 
     def _on_cell_edited(self, row, done):
         """Ячейка классической таблицы сохранена в репозиторий (модель):
@@ -535,12 +515,6 @@ class ClassicCommandsMixin(object):
     def on_permission_changed(self, text):
         self.update_command_field(text, 1)  # Corrected column index
 
-    def on_info_changed(self, text):
-        self.update_command_field(text, 2)  # Corrected column index
-
-    def on_group_changed(self, text):
-        self.update_command_field(text, 3)  # Corrected column index
-
     def on_cooldown_changed(self, value):
         self.update_command_field(value, 5)  # Corrected column index
 
@@ -555,12 +529,6 @@ class ClassicCommandsMixin(object):
 
     def on_usage_changed(self, text):
         self.update_command_field(text, 9)  # Corrected column index
-
-    def on_fk_sound_file_changed(self, text):
-        self.update_command_field(text, 12)  # Corrected column index
-
-    def on_volume_changed(self, value):
-        self.update_command_field(value, 13)  # Corrected column index
 
     def filter_commands(self):
         """Filter displayed commands based on search text"""
@@ -578,10 +546,3 @@ class ClassicCommandsMixin(object):
                               for key in COMMAND_FIELDS)
             self.table.setRowHidden(row, not match_found)
         self.refresh_themed_commands()
-
-    def set_editing_enabled(self, enabled):
-        """Enable or disable command editing buttons"""
-        self.add_btn.setEnabled(enabled)
-        self.remove_btn.setEnabled(enabled)
-        # Also disable the table if editing is disabled
-        self.table.setEnabled(enabled)

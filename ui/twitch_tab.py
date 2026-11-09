@@ -1,4 +1,3 @@
-from PyQt5 import sip
 from PyQt5.QtGui import QTextCursor, QColor
 from PyQt5.QtCore import pyqtSlot, QMetaType, Qt, QTimer
 from PyQt5.QtWidgets import (
@@ -11,7 +10,6 @@ import threading
 import asyncio
 import time
 import webbrowser
-from datetime import datetime
 
 from bot.twitch_bot import TwitchBot
 from ui.twitch_auth import TwitchAuthDialog
@@ -498,16 +496,6 @@ class TwitchTab(QWidget):
     def open_token_generator(self):
         webbrowser.open("https://twitchtokengenerator.com/quick/FWj06omw7e")
 
-    def update_connection_status(self):
-        connected = bool(self.bot and getattr(self.bot, 'is_running', False))
-        self.connect_button.setEnabled(not connected)
-        self.disconnect_button.setEnabled(connected)
-        self.send_button.setEnabled(connected)
-        color = "green" if connected else "red"
-        status = f"Connected to: {self.bot.channel}" if connected else "Not connected"
-        self.connection_status.setText(status)
-        self.connection_status.setStyleSheet(f"color: {color};")
-
     def check_connection(self):
         if not self.bot:
             self.add_to_chat_safe("Not connected")
@@ -660,10 +648,6 @@ class TwitchTab(QWidget):
         if hasattr(self, 'viewer_update_timer'):
             self.stop_viewer_updates()
             self.start_viewer_updates()
-
-    def update_currency(self):
-        if self.parent and hasattr(self.parent, 'user_currency_tab'):
-            self.parent.user_currency_tab.populate_table()
 
     def add_manual_moderator(self):
         """Добавляет модератора в ручной список"""

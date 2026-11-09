@@ -174,28 +174,6 @@ class TwitchThemedBase(QWidget):
         v.addLayout(head)
         return panel, v
 
-    def _sync_viewers_tabs(self, idx):
-        labels = {0: "All Viewers", 1: "Active Chatters", 2: "Moderators"}
-        want = labels.get(idx)
-        for i in range(self.twitch_tab.viewers_tabs.count()):
-            if self.twitch_tab.viewers_tabs.tabText(i) == want:
-                self.twitch_tab.viewers_tabs.setCurrentIndex(i)
-                break
-
-    def _build_moderator_controls(self):
-        tt = self.twitch_tab
-        row1 = QHBoxLayout()
-        row1.setSpacing(8)
-        row1.addWidget(tt.add_moderator_input)
-        row1.addWidget(tt.add_moderator_button)
-        row1.addWidget(tt.remove_moderator_button)
-        row2 = QHBoxLayout()
-        row2.setSpacing(8)
-        row2.addWidget(tt.open_moderators_file_button)
-        row2.addWidget(tt.refresh_moderators_button)
-        row2.addStretch(1)
-        return row1, row2
-
     def _build_legend(self):
         row = QHBoxLayout()
         row.setSpacing(14)
