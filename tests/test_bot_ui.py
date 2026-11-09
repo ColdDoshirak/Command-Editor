@@ -105,23 +105,29 @@ async def test_a_failing_ui_never_breaks_a_command():
         drop_tmpdir(tmp)
 
 
+def _py_files(pkg):
+    out = []
+    for root, dirs, files in os.walk(os.path.join(REPO_DIR, pkg)):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        for n in files:
+            if n.endswith(".py"):
+                out.append(os.path.relpath(os.path.join(root, n), REPO_DIR).replace(os.sep, "/"))
+    return sorted(out)
+
+
 async def test_bot_code_has_no_qt():
-    for rel in ["bot/" + n for n in sorted(os.listdir(os.path.join(REPO_DIR, "bot")))
-                                    if n.endswith(".py")]:
+    for rel in _py_files("bot"):
         src = _read(rel)
         assert "PyQt5" not in src, rel + " imports Qt"
         assert ".emit(" not in src, rel + " emits Qt signals itself"
 
 
-# UI modules that may hold a reference to the bot. Only the bridge may
-# schedule work on the bot loop.
-UI_MODULES = ["command_editor.py"] + ["ui/" + n for n in sorted(os.listdir(os.path.join(REPO_DIR, "ui")))
-                                     if n.endswith(".py") and n != "bot_bridge.py"]
-
-
 async def test_only_the_bridge_touches_the_bot_loop():
+    # every UI module may hold a reference to the bot; only the bridge may
+    # schedule work on the bot loop
     pat = re.compile(r"run_coroutine_threadsafe|call_soon_threadsafe")
-    bad = [rel for rel in UI_MODULES if os.path.exists(os.path.join(REPO_DIR, rel))
-           and pat.search(_read(rel))]
+    ui_modules = ["command_editor.py"] + [r for r in _py_files("ui") if r != "ui/bot_bridge.py"]
+    assert "ui/theme/now_playing.py" in ui_modules, ui_modules
+    bad = [rel for rel in ui_modules if pat.search(_read(rel))]
     assert not bad, "schedule bot work through ui/bot_bridge.py, not directly: %s" % bad
     assert pat.search(_read("ui/bot_bridge.py"))
