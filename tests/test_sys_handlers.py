@@ -139,3 +139,38 @@ async def test_points_cooldown_from_currency_settings():
         assert len(out) == 1 and "cooldown" in out[0], out
     finally:
         drop_tmpdir(tmp)
+
+
+async def test_watch_time_payout_amounts():
+    """Stage 6.2: exact payouts, pinned before process_currency_update was tidied."""
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        cur.settings.update({"live_payout": 10, "online_interval": 5, "regular_bonus": 2,
+                             "mod_bonus": 4, "sub_bonus": 3, "offline_hours": False,
+                             "accumulation_enabled": True, "auto_regular": False})
+        cur.users.update({"plain": {"points": 0, "hours": 0},
+                          "reg": {"points": 0, "hours": 0, "is_regular": True},
+                          "sub": {"points": 0, "hours": 0, "is_subscriber": True},
+                          "mod": {"points": 0, "hours": 0, "is_mod": True}})
+        viewers = ["plain", "reg", "sub", "mod", "NewGuy"]
+        # first tick: half an interval's worth
+        assert cur.process_currency_update(is_live=True, active_viewers=[], all_viewers=viewers)
+        got = {u: cur.users[u]["points"] for u in ("plain", "reg", "sub", "mod", "newguy")}
+        assert got == {"plain": 1.0, "reg": 1.2, "sub": 3.0, "mod": 1.4, "newguy": 1.0}, got
+        assert all(cur.users[u]["hours"] == 0 for u in got)
+        # 5 minutes later: one interval (more than 10 min would be a downtime gap, S3)
+        cur.last_update_time -= 300
+        assert cur.process_currency_update(is_live=True, active_viewers=[], all_viewers=viewers)
+        got = {u: round(cur.users[u]["points"], 2) for u in ("plain", "reg", "sub", "mod", "newguy")}
+        assert got == {"plain": 11.0, "reg": 13.2, "sub": 33.0, "mod": 15.4, "newguy": 11.0}, got
+        assert all(abs(cur.users[u]["hours"] - 0.08) < 1e-9 for u in got), \
+            {u: cur.users[u]["hours"] for u in got}
+        # offline without offline hours: points at the offline rate, no hours
+        cur.settings.update({"offline_payout": 3, "offline_interval": 15})
+        cur.last_update_time -= 300
+        before = cur.users["plain"]["hours"]
+        assert cur.process_currency_update(is_live=False, active_viewers=[], all_viewers=["plain"])
+        assert round(cur.users["plain"]["points"], 2) == 12.0 and cur.users["plain"]["hours"] == before
+    finally:
+        drop_tmpdir(tmp)

@@ -4,11 +4,9 @@ import time
 import threading
 from datetime import datetime
 from pathlib import Path
-import sys
 import hashlib
 import shutil
-import logging
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 
 from core import paths, storage
 
@@ -259,11 +257,6 @@ class CurrencyManager:
             traceback.print_exc()
             return False
 
-    # Метод для совместимости с currency_file
-    def save_currency_users(self, force=False):
-        """Alias для save_users() для совместимости"""
-        return self.save_users(force)
-    
     @staticmethod
     def _normalize_ranks(ranks):
         """Единая схема рангов: required - число (старый ключ 'points' тоже
@@ -447,30 +440,6 @@ class CurrencyManager:
         # Save changes
         self.save_users(force=True)
     
-    def update_user(self, username, points=None, hours=None):
-        """Update user data in the currency system"""
-        username = username.lower()
-        
-        if not hasattr(self, 'users') or self.users is None:
-            self.users = {}
-            
-        with self.users_lock:
-            if username not in self.users:
-                return False
-                
-            if points is not None:
-                self.users[username]['points'] = points
-                
-            if hours is not None:
-                self.users[username]['hours'] = hours
-                
-            # Update last seen timestamp
-            self.users[username]['last_seen'] = time.time()
-        
-        # Save changes
-        self.save_users(force=True)
-        return True
-    
     def remove_user(self, username):
         """Remove a user from the currency system"""
         username = username.lower()
@@ -512,8 +481,6 @@ class CurrencyManager:
                     'last_seen': time.time()
                 }
                 
-            # Сохраняем текущий баланс для проверки
-            old_points = self.users[username]['points']
             
             # Добавляем очки с форматированием
             self.users[username]['points'] = self._format_points(self.users[username]['points'] + amount)
@@ -533,20 +500,6 @@ class CurrencyManager:
             self._save_pending = True
             
         return current_points
-    
-    def set_points(self, username, amount):
-        """Set points for a user to a specific amount"""
-        username = username.lower()
-        with self.users_lock:
-            if username not in self.users:
-                self.users[username] = {
-                    'points': 0,
-                    'hours': 0,
-                    'last_seen': time.time()
-                }
-            self.users[username]['points'] = amount
-            self.users[username]['last_seen'] = time.time()
-        self.save_users(force=True)
     
     def remove_points(self, username, amount):
         """Убрать очки у пользователя"""
@@ -619,22 +572,6 @@ class CurrencyManager:
             self._save_pending = True
         return True, ""
 
-    def add_hours(self, username, hours):
-        """Добавить часы пользователю"""
-        username = username.lower()
-        with self.users_lock:
-            if username not in self.users:
-                self.users[username] = {
-                    'points': 0,
-                    'hours': 0,
-                    'last_seen': time.time()
-                }
-            self.users[username]['hours'] += hours
-            if self.settings.get('rank_type') == 'Hours':
-                self.check_rank_promotion(username)
-        self.save_users(force=True)
-        return True
-    
     def add_rank(self, name, required, group, description=""):
         """Добавить новый ранг"""
         rank = {
@@ -757,48 +694,10 @@ class CurrencyManager:
             message = message.replace(placeholder, value)
         return message
     
-    def process_command(self, username, command, args=None):
-        """Обработать команду валюты"""
-        if command.lower() == self.settings['command'].lower():
-            return self.format_currency_message(username)
-        return None
-    
-    def update_settings(self, new_settings):
-        """Обновить настройки валюты"""
-        self.settings.update(new_settings)
-        self.save_settings()
-        return True
-    
-    def bulk_update_points(self, action, amount, filter_func=None):
-        """Массовое обновление очков для пользователей"""
-        updated_count = 0
-        
-        with self.users_lock:
-            for username, data in list(self.users.items()):
-                if filter_func is None or filter_func(username, data):
-                    if action == "add":
-                        data['points'] += amount
-                    elif action == "set":
-                        data['points'] = amount
-                    elif action == "reset":
-                        data['points'] = 0
-                    
-                    updated_count += 1
-                    self.check_rank_promotion(username)
-        
-        if updated_count > 0:
-            self.save_users(force=True)
-        
-        return updated_count
-    
     def get_currency_name(self):
         """Получить название валюты"""
         # Вкладка сохраняет название в 'name' ('currency_name' - старое имя)
         return self.settings.get('name') or self.settings.get('currency_name') or 'Points'
-    
-    def get_currency_command(self):
-        """Получить команду для валюты"""
-        return self.settings['command']
     
     def pay_for_command(self, username, cost):
         """Снять плату за команду с пользователя"""
@@ -822,24 +721,6 @@ class CurrencyManager:
         # записью из другого потока.
         self.save_users(force=True)
         return True
-    
-    def update_last_seen(self, username):
-        """Update last_seen timestamp for a user without adding points"""
-        username = username.lower()  # Нормализация имени
-        
-        # Загрузка пользовательских данных при необходимости
-        if not hasattr(self, 'users') or self.users is None:
-            self.users = self.get_all_users()
-        
-        with self.users_lock:
-            if username not in self.users:
-                self.users[username] = {
-                    'points': 0,
-                    'hours': 0,
-                    'last_seen': time.time()
-                }
-            else:
-                self.users[username]['last_seen'] = time.time()
     
     def get_all_users(self):
         """Метод для совместимости с обращениями к get_all_users"""
@@ -899,12 +780,12 @@ class CurrencyManager:
                 interval_minutes = self.settings.get('online_interval', 5)
             else:
                 base_payout = self.settings.get('offline_payout', 0)
-                interval_minutes = self.settings.get('offline_interval', 15)            # Проратируем награду в зависимости от времени с последнего обновления
+                interval_minutes = self.settings.get('offline_interval', 15)
             # Формула: (Points per interval) * (elapsed minutes) / (interval minutes)
+            # пропорционально прошедшему времени; первый тик - полинтервала
             if elapsed_minutes > 0:
                 points_to_award = base_payout * elapsed_minutes / interval_minutes
             else:
-                # Первый запуск, начисляем минимальную сумму
                 points_to_award = base_payout / (interval_minutes * 2)
               # Округляем до двух знаков после запятой
             points_to_award = round(points_to_award, 2)
@@ -922,80 +803,54 @@ class CurrencyManager:
                     chat_message_callback("No points to award, skipping update")
                 return False
 
+            def share(rate):
+                """Rate per interval -> this tick's part (as for the base payout)."""
+                if elapsed_minutes > 0:
+                    return round(rate * elapsed_minutes / interval_minutes, 2)
+                return round(rate / (interval_minutes * 2), 2)
+
+            regular_rate = self.settings.get('regular_bonus', 0)
+            mod_rate = self.settings.get('mod_bonus', 0)
+            sub_multiplier = self.settings.get('sub_bonus', 2)
+            add_hours = is_live or self.settings.get('offline_hours', False)
+            # часы просмотра - с поминутной точностью
+            hours_added = round(elapsed_minutes / 60, 2) if add_hours else 0
+
             viewers_awarded = 0
-            for user in all_viewers:
-                uname = user.lower()
-                  # Базовые очки с точностью до сотых
-                pts = points_to_award
-                
-                # Бонус для регуляров
-                is_regular = self.users.get(uname, {}).get('is_regular', False)
-                regular_bonus = 0
-                if is_regular:
-                    # Проратируем и бонус регулярам
-                    regular_bonus_rate = self.settings.get('regular_bonus', 0)
-                    if elapsed_minutes > 0:
-                        regular_bonus = round(regular_bonus_rate * elapsed_minutes / interval_minutes, 2)
-                    else:
-                        regular_bonus = round(regular_bonus_rate / (interval_minutes * 2), 2)
-                
-                # Бонус для подписчиков
-                is_subscriber = self.users.get(uname, {}).get('is_subscriber', False)
-                sub_bonus = 0
-                if is_subscriber:
-                    sub_multiplier = self.settings.get('sub_bonus', 2)
-                    sub_bonus = round(pts * (sub_multiplier - 1), 2)  # Точность до сотых
-                
-                # Бонус для модераторов
-                is_mod = self.users.get(uname, {}).get('is_mod', False)
-                mod_bonus = 0
-                if is_mod:
-                    mod_bonus_base = self.settings.get('mod_bonus', 0)
-                    if elapsed_minutes > 0:
-                        mod_bonus = round(mod_bonus_base * elapsed_minutes / interval_minutes, 2)
-                    else:
-                        mod_bonus = round(mod_bonus_base / (interval_minutes * 2), 2)
-                
-                # Применяем все бонусы и округляем итоговую сумму до сотых
-                total = round(pts + regular_bonus + sub_bonus + mod_bonus, 2)
-                
-                # Для целочисленных значений не нужна проверка на минимум 0.1
-                
-                self.add_points(uname, total)
-                  # Обновляем часы просмотра (только если stream is live или offline_hours включены)
-                hours_added = 0
-                if is_live or self.settings.get('offline_hours', False):
-                    # Конвертируем elapsed_minutes в часы, с округлением до сотых (поминутная точность)
-                    hours_added = round(elapsed_minutes / 60, 2)
-                    # Если пользователя нет в системе, добавляем его
-                    if uname not in self.users:
-                        self.users[uname] = {'points': 0, 'hours': 0, 'last_seen': time.time()}
-                    # Добавляем часы пользователю
-                    self.users[uname]['hours'] += hours_added
-                
-                # Логирование начисления (с точностью до сотых)
-                bonus_str = f"(base {pts:.2f}"
-                if regular_bonus > 0:
-                    bonus_str += f" + regular bonus {regular_bonus:.2f}"
-                if sub_bonus > 0:
-                    bonus_str += f" + sub bonus {sub_bonus:.2f}"
-                if mod_bonus > 0:
-                    bonus_str += f" + mod bonus {mod_bonus:.2f}"
-                bonus_str += ")"                # Добавляем информацию о часах в лог только если они начислены
+            # Под users_lock целиком: бот меняет тех же зрителей из своего
+            # потока (раньше часы прибавлялись мимо лока). Записи на диск здесь
+            # нет - она ниже, после лока (порядок: файл -> users_lock).
+            with self.users_lock:
+                for user in all_viewers:
+                    uname = user.lower()
+                    data = self.users.get(uname, {})
+                    pts = points_to_award
+                    regular_bonus = share(regular_rate) if data.get('is_regular', False) else 0
+                    sub_bonus = round(pts * (sub_multiplier - 1), 2) if data.get('is_subscriber', False) else 0
+                    mod_bonus = share(mod_rate) if data.get('is_mod', False) else 0
+                    total = round(pts + regular_bonus + sub_bonus + mod_bonus, 2)
+
+                    self.add_points(uname, total)
+                    if add_hours:
+                        if uname not in self.users:
+                            self.users[uname] = {'points': 0, 'hours': 0, 'last_seen': time.time()}
+                        self.users[uname]['hours'] = self.users[uname].get('hours', 0) + hours_added
+
+                    bonus_str = f"(base {pts:.2f}"
+                    if regular_bonus > 0:
+                        bonus_str += f" + regular bonus {regular_bonus:.2f}"
+                    if sub_bonus > 0:
+                        bonus_str += f" + sub bonus {sub_bonus:.2f}"
+                    if mod_bonus > 0:
+                        bonus_str += f" + mod bonus {mod_bonus:.2f}"
+                    bonus_str += ")"
+                    hours_info = f", hours +{round(hours_added * 60)}m" if hours_added > 0 else ""
+                    print(f"[{datetime.now().isoformat()}] awarded {total:.2f} to {uname} {bonus_str} "
+                          f"→ new total {self.users.get(uname, {}).get('points', 0):.2f}{hours_info}")
+                    viewers_awarded += 1
                 if hours_added > 0:
-                    # Форматируем добавленные часы в виде минут, так как обычно они будут маленькими
-                    minutes_added = round(hours_added * 60)
-                    hours_info = f", hours +{minutes_added}m"
-                else:
-                    hours_info = ""
-                print(f"[{datetime.now().isoformat()}] awarded {total:.2f} to {uname} {bonus_str} → new total {self.users[uname]['points']:.2f}{hours_info}")
-                
-                # Добавляем специальный лог для отслеживания часов
-                if hours_added > 0:
-                    total_hours_formatted = self.format_hours(self.users[uname]['hours'])
-                    print(f"[{datetime.now().isoformat()}] Hours tracking: {uname} +{minutes_added}m → new total {total_hours_formatted}")
-                viewers_awarded += 1
-            
+                    self._save_pending = True
+
             # Use enhanced save with backup creation for major currency updates
             if not self.enhanced_save_users(force_backup=True):
                 print(f"[{datetime.now().isoformat()}] [CURRENCY SAVE] Failed to save updated currency data")
@@ -1015,27 +870,6 @@ class CurrencyManager:
             print(f"[{datetime.now().isoformat()}] Error in process_currency_update: {e}")
             import traceback; traceback.print_exc()
             return False
-    
-    def get_currency_users(self):
-        """Load currency users from file or return current users"""
-        try:
-            # Если users уже загружены, просто возвращаем их 
-            if hasattr(self, 'users') and self.users is not None:
-                return self.users
-                
-            # Если нет, загружаем из файла
-            if os.path.exists(self.users_file):
-                with open(self.users_file, 'r', encoding='utf-8') as f:
-                    self.users = json.load(f)
-                    return self.users
-            
-            # Если файла нет, возвращаем пустой словарь
-            self.users = {}
-            return self.users
-        except Exception as e:
-            print(f"Error loading currency users: {e}")
-            self.users = {}
-            return self.users
     
     def get_points(self, username):
         """Получить количество поинтов пользователя (0, если такого зрителя нет).
