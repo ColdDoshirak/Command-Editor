@@ -440,6 +440,23 @@ class CurrencyManager:
         # Save changes
         self.save_users(force=True)
     
+    def update_user_fields(self, username, **fields):
+        """Change a viewer's stored fields (points, hours, is_regular, is_mod...)
+        from the window: under users_lock, then saved after it. False if there
+        is no such viewer. The rank follows a points/hours change."""
+        username = username.lower()
+        with self.users_lock:
+            user = self.users.get(username)
+            if not isinstance(user, dict):
+                return False
+            user.update(fields)
+            user['last_seen'] = time.time()
+            if 'points' in fields or 'hours' in fields:
+                self._apply_rank(username)
+            self._save_pending = True
+        self.save_users(force=True)
+        return True
+
     def remove_user(self, username):
         """Remove a user from the currency system"""
         username = username.lower()

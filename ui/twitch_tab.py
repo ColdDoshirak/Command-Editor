@@ -712,9 +712,8 @@ class TwitchTab(QWidget):
         # Обновляем в системе валюты
         if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'currency_manager'):
             currency_manager = self.parent.currency_manager
-            if username in currency_manager.users:
-                currency_manager.users[username]['is_mod'] = is_moderator
-                currency_manager.save_users()
+            # раньше: save_users() без отметки изменений - ничего не писал
+            if currency_manager.update_user_fields(username, is_mod=is_moderator):
                 print(f"User {username} moderator status updated to: {is_moderator}")
         
         # У бота те же currency_manager и config_manager, что и у окна

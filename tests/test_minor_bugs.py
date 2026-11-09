@@ -171,3 +171,22 @@ async def test_nothing_writes_to_disk_under_users_lock():
                     if isinstance(c, ast.Call) and getattr(c.func, "attr", None) in writes:
                         bad.append("%s:%d %s" % (rel, c.lineno, c.func.attr))
     assert not bad, bad
+
+
+async def test_the_window_changes_viewers_only_through_currency_manager():
+    """users is shared with the bot thread: the window goes through
+    update_user_fields / remove_user / add_user (lock + save), never writes
+    currency_manager.users[...] itself."""
+    import os
+    import re
+    from harness import REPO_DIR
+    pat = re.compile(r"\.users\[[^\]]+\](\[[^\]]+\])?\s*(=[^=]|[-+]=)|del\s+\S*\.users\[|\.users\.(pop|clear|update)\(")
+    bad = []
+    for root, _dirs, files in os.walk(os.path.join(REPO_DIR, "ui")):
+        for n in files:
+            if n.endswith(".py"):
+                path = os.path.join(root, n)
+                for i, line in enumerate(open(path, encoding="utf-8"), 1):
+                    if pat.search(line):
+                        bad.append("%s:%d %s" % (os.path.relpath(path, REPO_DIR), i, line.strip()))
+    assert not bad, bad

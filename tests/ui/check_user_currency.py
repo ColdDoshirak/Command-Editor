@@ -86,5 +86,58 @@ def body(k):
     tab.populate_table(); pump()
     check("no viewers -> empty table", tab.table.rowCount() == 0, tab.table.rowCount())
 
+    # ---- the Add / Edit dialogs, driven for real ------------------------------------
+    import json
+    from PyQt5.QtCore import QTimer
+    from PyQt5.QtWidgets import QApplication, QLineEdit, QAbstractSpinBox, QPushButton
+
+    def drive(fill):
+        """Fill the modal dialog that opens next, then press Save."""
+        done = []
+
+        def step():
+            dlg = QApplication.activeModalWidget()
+            if dlg is None:
+                QTimer.singleShot(50, step)
+                return
+            try:
+                fill(dlg)
+            finally:
+                save = [b for b in dlg.findChildren(QPushButton) if b.text() == "Save"]
+                (save[0].click() if save else dlg.reject())
+                done.append(1)
+                # Save failed (exception) -> the dialog stays open: close it
+                QTimer.singleShot(100, lambda: dlg.isVisible() and dlg.reject())
+        QTimer.singleShot(50, step)
+        return done
+
+    def disk():
+        with open(str(cur.users_file), encoding="utf-8") as f:
+            return json.load(f)
+
+    def fill_add(dlg):
+        dlg.findChildren(QLineEdit)[0].setText("MixedCase")
+        dlg.findChildren(QAbstractSpinBox)[0].setValue(5)
+    errors_before = len([r for r in k.results if r[0] == "FAIL"])
+    drive(fill_add)
+    tab.add_user(); pump(200)
+    check("Add User with capitals in the name works",
+          "mixedcase" in cur.users and cur.users["mixedcase"]["points"] == 5
+          and len([r for r in k.results if r[0] == "FAIL"]) == errors_before,
+          (sorted(cur.users), [r for r in k.results if r[0] == "FAIL"][errors_before:]))
+
+    with cur.users_lock:
+        cur.users["whale"] = {"points": 2000000.5, "hours": 3.25, "is_regular": True}
+    drive(lambda dlg: None)                      # open Edit, change nothing, Save
+    tab.edit_user("whale"); pump(200)
+    check("Edit + Save keeps a big / fractional balance",
+          cur.users["whale"]["points"] == 2000000.5 and disk()["whale"]["points"] == 2000000.5,
+          cur.users["whale"])
+
+    # moderator status set from the Twitch tab reaches the disk
+    w.twitch_tab.update_bot_moderators_status("whale", True); pump()
+    check("moderator flag from the Twitch tab is saved", disk().get("whale", {}).get("is_mod") is True,
+          disk().get("whale"))
+
 
 kit.start(body, delay_ms=400)

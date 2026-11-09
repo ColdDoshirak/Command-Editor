@@ -1,10 +1,16 @@
 import os
-import time
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
                              QTableWidgetItem, QHeaderView, QCheckBox, QDialog, QLineEdit,
-                             QSpinBox, QDoubleSpinBox, QMessageBox, QSizePolicy)
+                             QDoubleSpinBox, QMessageBox, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
 from core.currency_manager import CurrencyManager
+
+def _points_box():
+    box = QDoubleSpinBox()
+    box.setDecimals(2)
+    box.setRange(0, CurrencyManager.MAX_BALANCE)
+    return box
+
 
 class UserCurrencyTab(QWidget):
     def __init__(self, parent=None):
@@ -262,8 +268,7 @@ class UserCurrencyTab(QWidget):
         # Очки
         points_layout = QHBoxLayout()
         points_layout.addWidget(QLabel("Points:"))
-        points_input = QSpinBox()
-        points_input.setRange(0, 999999)
+        points_input = _points_box()
         points_layout.addWidget(points_input)
         layout.addLayout(points_layout)
           # Часы (с поддержкой дробных значений)
@@ -300,11 +305,10 @@ class UserCurrencyTab(QWidget):
                 if not hasattr(self.currency_manager, 'users') or self.currency_manager.users is None:
                     self.currency_manager.users = {}
 
-                # Используем add_user, затем обновляем значения и сохраняем принудительно
+                # add_user хранит имя в нижнем регистре, ставит last_seen и
+                # сохраняет (раньше здесь был users[username] с исходным
+                # регистром: "Alice" -> KeyError, диалог не закрывался)
                 self.currency_manager.add_user(username, points=points, hours=hours)
-                self.currency_manager.users[username]['last_seen'] = time.time()
-                # Явное сохранение, чтобы гарантировать запись в файл
-                self.currency_manager.save_users(force=True)
                 
                 # Обновляем таблицу
                 self.populate_table()
@@ -333,9 +337,8 @@ class UserCurrencyTab(QWidget):
         # Очки
         points_layout = QHBoxLayout()
         points_layout.addWidget(QLabel("Points:"))
-        points_input = QSpinBox()
-        points_input.setRange(0, 999999)
-        points_input.setValue(user_data.get('points', 0))
+        points_input = _points_box()
+        points_input.setValue(float(user_data.get('points', 0) or 0))
         points_layout.addWidget(points_input)
         layout.addLayout(points_layout)
           # Часы (с поддержкой дробных значений)
@@ -372,16 +375,9 @@ class UserCurrencyTab(QWidget):
             hours = hours_input.value()
             is_regular = is_regular_check.isChecked()
             
-            # Обновляем данные пользователя
-            self.currency_manager.users[username]['points'] = points
-            self.currency_manager.users[username]['hours'] = hours
-            self.currency_manager.users[username]['is_regular'] = is_regular
-            self.currency_manager.users[username]['last_seen'] = time.time()
-
-            # Помечаем данные как изменённые и сохраняем принудительно
-            if hasattr(self.currency_manager, "_save_pending"):
-                self.currency_manager._save_pending = True
-            self.currency_manager.save_users(force=True)
+            # под users_lock и с записью на диск (бот меняет тех же зрителей)
+            self.currency_manager.update_user_fields(
+                username, points=round(points, 2), hours=hours, is_regular=is_regular)
             
             # Обновляем таблицу
             self.populate_table()
@@ -408,14 +404,8 @@ class UserCurrencyTab(QWidget):
         
         if reply == QMessageBox.Yes:
             try:
-                if username in self.currency_manager.users:
-                    # Удаляем пользователя
-                    del self.currency_manager.users[username]
-
-                    # Помечаем данные как изменённые и сохраняем принудительно
-                    if hasattr(self.currency_manager, "_save_pending"):
-                        self.currency_manager._save_pending = True
-                    self.currency_manager.save_users(force=True)
+                # под users_lock, с записью на диск
+                if self.currency_manager.remove_user(username):
                     
                     # Принудительно очищаем таблицу, если пользователей не осталось
                     if not self.currency_manager.users:
