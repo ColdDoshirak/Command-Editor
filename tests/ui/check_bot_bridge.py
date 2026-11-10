@@ -148,6 +148,10 @@ def body(k):
         check("bot stream status shown", "OFFLINE" in tab.stream_status.text(), tab.stream_status.text())
         check("bot viewer list shown", tab.all_viewers_list.count() == 1
               and tab.all_viewers_list.item(0).text() == "zed")
+        loop.call_soon_threadsafe(bot.ui.active_viewers, ["talker"])
+        pump(300)
+        check("active chatters reach the tab", tab.active_users == ["talker"]
+              and tab.active_viewers_list.count() == 1, tab.active_users)
 
         # ---- settings and edits reach the running bot through its loop -----------------
         w.on_interruption_toggle(Qt.Checked)

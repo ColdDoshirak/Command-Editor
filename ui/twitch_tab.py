@@ -576,6 +576,8 @@ class TwitchTab(QWidget):
             print(f"Error in process_currency_update: {e}")
 
     def update_active_viewers(self, viewers):
+        # кто писал в чат за последние 10 минут (бот, _note_chatter)
+        self.active_users = list(viewers)
         self.active_viewers_list.blockSignals(True)
         self.active_viewers_list.clear()
         for v in sorted(viewers):

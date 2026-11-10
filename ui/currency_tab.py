@@ -258,7 +258,7 @@ class CurrencyTab(QWidget):
         active_label = QLabel("Active Bonus:")
         self.active_bonus_input = QSpinBox()
         self.active_bonus_input.setRange(0, 100)
-        self.active_bonus_input.setValue(self.currency_manager.settings.get('active_bonus', 1))
+        self.active_bonus_input.setValue(self.currency_manager.settings.get('active_bonus', 0))
         self.active_bonus_input.valueChanged.connect(self.save_settings)
         self.active_bonus_input.valueChanged.connect(self.update_min_max_labels)
         active_layout.addWidget(active_label)

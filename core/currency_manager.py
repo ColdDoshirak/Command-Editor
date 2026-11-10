@@ -16,6 +16,8 @@ class CurrencyManager:
     MAX_OPERATION = 5000000
     MAX_BALANCE = 50000000
     MIN_AMOUNT = 0.01
+    ACTIVE_BONUS_RESET_FLAG = 'active_bonus_reset_2_0'
+    CHAT_MEMORY_SECONDS = 3600
 
     def __init__(self, config_manager=None):
         # Общий ConfigManager программы (шаг 1.2); None - создаётся по
@@ -44,7 +46,7 @@ class CurrencyManager:
             'offline_payout': 0,
             'regular_bonus': 0,
             'sub_bonus': 0,            'mod_bonus': 0,
-            'active_bonus': 1,
+            'active_bonus': 0,
             'payout_mode': 'per_minute',  # Только per_minute режим
             # Награды за события - одна схема для вкладки и бота (шаг 1.5)
             'raid_points': 10,
@@ -80,7 +82,9 @@ class CurrencyManager:
         # Загружаем данные
         self.load_data()
 
-        self.users_lock = threading.RLock()  # Реентерабельный: add_points держит лок и вызывает save_users через check_rank_promotion
+        self.users_lock = threading.RLock()  # Реентерабельный: add_points берёт его повторно (check_rank_promotion и др.)
+        # кто когда последний раз писал в чат (только в памяти): Active Bonus
+        self._last_chat = {}
 
         # Ранги - из того же data/ranks.json, что у вкладки Ranks (S6:
         # раньше не загружались вовсе и всегда были пустыми).
@@ -379,7 +383,8 @@ class CurrencyManager:
                 'offline_active_bonus': False,
                 'sub_bonus': 1,
                 'regular_bonus': 1,
-                'mod_bonus': 2,                'active_bonus': 1,
+                'mod_bonus': 2,
+                'active_bonus': 0,
                 'currency_single': 'point',
                 'currency_plural': 'points',
                 'hours_name': 'hours',
@@ -400,10 +405,21 @@ class CurrencyManager:
                     loaded = json.load(f)
                     self.settings.update(loaded)
                 print("Currency settings loaded from file")
-                if self._migrate_setting_keys(loaded):
+                changed = self._migrate_setting_keys(loaded)
+                # Active Bonus в 1.x не начислялся, а по умолчанию стояла 1.
+                # Теперь он работает - старую 1 разово сбрасываем в 0, чтобы
+                # балансы не начали расти без спроса. Своё значение (не 1) и 1,
+                # выставленная после сброса, остаются.
+                if not loaded.get(self.ACTIVE_BONUS_RESET_FLAG):
+                    if loaded.get('active_bonus') == 1:
+                        self.settings['active_bonus'] = 0
+                    self.settings[self.ACTIVE_BONUS_RESET_FLAG] = True
+                    changed = True
+                if changed:
                     self.save_settings()
             else:
                 print("No currency settings file found, using defaults")
+                self.settings[self.ACTIVE_BONUS_RESET_FLAG] = True
             
             # Добавьте к существующим настройкам:
             self.settings.setdefault("raid_points", 10)
@@ -749,6 +765,29 @@ class CurrencyManager:
     # Самая редкая частота обновления зрителей в интерфейсе - 5 минут.
     MAX_TICK_GAP_MINUTES = 10
 
+    def note_chat(self, username):
+        """The bot: `username` wrote in chat now (memory only, no record is created)."""
+        name = str(username or "").lower().lstrip('@')
+        if not name:
+            return
+        now = time.time()
+        with self.users_lock:
+            self._last_chat[name] = now
+            if len(self._last_chat) > 5000:          # forget the long silent
+                cutoff = now - self.CHAT_MEMORY_SECONDS
+                self._last_chat = {n: t for n, t in self._last_chat.items() if t >= cutoff}
+
+    def recent_chatters(self, seconds=600):
+        cutoff = time.time() - seconds
+        with self.users_lock:
+            return sorted(n for n, t in self._last_chat.items() if t >= cutoff)
+
+    def _active_since(self, since):
+        """Names that wrote after `since` (None: the first payout - any recent)."""
+        cutoff = since if since is not None else time.time() - self.CHAT_MEMORY_SECONDS
+        with self.users_lock:
+            return {n for n, t in self._last_chat.items() if t > cutoff}
+
     def process_currency_update(self, is_live=False, active_viewers=None, all_viewers=None, chat_message_callback=None):
         """Process currency update for viewers"""
         # Проверяем, включено ли накопление валюты
@@ -760,6 +799,7 @@ class CurrencyManager:
             
         # Добавляем защиту от двойного начисления и вычисляем интервал начисления
         current_time = time.time()
+        previous_update = getattr(self, 'last_update_time', None)
         
         # Если прошло менее 5 секунд с момента последнего обновления, пропускаем
         if hasattr(self, 'last_update_time') and current_time - self.last_update_time < 5:
@@ -831,6 +871,12 @@ class CurrencyManager:
 
             regular_rate = self.settings.get('regular_bonus', 0)
             mod_rate = self.settings.get('mod_bonus', 0)
+            # Active Bonus: писал в чат после прошлого начисления; офлайн -
+            # только если включено offline_active_bonus
+            active_rate = self.settings.get('active_bonus', 0)
+            if not is_live and not self.settings.get('offline_active_bonus', False):
+                active_rate = 0
+            active = self._active_since(previous_update) | {str(v).lower() for v in active_viewers}
             sub_multiplier = self.settings.get('sub_bonus', 2)
             add_hours = is_live or self.settings.get('offline_hours', False)
             # часы просмотра - с поминутной точностью
@@ -848,7 +894,8 @@ class CurrencyManager:
                     regular_bonus = share(regular_rate) if data.get('is_regular', False) else 0
                     sub_bonus = round(pts * (sub_multiplier - 1), 2) if data.get('is_subscriber', False) else 0
                     mod_bonus = share(mod_rate) if data.get('is_mod', False) else 0
-                    total = round(pts + regular_bonus + sub_bonus + mod_bonus, 2)
+                    active_bonus = share(active_rate) if active_rate and uname in active else 0
+                    total = round(pts + regular_bonus + sub_bonus + mod_bonus + active_bonus, 2)
 
                     self.add_points(uname, total)
                     if add_hours:
@@ -863,6 +910,8 @@ class CurrencyManager:
                         bonus_str += f" + sub bonus {sub_bonus:.2f}"
                     if mod_bonus > 0:
                         bonus_str += f" + mod bonus {mod_bonus:.2f}"
+                    if active_bonus > 0:
+                        bonus_str += f" + active bonus {active_bonus:.2f}"
                     bonus_str += ")"
                     hours_info = f", hours +{round(hours_added * 60)}m" if hours_added > 0 else ""
                     print(f"[{datetime.now().isoformat()}] awarded {total:.2f} to {uname} {bonus_str} "

@@ -173,8 +173,11 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             self.stream_status_task = None
             self.stream_status_interval = 30
             
-            # Отслеживание пользователей
-            self.active_users = set([channel.lower()])  # Инициализируем с владельцем канала
+            # Активные в чате: кто писал за последние ACTIVE_SECONDS (вкладка
+            # Active Chatters; Active Bonus считает CurrencyManager.note_chat).
+            # Раньше здесь был список всех зрителей на момент подключения.
+            self.active_users = set()
+            self._chat_times = {}
             
             # ⚠️ Используем переданный currency_manager или создаем новый если не передан
             self.currency_manager = currency_manager or CurrencyManager()
@@ -293,11 +296,9 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             mods = await self.get_channel_moderators()
             print(f"Retrieved {len(mods)} moderators")
             
-            # первоначально активные зрители - тот же список
-            self.active_users = set(viewers)
             self._notify("all_viewers", viewers)
             self._notify("chat", f"Connected to {self.channel}. Loaded {len(viewers)} viewers.")
-            self._notify("active_viewers", list(self.active_users))
+            self._notify("active_viewers", sorted(self.active_users))
             
             # Проверка статуса стрима
             is_live = await self.check_if_live()
@@ -361,10 +362,32 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
                 # Небольшая задержка между сообщениями для избежания rate limit
                 await asyncio.sleep(0.1)
 
+    ACTIVE_SECONDS = 600
+
+    def _note_chatter(self, name):
+        """Someone wrote in chat: Active Bonus (currency) and the Active
+        Chatters list (reported only when it changes)."""
+        name = str(name or "").lower()
+        if not name:
+            return
+        cm = getattr(self, "currency_manager", None)
+        if cm is not None and hasattr(cm, "note_chat"):
+            cm.note_chat(name)
+        now = time.time()
+        self._chat_times[name] = now
+        cutoff = now - self.ACTIVE_SECONDS
+        for old in [n for n, t in self._chat_times.items() if t < cutoff]:
+            del self._chat_times[old]
+        active = set(self._chat_times)
+        if active != self.active_users:
+            self.active_users = active
+            self._notify("active_viewers", sorted(active))
+
     async def event_message(self, message):
         # Игнорируем эхо собственного бота
         if message.echo:
             return
+        self._note_chatter(getattr(message.author, "name", ""))
 
         # Wait for bot to be initialized
         await self.initialized_event.wait()
@@ -649,7 +672,7 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             elif status:
                 print(f"Error getting chatters via Helix: status {status}")
         if not viewers:
-            viewers = list(getattr(self, "active_users", [self.channel.lower()]))
+            viewers = list(getattr(self, "active_users", None) or [self.channel.lower()])
         self.all_viewers = viewers
         return viewers
 
