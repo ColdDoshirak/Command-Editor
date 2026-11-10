@@ -44,14 +44,6 @@ class CurrencyTab(QWidget):
         self.show_service_messages_check.setToolTip("When enabled, service messages about points calculation will be shown in the program's chat window")
         general_layout.addWidget(self.show_service_messages_check)
         
-        # Points command
-        command_layout = QHBoxLayout()
-        command_label = QLabel("Command:")
-        self.command_input = QLineEdit("!points")
-        command_layout.addWidget(command_label)
-        command_layout.addWidget(self.command_input)
-        general_layout.addLayout(command_layout)
-        
         # Name
         name_layout = QHBoxLayout()
         name_label = QLabel("Name:")
@@ -330,26 +322,6 @@ class CurrencyTab(QWidget):
         
         event_layout.addLayout(event_row1)
         
-        # Second row of event payouts
-        event_row2 = QHBoxLayout()
-        
-        # On Host
-        host_layout = QVBoxLayout()
-        host_label = QLabel("On Host:")
-        self.host_payout_input = QSpinBox()
-        self.host_payout_input.setRange(0, 1000)
-        self.host_payout_input.setValue(self.currency_manager.settings.get('host_points', 0))
-        self.host_payout_input.valueChanged.connect(self.save_settings)
-        host_layout.addWidget(host_label)
-        host_layout.addWidget(self.host_payout_input)
-        event_row2.addLayout(host_layout)
-        
-        # Add empty layouts for alignment
-        event_row2.addStretch(1)
-        event_row2.addStretch(1)
-        event_row2.addStretch(1)
-        
-        event_layout.addLayout(event_row2)
         event_group.setLayout(event_layout)
         scroll_layout.addWidget(event_group)
 
@@ -449,7 +421,6 @@ class CurrencyTab(QWidget):
                 # General settings
                 'accumulation_enabled': self.accumulation_check.isChecked(),  # New setting for currency accumulation
                 'show_service_messages': self.show_service_messages_check.isChecked(),  # Show service messages in chat
-                'command': self.command_input.text(),
                 'name': self.name_input.text(),
                 'response': self.response_input.text(),
                 'cooldown': self.cooldown_slider.value(),
@@ -477,8 +448,7 @@ class CurrencyTab(QWidget):
                 'raid_points': self.raid_payout_input.value(),
                 'follow_points': self.follow_payout_input.value(),
                 'sub_points': self.sub_event_payout_input.value(),
-                'mass_sub_points': self.mass_sub_payout_input.value(),
-                'host_points': self.host_payout_input.value()
+                'mass_sub_points': self.mass_sub_payout_input.value()
             }
             
             # Update currency manager settings
