@@ -148,3 +148,26 @@ async def test_fresh_install_has_no_bonuses():
         assert (s["regular_bonus"], s["mod_bonus"], s["active_bonus"], s["sub_bonus"]) == (0, 0, 0, 1), s
     finally:
         drop_tmpdir(tmp)
+
+
+async def test_sub_multiplier_below_one_never_takes_the_payout_away():
+    """Sub Bonus is a multiplier; 0 (it looked like "no bonus") gave
+    subscribers no watch-time points at all."""
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        path = str(cur.settings_file)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"sub_bonus": 0, "active_bonus_reset_2_0": True}, f)
+        cur.load_settings()
+        assert cur.settings["sub_bonus"] == 1
+        with open(path, encoding="utf-8") as f:
+            assert json.load(f)["sub_bonus"] == 1, "the fix is written back"
+        cur.settings.update(BASE)
+        cur.settings["sub_bonus"] = 0                      # set in memory anyway
+        cur.users["subscriber"] = {"points": 0, "hours": 0, "is_subscriber": True}
+        cur.process_currency_update(is_live=True, all_viewers=["subscriber"])
+        assert cur.users["subscriber"]["points"] == 1.0, cur.users["subscriber"]
+    finally:
+        drop_tmpdir(tmp)

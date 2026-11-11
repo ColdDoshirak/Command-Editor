@@ -412,6 +412,15 @@ class CurrencyManager:
                 # Теперь он работает - старую 1 разово сбрасываем в 0, чтобы
                 # балансы не начали расти без спроса. Своё значение (не 1) и 1,
                 # выставленная после сброса, остаются.
+                # Sub Bonus - множитель: 0 и меньше 1 оставляли подписчиков без
+                # очков за просмотр. Такое значение исправляем на 1 (без бонуса).
+                try:
+                    if float(self.settings.get('sub_bonus', 1)) < 1:
+                        self.settings['sub_bonus'] = 1
+                        changed = True
+                except (TypeError, ValueError):
+                    self.settings['sub_bonus'] = 1
+                    changed = True
                 if not loaded.get(self.ACTIVE_BONUS_RESET_FLAG):
                     if loaded.get('active_bonus') == 1:
                         self.settings['active_bonus'] = 0
@@ -878,7 +887,11 @@ class CurrencyManager:
             if not is_live and not self.settings.get('offline_active_bonus', False):
                 active_rate = 0
             active = self._active_since(previous_update) | {str(v).lower() for v in active_viewers}
-            sub_multiplier = self.settings.get('sub_bonus', 2)
+            # множитель подписчика; меньше 1 не бывает (0 отнимал всё начисление)
+            try:
+                sub_multiplier = max(1.0, float(self.settings.get('sub_bonus', 1) or 1))
+            except (TypeError, ValueError):
+                sub_multiplier = 1.0
             add_hours = is_live or self.settings.get('offline_hours', False)
             # часы просмотра - с поминутной точностью
             hours_added = round(elapsed_minutes / 60, 2) if add_hours else 0

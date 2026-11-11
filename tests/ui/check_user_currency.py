@@ -150,4 +150,18 @@ def body(k):
           and saved is want, (want, saved))
 
 
+    # ---- Sub Bonus is a multiplier, and the estimate says so ------------------------
+    check("sub field is a multiplier, at least 1",
+          ct.sub_bonus_input.minimum() == 1 and "multiplier" in ct.sub_label.text().lower(),
+          (ct.sub_bonus_input.minimum(), ct.sub_label.text()))
+    for widget, value in ((ct.live_payout_input, 10), (ct.online_interval_slider, 5),
+                          (ct.regular_bonus_input, 1), (ct.sub_bonus_input, 3),
+                          (ct.mod_bonus_input, 2), (ct.active_bonus_input, 0)):
+        widget.setValue(value)
+    pump()
+    text = ct.time_info_label.text()
+    # a subscriber who is also regular and mod: 10 x 3 + 1 + 2 per 5 min = 396/h
+    check("estimate: base x multiplier + bonuses", "Min: 120/h - Max: 396/h" in text, text)
+
+
 kit.start(body, delay_ms=400)

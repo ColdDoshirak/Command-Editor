@@ -231,13 +231,20 @@ class CurrencyTab(QWidget):
         
         # Sub Bonus
         sub_layout = QVBoxLayout()
-        sub_label = QLabel("Sub Bonus:")
+        # Не "+N", как остальные бонусы, а множитель очков подписчика:
+        # 1 - как у всех, 3 - втрое больше. 0 оставлял подписчиков без очков.
+        self.sub_label = QLabel("Sub multiplier:")
         self.sub_bonus_input = QSpinBox()
-        self.sub_bonus_input.setRange(0, 100)
-        self.sub_bonus_input.setValue(self.currency_manager.settings.get('sub_bonus', 1))
+        self.sub_bonus_input.setRange(1, 100)
+        self.sub_bonus_input.setPrefix("\u00d7")
+        self.sub_bonus_input.setToolTip(
+            "Subscribers get the watch-time points multiplied by this: "
+            "\u00d71 = the same as everyone, \u00d73 = three times as much")
+        self.sub_label.setToolTip(self.sub_bonus_input.toolTip())
+        self.sub_bonus_input.setValue(max(1, int(self.currency_manager.settings.get('sub_bonus', 1) or 1)))
         self.sub_bonus_input.valueChanged.connect(self.save_settings)
         self.sub_bonus_input.valueChanged.connect(self.update_min_max_labels)
-        sub_layout.addWidget(sub_label)
+        sub_layout.addWidget(self.sub_label)
         sub_layout.addWidget(self.sub_bonus_input)
         bonus_layout.addLayout(sub_layout)
         
@@ -270,6 +277,7 @@ class CurrencyTab(QWidget):
         self.offline_active_bonus_check.setChecked(
             bool(self.currency_manager.settings.get('offline_active_bonus', False)))
         self.offline_active_bonus_check.stateChanged.connect(self.save_settings)
+        self.offline_active_bonus_check.stateChanged.connect(self.update_min_max_labels)
         active_layout.addWidget(self.offline_active_bonus_check)
         bonus_layout.addLayout(active_layout)
         
@@ -490,8 +498,11 @@ class CurrencyTab(QWidget):
             # Режим "за минуту": рассчитываем почасовые значения из интервальных
             live_min = (60 / online_interval) * live_payout
             offline_min = (60 / offline_interval) * offline_payout
-            live_max = (60 / online_interval) * (live_payout + regular_bonus + sub_bonus + mod_bonus + active_bonus)
-            offline_max = (60 / offline_interval) * (offline_payout + regular_bonus + sub_bonus + mod_bonus + active_bonus)
+            # максимум - подписчик (база x множитель), он же регуляр, модератор и
+            # активный в чате; офлайн Active Bonus - только с галочкой
+            offline_active = active_bonus if self.offline_active_bonus_check.isChecked() else 0
+            live_max = (60 / online_interval) * (live_payout * sub_bonus + regular_bonus + mod_bonus + active_bonus)
+            offline_max = (60 / offline_interval) * (offline_payout * sub_bonus + regular_bonus + mod_bonus + offline_active)
             unit = "/h"
             
             # Округляем значения
