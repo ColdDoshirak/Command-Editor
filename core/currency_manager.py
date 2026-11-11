@@ -45,7 +45,8 @@ class CurrencyManager:
             'live_payout': 1,
             'offline_payout': 0,
             'regular_bonus': 0,
-            'sub_bonus': 0,            'mod_bonus': 0,
+            'sub_bonus': 1,            # множитель: 1 = без бонуса
+            'mod_bonus': 0,
             'active_bonus': 0,
             'payout_mode': 'per_minute',  # Только per_minute режим
             # Награды за события - одна схема для вкладки и бота (шаг 1.5)
@@ -381,9 +382,10 @@ class CurrencyManager:
                 'offline_interval': 15,
                 'offline_hours': False,
                 'offline_active_bonus': False,
+                # бонусов по умолчанию нет; sub_bonus - множитель (1 = без бонуса)
                 'sub_bonus': 1,
-                'regular_bonus': 1,
-                'mod_bonus': 2,
+                'regular_bonus': 0,
+                'mod_bonus': 0,
                 'active_bonus': 0,
                 'currency_single': 'point',
                 'currency_plural': 'points',
@@ -429,7 +431,6 @@ class CurrencyManager:
             self.settings.setdefault("mass_sub_points", 0)   # Дарителю за каждую подписку
             self.settings.setdefault("bits_ratio", 1)        # Очки за каждые 100 битов
             self.settings.setdefault("host_points", 0)
-            self.settings.setdefault("sub_bonus", 2)         # Множитель очков для подписчиков
             self.settings.setdefault("payout_mode", "per_minute")  # Всегда используем per_minute
             
             return self.settings  # Возвращаем словарь настроек, а не True/False

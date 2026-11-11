@@ -140,4 +140,14 @@ def body(k):
           disk().get("whale"))
 
 
+    # ---- currency tab: "Active bonus - also offline" is saved ----------------------
+    ct = w.currency_tab
+    ct.offline_active_bonus_check.setChecked(not ct.offline_active_bonus_check.isChecked()); pump()
+    want = ct.offline_active_bonus_check.isChecked()
+    with open(str(cur.settings_file), encoding="utf-8") as f:
+        saved = json.load(f).get("offline_active_bonus")
+    check("Active bonus 'also offline' saved", cur.settings.get("offline_active_bonus") is want
+          and saved is want, (want, saved))
+
+
 kit.start(body, delay_ms=400)

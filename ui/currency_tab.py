@@ -234,7 +234,7 @@ class CurrencyTab(QWidget):
         sub_label = QLabel("Sub Bonus:")
         self.sub_bonus_input = QSpinBox()
         self.sub_bonus_input.setRange(0, 100)
-        self.sub_bonus_input.setValue(self.currency_manager.settings.get('sub_bonus', 0))
+        self.sub_bonus_input.setValue(self.currency_manager.settings.get('sub_bonus', 1))
         self.sub_bonus_input.valueChanged.connect(self.save_settings)
         self.sub_bonus_input.valueChanged.connect(self.update_min_max_labels)
         sub_layout.addWidget(sub_label)
@@ -263,6 +263,14 @@ class CurrencyTab(QWidget):
         self.active_bonus_input.valueChanged.connect(self.update_min_max_labels)
         active_layout.addWidget(active_label)
         active_layout.addWidget(self.active_bonus_input)
+        self.offline_active_bonus_check = QCheckBox("also offline")
+        self.offline_active_bonus_check.setToolTip(
+            "Pay the Active Bonus while the stream is offline too "
+            "(to viewers who wrote in chat since the previous payout)")
+        self.offline_active_bonus_check.setChecked(
+            bool(self.currency_manager.settings.get('offline_active_bonus', False)))
+        self.offline_active_bonus_check.stateChanged.connect(self.save_settings)
+        active_layout.addWidget(self.offline_active_bonus_check)
         bonus_layout.addLayout(active_layout)
         
         payout_layout.addLayout(bonus_layout)
@@ -443,6 +451,7 @@ class CurrencyTab(QWidget):
                 'sub_bonus': self.sub_bonus_input.value(),
                 'mod_bonus': self.mod_bonus_input.value(),
                 'active_bonus': self.active_bonus_input.value(),
+                'offline_active_bonus': self.offline_active_bonus_check.isChecked(),
                 
                 # Награды за события - те же ключи, что читает бот (шаг 1.5)
                 'raid_points': self.raid_payout_input.value(),

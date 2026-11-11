@@ -131,3 +131,20 @@ async def test_the_bot_notes_chatters_and_reports_them():
         assert len(seen) == 2, "reported when somebody new starts chatting, not on every line"
     finally:
         drop_tmpdir(tmp)
+
+
+async def test_fresh_install_has_no_bonuses():
+    """No settings file: Regular / Mod / Active bonus 0, Sub multiplier 1 (= none).
+    load_settings used to put Regular 1 and Mod 2 over the constructor's zeros."""
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        path = str(cur.settings_file)
+        if os.path.exists(path):
+            os.remove(path)
+        cur.settings.clear()
+        cur.load_settings()
+        s = cur.settings
+        assert (s["regular_bonus"], s["mod_bonus"], s["active_bonus"], s["sub_bonus"]) == (0, 0, 0, 1), s
+    finally:
+        drop_tmpdir(tmp)
