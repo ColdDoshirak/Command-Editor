@@ -423,6 +423,7 @@ class SidebarNav(QFrame):
         ]),
         ("Twitch", [
             (2, "Twitch", "rect"),
+            (11, "Timers", "clock"),
             (5, "Ranks", "star"),
         ]),
         ("Economy", [
@@ -430,7 +431,7 @@ class SidebarNav(QFrame):
             (4, "Users", "bars"),
         ]),
         ("System", [
-            (11, "Settings", "gear"),
+            (12, "Settings", "gear"),
             (9, "History", "lines"),
             (10, "Backups", "shield"),
             (8, "About", "info"),

@@ -23,6 +23,7 @@ from core.app_log import setup_logging, install_print_bridge
 from core import paths
 from core.commands import CommandRepository
 from ui.backups_tab import HistoryTab, FullBackupsTab
+from ui.timers_tab import TimersTab
 from bot.audio import SoundCache, SoundPreview, ensure_channels, PREVIEW_CHANNEL
 from ui.update_notification import UpdateNotificationWidget
 from ui.theme_switch import ThemeSwitchMixin
@@ -158,6 +159,10 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         # Create comprehensive backup tab
         self.backup_tab = FullBackupsTab(self)
         self.tab_widget.addTab(self.backup_tab, "Backups")
+
+        # таймеры (2.0): сообщения бота в чат по расписанию
+        self.timers_tab = TimersTab(self)
+        self.tab_widget.addTab(self.timers_tab, "Timers")
         
         # Load saved commands and configuration
         self.load_saved_data()
@@ -879,6 +884,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         "About": ("about_tab", "About", "info", 8),
         "History": ("history_tab", "History", "command log", 9),
         "Backups": ("backup_tab", "Backups", "safety", 10),
+        "Timers": ("timers_tab", "Timers", "chat messages", 11),
     }
 
 if __name__ == "__main__":

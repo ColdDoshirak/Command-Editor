@@ -50,7 +50,7 @@ def body(k):
     shot("themes_sidebar_commands")
 
     idx = w.tab_widget.indexOf(w.settings_tab)
-    check("settings tab exists", idx == 11, idx)
+    check("settings tab exists", idx == uikit.settings_index(w), idx)
     w.tab_widget.setCurrentIndex(idx); pump(300)
     before = w.allow_interruption_check.isChecked()
     sp = w.settings_tab.original_tab
@@ -84,14 +84,14 @@ def body(k):
     check("midnight nav", w.sidebar_nav is not None and w.sidebar_nav.isVisible())
     check("now playing bar", getattr(w, "now_playing_bar", None) is not None)
     for i, n in ((0, "commands"), (2, "twitch"), (7, "queue"), (6, "groups"),
-                 (11, "settings"), (3, "currency")):
+                 (12, "settings"), (3, "currency"), (11, "timers")):
         w.tab_widget.setCurrentIndex(i); pump(300)
         shot("themes_midnight_" + n)
 
     # ---- back to classic ------------------------------------------------
     w.apply_theme("classic"); pump(300)
-    check("classic: settings tab", w.tab_widget.indexOf(w.settings_tab) == 11)
-    check("classic: 12 tabs", w.tab_widget.count() == 12, w.tab_widget.count())
+    check("classic: settings tab", w.tab_widget.indexOf(w.settings_tab) == uikit.settings_index(w))
+    check("classic: all tabs", w.tab_widget.count() == uikit.tab_count(w), w.tab_widget.count())
     check("classic: no nav", w.sidebar_nav is None)
     check("classic: no now bar", getattr(w, "now_playing_bar", None) is None)
     check("classic: tab stylesheet reset", w.group_settings_tab.styleSheet() == "")
@@ -100,7 +100,7 @@ def body(k):
         shot("themes_classic_" + n)
     for t in ("midnight", "sidebar", "spreadsheet", "classic"):
         w.apply_theme(t); pump(150)
-    check("theme round trip", w.tab_widget.count() == 12, w.tab_widget.count())
+    check("theme round trip", w.tab_widget.count() == uikit.tab_count(w), w.tab_widget.count())
 
 
 kit.start(body, delay_ms=800)

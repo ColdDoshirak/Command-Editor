@@ -39,7 +39,7 @@ def body(k):
     check("slot exception written to crash log",
           "slot boom for the crash log" in text and "Traceback" in text, text[-500:])
     k.w.apply_theme("midnight"); pump(200)
-    check("window still usable", k.w.tab_widget.count() == 12, k.w.tab_widget.count())
+    check("window still usable", k.w.tab_widget.count() == uikit.tab_count(k.w), k.w.tab_widget.count())
 
 
 kit.start(body, delay_ms=400)

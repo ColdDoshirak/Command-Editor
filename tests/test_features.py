@@ -375,3 +375,50 @@ console.log(JSON.stringify({now: els.now.innerHTML, queue: els.queue.innerHTML,
         assert res["fetched"] == 1, "polls state.json"
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- timers ---------------------------------------------------------------------------
+
+async def test_timer_schedule():
+    from core.timers import TimerClock
+    t0 = 1000.0
+    timers = [{"message": "Follow the channel!", "interval": 10, "min_lines": 3, "live_only": True},
+              {"message": "Discord: x", "interval": 5, "min_lines": 0, "live_only": False},
+              {"message": "", "interval": 1, "min_lines": 0},                      # empty: never
+              {"message": "off", "interval": 1, "min_lines": 0, "enabled": False}]
+    clock = TimerClock(t0, lines=0)
+
+    def due(minutes, lines, live=True):
+        return [t["message"] for _k, t in clock.due(timers, t0 + minutes * 60, lines, live)]
+    assert due(0, 100) == [], "nothing right after connecting"
+    assert due(5, 0) == ["Discord: x"]
+    assert due(10, 2) == ["Discord: x"], "only 2 chat lines: the follow timer waits"
+    assert due(10, 3) == ["Follow the channel!", "Discord: x"]
+    assert due(10, 3, live=False) == ["Discord: x"], "live only"
+    key, t = clock.due(timers, t0 + 600, 3, True)[0]
+    clock.sent(key, t0 + 600, 3)
+    assert "Follow the channel!" not in due(15, 10), "10 minutes since its post"
+    assert "Follow the channel!" not in due(20, 5), "only 2 lines since its post"
+    assert "Follow the channel!" in due(20, 6)
+
+
+async def test_bot_posts_timers():
+    from core.timers import TimerClock
+    from harness import make_bot, FakeChannel, FakeMessage
+    tmp = new_tmpdir()
+    try:
+        bot, cm, _ = make_bot(tmp, [])
+        cm.config["timers"] = [{"message": "Hi from {channel} {random:7-7}", "interval": 1,
+                                "min_lines": 2, "live_only": False}]
+        ch = FakeChannel()
+        bot._timer_channel = lambda: ch
+        bot._timer_clock = TimerClock(0, 0)
+        bot.is_live = False
+        for _ in range(2):
+            await bot.event_message(FakeMessage("viewer", "hello", FakeChannel()))
+        await bot._timers_tick(now=120)
+        assert ch.sent == ["Hi from testchan 7"], ch.sent
+        await bot._timers_tick(now=150)
+        assert ch.sent == ["Hi from testchan 7"], "not again before the interval"
+    finally:
+        drop_tmpdir(tmp)

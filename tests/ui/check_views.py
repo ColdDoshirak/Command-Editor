@@ -29,7 +29,7 @@ def body(k):
 
     # ---- classic: Settings tab ------------------------------------------
     idx = w.tab_widget.indexOf(w.settings_tab)
-    check("classic has Settings tab", idx == 11 and w.tab_widget.count() == 12,
+    check("classic has Settings tab", idx == uikit.settings_index(w) and w.tab_widget.count() == uikit.tab_count(w),
           (idx, w.tab_widget.count()))
     w.tab_widget.setCurrentIndex(idx); pump(300)
     before = w.allow_interruption_check.isChecked()
@@ -137,7 +137,7 @@ def body(k):
 
     for t in ("midnight", "classic", "spreadsheet", "sidebar", "classic"):
         w.apply_theme(t); pump(150)
-    check("round trip: 12 tabs", w.tab_widget.count() == 12, w.tab_widget.count())
+    check("round trip: all tabs back", w.tab_widget.count() == uikit.tab_count(w), w.tab_widget.count())
     check("round trip: sys tab back in classic",
           w.tab_widget.indexOf(w.sys_commands_tab) == 1, w.tab_widget.indexOf(w.sys_commands_tab))
     w.tab_widget.setCurrentIndex(1); pump(200)

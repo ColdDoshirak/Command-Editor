@@ -349,6 +349,17 @@ class ConfigManager:
         self.config['volume'] = max(0.0, min(1.0, volume))
         self.save_config()
 
+    def get_timers(self):
+        """Timers (core/timers.py), normalised."""
+        from core.timers import normalize
+        t = self.config.get('timers')
+        return [normalize(x) for x in t] if isinstance(t, list) else []
+
+    def set_timers(self, timers):
+        from core.timers import normalize
+        self.config['timers'] = [normalize(x) for x in timers or []]
+        self.save_config()
+
     def get_overlay(self):
         """OBS overlay: {"enabled": bool, "port": int}."""
         o = self.config.get('overlay')

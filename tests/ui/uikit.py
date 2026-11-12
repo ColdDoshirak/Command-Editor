@@ -112,6 +112,15 @@ class Kit(object):
         out.flush()
 
 
+def tab_count(w):
+    """Tabs of the main window: Commands, Twitch, the wrapped tabs, Settings."""
+    return len(w._GENERIC_TABS) + 3
+
+
+def settings_index(w):
+    return tab_count(w) - 1
+
+
 def boot(data_dir, out_dir, **kw):
     return Kit(data_dir, out_dir, **kw)
 

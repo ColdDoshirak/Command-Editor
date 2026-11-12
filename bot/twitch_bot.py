@@ -16,6 +16,7 @@ from bot.helix import HelixClient, logins as helix_logins
 from bot.ui_port import BotUi, CallbackUi
 from core import permissions
 from core import variables
+from core.timers import TimerClock
 from bot.queue import QueueMixin
 from bot.system_handlers import SystemCommandsMixin
 
@@ -173,6 +174,10 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             # B7: фоновая проверка статуса стрима в loop бота — UI больше
             # не блокируется на future.result(timeout=5) каждые 10-300 с.
             self.stream_status_task = None
+            # таймеры (core/timers.py): сообщения бота в чат по расписанию
+            self.timer_task = None
+            self._timer_clock = None
+            self._chat_lines = 0
             self.stream_status_interval = 30
             
             # Активные в чате: кто писал за последние ACTIVE_SECONDS (вкладка
@@ -316,6 +321,10 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             # не делает future.result(timeout=5) — статус приходит по сигналу.
             if not self.stream_status_task or self.stream_status_task.done():
                 self.stream_status_task = asyncio.create_task(self._stream_status_loop())
+            if self._timer_clock is None:
+                self._timer_clock = TimerClock(time.time(), self._chat_lines)
+            if not self.timer_task or self.timer_task.done():
+                self.timer_task = asyncio.create_task(self._timers_loop())
             
             # Start queue workers now that we have a running loop
             print("Initializing command queues and workers...")
@@ -385,6 +394,47 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
                 # Небольшая задержка между сообщениями для избежания rate limit
                 await asyncio.sleep(0.1)
 
+    TIMER_TICK = 10
+
+    def _timer_channel(self):
+        chans = getattr(self, "connected_channels", None) or []
+        return chans[0] if chans else None
+
+    async def _timers_tick(self, now=None):
+        """Post the timers that are due (core/timers.py)."""
+        now = time.time() if now is None else now
+        if self._timer_clock is None:
+            self._timer_clock = TimerClock(now, self._chat_lines)
+        try:
+            timers = self.config_manager.get_timers()
+        except Exception:
+            return
+        due = self._timer_clock.due(timers, now, self._chat_lines, bool(self.is_live))
+        if not due:
+            return
+        channel = self._timer_channel()
+        if channel is None:
+            return
+        for key, timer in due:
+            text = _fit_chat(variables.render(timer["message"], {"channel": self.channel}))
+            try:
+                await channel.send(text)
+            except Exception as e:
+                print(f"Timer message failed: {e}")
+                continue
+            self._timer_clock.sent(key, now, self._chat_lines)
+            self._ui_message(f"[Timer] {text}")
+
+    async def _timers_loop(self):
+        while self.is_running:
+            try:
+                await self._timers_tick()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"Error in timers: {e}")
+            await asyncio.sleep(self.TIMER_TICK)
+
     ACTIVE_SECONDS = 600
 
     def _note_chatter(self, name):
@@ -411,6 +461,7 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
         if message.echo:
             return
         self._note_chatter(getattr(message.author, "name", ""))
+        self._chat_lines += 1
 
         # Wait for bot to be initialized
         await self.initialized_event.wait()
@@ -576,7 +627,8 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             if hasattr(self, 'loop') and self.loop:
                 # stop() вызывается из UI-потока: задачи asyncio отменяем
                 # через loop бота, а не напрямую (инвариант потоков).
-                for task in (self.connection_check_task, getattr(self, 'stream_status_task', None)):
+                for task in (self.connection_check_task, getattr(self, 'stream_status_task', None),
+                             getattr(self, 'timer_task', None)):
                     if task is not None and not task.done():
                         try:
                             self.loop.call_soon_threadsafe(task.cancel)
