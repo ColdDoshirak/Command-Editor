@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFr
                              QPushButton, QLineEdit, QListWidget, QListWidgetItem, QComboBox,
                              QSpinBox, QScrollArea, QCheckBox)
 from PyQt5.QtCore import Qt, QSize, QTimer
+from core.permissions import name_of as permission_name
 from ui.theme.style import (PERMISSIONS, USAGES, palette_for)
 from ui.theme.widgets import (MasterDelegate, ToggleSwitch, _known_groups, _shrinkable, make_icon)
 
@@ -335,7 +336,7 @@ class SysCommandsView(QWidget):
             self.f_name.setToolTip("" if dup else "The name of an original command is fixed. "
                                    "Duplicate it to use another name.")
             self.f_group.setText(cmd.get("group", ""))
-            for combo, value in ((self.f_perm, cmd.get("permission", "Everyone")),
+            for combo, value in ((self.f_perm, permission_name(cmd.get("permission", "Everyone"))),
                                  (self.f_usage, cmd.get("usage", "Chat"))):
                 if combo.findText(value) < 0:
                     combo.addItem(value)

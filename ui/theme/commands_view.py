@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFr
                              QComboBox, QSpinBox, QSlider, QInputDialog, QScrollArea, QSplitter)
 from PyQt5.QtCore import Qt, QSize, QTimer
 from PyQt5.QtGui import QColor
+from core.permissions import name_of as permission_name
 from ui.theme.style import (PERMISSIONS, USAGES, palette_for)
 from ui.theme.widgets import (LogoBadge, MasterDelegate, ToggleSwitch, _ComboDelegate,
                               _SpinDelegate, _known_groups, _matches, _mono_font, _more_menu,
@@ -334,7 +335,7 @@ class CommandDetailEditor(QScrollArea):
         try:
             self.f_command.setText(cmd.get("Command", ""))
             self.f_group.setEditText(cmd.get("Group", ""))
-            perm = cmd.get("Permission", "Everyone")
+            perm = permission_name(cmd.get("Permission", "Everyone"))
             if self.f_perm.findText(perm) < 0:
                 self.f_perm.addItem(perm)
             self.f_perm.setCurrentText(perm)

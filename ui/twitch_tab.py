@@ -610,7 +610,8 @@ class TwitchTab(QWidget):
         
         self.moderators_list_widget.blockSignals(True)
         self.moderators_list_widget.clear()
-        
+        self._add_admin_items()
+
         # Объединяем списки для отображения (включая исключенных для информации)
         all_mods = set(moderators + manual_mods + excluded_mods)
         
@@ -625,8 +626,6 @@ class TwitchTab(QWidget):
                 item.setForeground(QColor("red"))
             elif in_api and in_manual:
                 # В обоих списках - синий цвет
-                item = QListWidgetItem(f"[Оба] {mod}")
-                item.setForeground(QColor("blue"))
                 item = QListWidgetItem(f"[Оба] {mod}")
                 item.setForeground(QColor("blue"))
             elif in_manual:
@@ -809,11 +808,23 @@ class TwitchTab(QWidget):
         if not self.bridge.submit("get_channel_moderators"):
             self.update_moderators_display_only()
 
+    def _add_admin_items(self):
+        """Admins first: the channel owner and moderators.json "admins"
+        (the Admin permission; edit the list with "Open moderators file")."""
+        owner = str(self.channel_input.text() or "").strip().lower() if hasattr(self, "channel_input") else ""
+        names = ([owner] if owner else []) + [n for n in self.config_manager.get_admins() if n != owner]
+        for name in names:
+            item = QListWidgetItem(f"[Admin] {name}")
+            item.setForeground(QColor("#B45309"))
+            item.setToolTip("Admin permission: the channel owner and the \"admins\" list in moderators.json")
+            self.moderators_list_widget.addItem(item)
+
     def update_moderators_display_only(self):
         """Обновляет отображение списка модераторов без запроса к API"""
         manual_mods = self.config_manager.get_manual_moderators()
         
         self.moderators_list_widget.clear()
+        self._add_admin_items()
         for mod in sorted(manual_mods):
             item = QListWidgetItem(f"[Ручной] {mod}")
             item.setForeground(QColor("green"))

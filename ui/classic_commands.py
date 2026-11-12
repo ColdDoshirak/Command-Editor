@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTa
                              QAbstractItemView, QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox,
                              QFileDialog, QMessageBox, QSlider, QGroupBox, QHeaderView, QTextEdit)
 from PyQt5.QtCore import Qt
+from core import permissions
 from core.commands import FIELDS as COMMAND_FIELDS
 from ui.commands_model import CommandsTableModel, display_text
 
@@ -96,7 +97,7 @@ class ClassicCommandsMixin(object):
         left_column = QVBoxLayout()
         self.command_edit = QLineEdit()
         self.permission_combo = QComboBox()
-        self.permission_combo.addItems(["Everyone", "Moderator", "Admin"])
+        self.permission_combo.addItems(permissions.LEVELS)
         self.info_edit = QLineEdit()
         self.group_edit = QLineEdit()
         self.response_edit = QTextEdit()
@@ -456,7 +457,8 @@ class ClassicCommandsMixin(object):
             
             # Update permission combo without triggering currentIndexChanged signal
             self.permission_combo.blockSignals(True)
-            self.permission_combo.setCurrentText(command["Permission"])
+            # "Editor" из Streamlabs показываем как "Moderator" и т.п.
+            self.permission_combo.setCurrentText(permissions.name_of(command["Permission"]))
             self.permission_combo.blockSignals(False)
             
             self.response_edit.setText(command["Response"])

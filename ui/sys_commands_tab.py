@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                            QGroupBox, QLabel, QLineEdit, QSpinBox, QComboBox,
                            QMenu, QMessageBox)
 from PyQt5.QtCore import Qt
+from core import permissions
 from core.config_manager import ConfigManager
 import copy
 from core.system_commands import DEFAULT_SYSTEM_COMMANDS, merge_with_defaults
@@ -85,7 +86,7 @@ class SysCommandsTab(QWidget):
         self.original_name_display.setStyleSheet("color: gray; font-style: italic;")
         self.command_edit = QLineEdit()
         self.permission_combo = QComboBox()
-        self.permission_combo.addItems(["Everyone", "Moderator", "Admin"])
+        self.permission_combo.addItems(permissions.LEVELS)
         self.info_edit = QLineEdit()
         self.group_edit = QLineEdit()
         
@@ -399,7 +400,7 @@ class SysCommandsTab(QWidget):
 
             # Update fields with command data
             self.command_edit.setText(cmd.get("command_name", cmd["command"]))
-            self.permission_combo.setCurrentText(cmd["permission"])
+            self.permission_combo.setCurrentText(permissions.name_of(cmd["permission"]))
             self.info_edit.setText(cmd["info"])
             self.group_edit.setText(cmd["group"])
 

@@ -177,5 +177,21 @@ def body(k):
     w.apply_theme("classic"); pump(200)
     check("classic table shows the themed edit", cell(3, 7) == "7")
 
+    # ---- permission ladder in the window (2.0) -----------------------------------------
+    from core.permissions import LEVELS
+    items = [w.permission_combo.itemText(i) for i in range(w.permission_combo.count())]
+    check("permission list has every level", items == LEVELS, items)
+    repo.update(4, {"Permission": "Editor"})        # a Streamlabs spelling
+    w.table.selectRow(4); pump()
+    check("Streamlabs 'Editor' shown as Moderator", w.permission_combo.currentText() == "Moderator",
+          w.permission_combo.currentText())
+    check("selecting the row did not rewrite it", w.commands[4]["Permission"] == "Editor")
+    w.config_manager.moderators_config["admins"] = ["boss"]
+    w.twitch_tab.channel_input.setText("mychannel")
+    w.twitch_tab.update_moderators_display_only(); pump()
+    shown = [w.twitch_tab.moderators_list_widget.item(i).text()
+             for i in range(w.twitch_tab.moderators_list_widget.count())]
+    check("admins listed on the Twitch tab", shown[:2] == ["[Admin] mychannel", "[Admin] boss"], shown)
+
 
 kit.start(body, delay_ms=400)

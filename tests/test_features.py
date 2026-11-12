@@ -67,3 +67,93 @@ async def test_lock_left_by_a_crash_does_not_block_the_next_start():
         assert _probe(tmp, data) == "LOCKED", "the owner is gone: its lock is stale"
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- permission ladder ---------------------------------------------------------
+
+def _perm_bot(tmp, users=None, admins=None, mods_api=()):
+    from harness import make_bot, make_real_currency
+    cur = make_real_currency(tmp)
+    cur.users.update(users or {})
+    bot, cm, _ = make_bot(tmp, [], currency=cur)
+    if admins is not None:
+        cm.moderators_config["admins"] = list(admins)
+
+    async def api_mod(name):
+        return name in mods_api
+    bot.is_user_moderator = api_mod
+    return bot, cm
+
+
+def _msg(name, **badges):
+    from harness import FakeMessage, FakeChannel
+    m = FakeMessage(name, "!x", FakeChannel())
+    for k, v in badges.items():
+        setattr(m.author, k, v)
+    return m
+
+
+async def test_permission_ladder():
+    tmp = new_tmpdir()
+    try:
+        bot, cm = _perm_bot(tmp, users={"reg": {"points": 0, "hours": 0, "is_regular": True}},
+                            admins=["trusted"], mods_api=("apimod",))
+        people = {
+            "nobody": _msg("nobody"),
+            "reg": _msg("reg"),
+            "sub": _msg("sub", is_subscriber=True),
+            "vip": _msg("vip", is_vip=True),
+            "badgemod": _msg("badgemod", is_mod=True),
+            "apimod": _msg("apimod"),
+            "trusted": _msg("trusted"),
+            "testchan": _msg("testchan"),               # the channel owner
+        }
+        want = {  # the highest level each one may use
+            "nobody": "Everyone", "reg": "Regular", "sub": "Subscriber", "vip": "VIP",
+            "badgemod": "Moderator", "apimod": "Moderator", "trusted": "Admin", "testchan": "Admin",
+        }
+        from core.permissions import LEVELS
+        for who, msg in people.items():
+            allowed = [lvl for lvl in LEVELS if await bot.has_permission(msg, lvl)]
+            top = LEVELS.index(want[who])
+            assert allowed == LEVELS[:top + 1], (who, allowed)
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_admin_is_no_longer_any_moderator_and_excluded_mods_lose_mod():
+    tmp = new_tmpdir()
+    try:
+        bot, cm = _perm_bot(tmp, mods_api=("apimod",))
+        assert await bot.has_permission(_msg("apimod"), "Moderator")
+        assert not await bot.has_permission(_msg("apimod"), "Admin"), "Admin = owner + admins list"
+        cm.moderators_config["excluded_moderators"] = ["badgemod"]
+        assert not await bot.has_permission(_msg("badgemod", is_mod=True), "Moderator")
+        assert await bot.has_permission(_msg("badgemod", is_mod=True, is_vip=True), "VIP"), \
+            "excluded from moderators, still a VIP"
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_streamlabs_spellings():
+    from core.permissions import rank, name_of
+    assert name_of("Subscriber") == "Subscriber" and name_of("caster") == "Admin"
+    assert name_of("Editor") == "Moderator" and name_of("regular") == "Regular"
+    assert rank("something odd") == 0
+
+
+async def test_subscriber_command_refused_for_a_viewer():
+    from harness import make_bot, make_command, FakeChannel, FakeMessage
+    tmp = new_tmpdir()
+    try:
+        cmd = make_command("!subonly", Response="hi sub", Permission="Subscriber")
+        bot, _cm, _ = make_bot(tmp, [cmd])
+        ch = FakeChannel()
+        await bot.event_message(FakeMessage("viewer", "!subonly", ch))
+        assert not any("hi sub" in s for s in ch.sent), ch.sent
+        m = FakeMessage("fan", "!subonly", ch)
+        m.author.is_subscriber = True
+        await bot.event_message(m)
+        assert any("hi sub" in s for s in ch.sent), ch.sent
+    finally:
+        drop_tmpdir(tmp)

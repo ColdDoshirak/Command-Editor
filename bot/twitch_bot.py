@@ -14,6 +14,7 @@ from bot.dispatcher import CommandDispatcher
 from bot.audio import SoundCache, may_start, ensure_channels
 from bot.helix import HelixClient, logins as helix_logins
 from bot.ui_port import BotUi, CallbackUi
+from core import permissions
 from bot.queue import QueueMixin
 from bot.system_handlers import SystemCommandsMixin
 
@@ -830,34 +831,55 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
     # Уровни прав, для которых нужен модератор. "Admin" пока равен
     # модератору (docs/refactor-plan.md, решение 1). Прочие уровни из
     # бэкапов Streamlabs (Regular, Subscriber, ...) открыты всем, как раньше.
-    _MOD_PERMISSIONS = ("moderator", "admin", "editor", "caster")
+    def _badge(self, author, attr):
+        try:
+            return getattr(author, attr, False) is True
+        except Exception:
+            return False
 
     async def has_permission(self, message, required):
         """Может ли автор сообщения вызвать команду с правом `required`.
 
-        Для "Everyone" ничего не проверяется. Бейдж модератора/владельца из
-        тегов IRC решает сразу, без запроса к Twitch API; иначе - прежняя
-        проверка is_user_moderator. Исключённые модераторы - всегда нет.
+        Лестница Everyone < Regular < Subscriber < VIP < Moderator < Admin
+        (core/permissions.py): каждый уровень включает нижние. Бейджи из
+        тегов IRC решают сразу; модератор без бейджа - через
+        is_user_moderator (кэш на 5 минут). Admin - владелец канала и список
+        admins в moderators.json (раньше Admin был равен модератору).
+        Исключённые модераторы теряют только права модератора.
         """
-        level = str(required or "everyone").strip().lower()
-        if level not in self._MOD_PERMISSIONS:
+        need = permissions.rank(required)
+        if need == 0:
             return True
         author = message.author
-        username = author.name.lower()
+        username = str(getattr(author, "name", "") or "").lower()
+        if username == str(self.channel).lower() or self._badge(author, "is_broadcaster"):
+            return True
         try:
-            if username in self.config_manager.get_excluded_moderators():
-                return False
+            if username in self.config_manager.get_admins():
+                return True
         except Exception:
             pass
-        if username == str(self.channel).lower():
+        if need >= permissions.ADMIN:
+            return False
+        try:
+            excluded = username in self.config_manager.get_excluded_moderators()
+        except Exception:
+            excluded = False
+        if not excluded and self._badge(author, "is_mod"):
             return True
-        for attr in ("is_broadcaster", "is_mod"):
-            try:
-                if getattr(author, attr, False) is True:
-                    return True
-            except Exception:
-                pass
-        return await self.is_user_moderator(username)
+        if need >= permissions.MODERATOR:
+            return (not excluded) and await self.is_user_moderator(username)
+        if self._badge(author, "is_vip"):
+            return True
+        if need <= permissions.SUBSCRIBER and self._badge(author, "is_subscriber"):
+            return True
+        if need <= permissions.REGULAR:
+            cm = getattr(self, "currency_manager", None)
+            users = getattr(cm, "users", None) or {}
+            if isinstance(users.get(username), dict) and users[username].get("is_regular"):
+                return True
+        # a moderator without the badge (manual list / Twitch API)
+        return (not excluded) and await self.is_user_moderator(username)
 
     async def is_user_moderator(self, username):
         """Проверяет, является ли пользователь модератором канала"""

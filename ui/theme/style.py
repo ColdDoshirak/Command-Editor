@@ -5,6 +5,8 @@ Python 3.8 / PyQt5.
 """
 import os
 
+from core.permissions import LEVELS as _PERMISSION_LEVELS
+
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 
@@ -30,7 +32,7 @@ NOW_PLAYING_THEMES = ("midnight",)
 
 FONT_FAMILY = "Segoe UI"
 
-PERMISSIONS = ["Everyone", "Moderator", "Admin"]
+PERMISSIONS = list(_PERMISSION_LEVELS)   # core/permissions.py
 USAGES = ["SC", "Chat", "Both"]
 
 

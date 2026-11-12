@@ -61,6 +61,8 @@ class ConfigManager:
         self.default_moderators = {
             'manual_moderators': [],
             'excluded_moderators': [],
+            # право Admin: владелец канала и эти ники (не просто модераторы)
+            'admins': [],
             'notes': 'Этот файл содержит список ручных модераторов и исключенных модераторов. Безопасен для показа на стриме'
         }
         # Load or create config. self.config существует ДО load_config():
@@ -651,6 +653,11 @@ class ConfigManager:
         self.add_excluded_moderator(username)
         
         return True  # Возвращаем True, если действие выполнено
+
+    def get_admins(self):
+        """Names with the Admin permission besides the channel owner (lowercase)."""
+        return [str(n).strip().lower() for n in self.moderators_config.get('admins', []) or []
+                if str(n).strip()]
 
     def get_excluded_moderators(self):
         """Get excluded moderators list"""
