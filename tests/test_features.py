@@ -157,3 +157,77 @@ async def test_subscriber_command_refused_for_a_viewer():
         assert any("hi sub" in s for s in ch.sent), ch.sent
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- variables and aliases --------------------------------------------------------
+
+async def test_render_variables():
+    import random
+    from core.variables import render
+    values = {"user": "alice", "target": "bob", "args": "bob 5", "1": "bob", "2": "5",
+              "count": 3, "points": lambda: "12.5", "currency": "coins", "channel": "chan"}
+    out = render("{user} -> {target}: {2} ({args}) #{count} {points} {currency} @{channel}", values)
+    assert out == "alice -> bob: 5 (bob 5) #3 12.5 coins @chan", out
+    rng = random.Random(7)
+    rolls = {render("{random:1-6}", {}, rng=rng) for _ in range(200)}
+    assert rolls == {str(i) for i in range(1, 7)}, rolls
+    assert render("{random:5-5}", {}) == "5"
+    for keep in ("{unknown}", "{random:x}", "{3}", "{ not a var }", "{}", "json {\"a\": 1}"):
+        assert render(keep, {"1": "x"}) == keep, keep
+    assert render("{USER}!", values) == "alice!", "case-insensitive names"
+
+
+async def test_command_response_uses_variables():
+    from harness import make_bot, make_command, make_real_currency, FakeChannel, FakeMessage
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        cur.users["alice"] = {"points": 12.5, "hours": 0}
+        cmd = make_command("!hug", Response="{user} hugs {target}! ({count}, {points} {currency}) {2}", Count=4)
+        bot, _cm, _ = make_bot(tmp, [cmd], currency=cur)
+        ch = FakeChannel()
+        await bot.event_message(FakeMessage("alice", "!hug @Bob tightly", ch))
+        name = cur.get_currency_name() if hasattr(cur, "get_currency_name") else "points"
+        assert ch.sent == ["alice hugs Bob! (5, 12.5 %s) tightly" % name], ch.sent
+        ch.sent[:] = []
+        await bot.event_message(FakeMessage("alice", "!hug", ch))
+        assert ch.sent[0].startswith("alice hugs alice!"), ch.sent
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_aliases_run_the_same_command():
+    from harness import make_bot, make_command, FakeChannel, FakeMessage
+    tmp = new_tmpdir()
+    try:
+        cmd = make_command("!song", Response="playing", Aliases="!music, tune  !Track", Cooldown=0)
+        other = make_command("!tune2", Response="other")
+        bot, _cm, _ = make_bot(tmp, [cmd, other])
+        ch = FakeChannel()
+        for text in ("!music", "!tune", "!track", "!song", "!tune2"):
+            await bot.event_message(FakeMessage("u", text, ch))
+        assert ch.sent == ["playing"] * 4 + ["other"], ch.sent
+        assert bot._commands_list[0]["Count"] == 4, "the uses count on the command itself"
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_queued_command_response_uses_variables():
+    import os as _os
+    from harness import (make_bot, make_command, make_sound_file, FakeChannel, FakeMessage,
+                         wait_until)
+    from stubs import set_sound_duration
+    tmp = new_tmpdir()
+    try:
+        make_sound_file(tmp, "s.mp3")
+        set_sound_duration(_os.path.join(tmp, "s.mp3"), 0.05)
+        cmd = make_command("!req", "SONG", SoundFile="s.mp3", Response="{user} queued {args} #{count}")
+        bot, _cm, _ = make_bot(tmp, [cmd], {"SONG": {"queue_enabled": True, "audio_channel": 1}})
+        ch = FakeChannel()
+        await bot.event_message(FakeMessage("alice", "!req never gonna", ch))
+        assert await wait_until(lambda: ch.sent and any("queued" in s for s in ch.sent), 3), ch.sent
+        assert "alice queued never gonna #1" in ch.sent, ch.sent
+        for w in list(bot.queue_workers.values()):
+            w.cancel()
+    finally:
+        drop_tmpdir(tmp)

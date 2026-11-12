@@ -114,6 +114,12 @@ class ClassicCommandsMixin(object):
         left_column.addWidget(self.permission_combo)
         left_column.addWidget(QLabel("Info:"))
         left_column.addWidget(self.info_edit)
+        # псевдонимы (2.0): "!music, !tune" - те же кулдаун, цена и счётчик
+        self.aliases_edit = QLineEdit()
+        self.aliases_edit.setPlaceholderText("!music, !tune")
+        self.aliases_edit.setToolTip("Other names for this command, e.g. '!music, !tune'. They share its cooldown, cost and count. Responses may use {user} {target} {args} {1}..{9} {count} {points} {currency} {random:1-100}")
+        left_column.addWidget(QLabel("Aliases:"))
+        left_column.addWidget(self.aliases_edit)
         left_column.addWidget(QLabel("Group:"))
         left_column.addWidget(self.group_edit)
         left_column.addWidget(QLabel("Response:"))
@@ -282,6 +288,8 @@ class ClassicCommandsMixin(object):
         self.permission_combo.currentTextChanged.connect(self.on_permission_changed)
         self.info_edit.editingFinished.connect(
             lambda: self.update_command_field(self.info_edit.text(), 2))
+        self.aliases_edit.editingFinished.connect(
+            lambda: self.update_command_extra("Aliases", self.aliases_edit.text()))
         self.group_edit.editingFinished.connect(
             lambda: self.update_command_field(self.group_edit.text(), 3))
         self.cooldown_spin.valueChanged.connect(self.on_cooldown_changed)
@@ -463,6 +471,7 @@ class ClassicCommandsMixin(object):
             
             self.response_edit.setText(command["Response"])
             self.info_edit.setText(command.get("Info", ""))
+            self.aliases_edit.setText(command.get("Aliases", ""))
             self.group_edit.setText(command.get("Group", "GENERAL"))
             
             # Update cooldown spin without triggering valueChanged signal
@@ -504,6 +513,14 @@ class ClassicCommandsMixin(object):
             # Keep the themed Commands view (sidebar detail) in sync
             if self.themed_commands_view is not None and hasattr(self.themed_commands_view, "select_from_table"):
                 self.themed_commands_view.select_from_table(row)
+
+    def update_command_extra(self, key, value):
+        """A field outside the table columns (Aliases) -> the repository."""
+        if getattr(self, "_populating_details", False):
+            return
+        row = self._selected_row()
+        if 0 <= row < len(self.commands) and self.command_repo.update(row, {key: value}):
+            self.save_commands()
 
     def update_command_field(self, value, column):
         """Поле панели Command Details -> репозиторий (S12: раньше эти поля

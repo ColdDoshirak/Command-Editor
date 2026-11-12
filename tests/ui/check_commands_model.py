@@ -194,4 +194,20 @@ def body(k):
     check("admins listed on the Twitch tab", shown[:2] == ["[Admin] mychannel", "[Admin] boss"], shown)
 
 
+    # ---- aliases field (2.0) -----------------------------------------------------------
+    w.apply_theme("classic"); pump(200)
+    w.table.selectRow(1); pump()
+    w.aliases_edit.setText("!alias1, alias2"); w.aliases_edit.editingFinished.emit(); pump()
+    check("classic: aliases saved", w.commands[1].get("Aliases") == "!alias1, alias2"
+          and _disk()[1].get("Aliases") == "!alias1, alias2", w.commands[1].get("Aliases"))
+    w.apply_theme("sidebar"); pump(300)
+    v = w.themed_commands_view
+    v.master_list.setCurrentRow(1); pump()
+    check("themed editor shows the aliases", v.detail.f_aliases.text() == "!alias1, alias2",
+          v.detail.f_aliases.text())
+    v.detail.f_aliases.setText("!other"); v.detail.flush(); pump()
+    check("themed editor saves the aliases", _disk()[1].get("Aliases") == "!other", _disk()[1].get("Aliases"))
+    w.apply_theme("classic"); pump(200)
+
+
 kit.start(body, delay_ms=400)

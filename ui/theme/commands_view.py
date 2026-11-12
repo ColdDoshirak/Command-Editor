@@ -165,6 +165,12 @@ class CommandDetailEditor(QScrollArea):
         self.f_info.textChanged.connect(lambda t: self._edit("Info", t))
         g.addWidget(self._label("Info"), last, 0, 1, cols)
         g.addWidget(self.f_info, last + 1, 0, 1, cols)
+        self.f_aliases = QLineEdit()
+        self.f_aliases.setPlaceholderText("!music, !tune")
+        self.f_aliases.setToolTip("Other names for this command, e.g. '!music, !tune'. They share its cooldown, cost and count. Responses may use {user} {target} {args} {1}..{9} {count} {points} {currency} {random:1-100}")
+        self.f_aliases.textChanged.connect(lambda t: self._edit("Aliases", t))
+        g.addWidget(self._label("Aliases"), last + 2, 0, 1, cols)
+        g.addWidget(self.f_aliases, last + 3, 0, 1, cols)
 
         # Narrow (side panel): everything in one column. Wide (bottom
         # panel): fields on the left, sound + response on the right.
@@ -254,6 +260,7 @@ class CommandDetailEditor(QScrollArea):
 
         self.detail_widgets = [self.f_command, self.f_group, self.f_perm, self.f_usage,
                                self.f_cd, self.f_ucd, self.f_cost, self.f_count, self.f_info,
+                               self.f_aliases,
                                self.f_sound, self.f_fk, self.f_volume, self.f_response,
                                self.d_enabled, self.d_delete, self.play_btn, b, b2]
         self.setWidget(panel)
@@ -348,6 +355,7 @@ class CommandDetailEditor(QScrollArea):
             self.f_cost.setValue(int(cmd.get("Cost", 0) or 0))
             self.f_count.setValue(int(cmd.get("Count", 0) or 0))
             self.f_info.setText(cmd.get("Info", ""))
+            self.f_aliases.setText(cmd.get("Aliases", ""))
             self.f_sound.setText(cmd.get("SoundFile", ""))
             self.f_fk.setText(str(cmd.get("FKSoundFile", "") or ""))
             vol = cmd_volume(cmd)

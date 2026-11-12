@@ -184,7 +184,8 @@ class CommandDispatcher(object):
         response = cmd.get("Response", "")
         if response and response.strip():
             has_response = True
-            await self.send_multiline_response(message.channel, response, message.author.name)
+            await self.send_multiline_response(message.channel, response, message.author.name,
+                                               values=self._response_values(message, cmd))
             executed = True
 
         if executed:

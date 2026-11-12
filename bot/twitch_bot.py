@@ -15,6 +15,7 @@ from bot.audio import SoundCache, may_start, ensure_channels
 from bot.helix import HelixClient, logins as helix_logins
 from bot.ui_port import BotUi, CallbackUi
 from core import permissions
+from core import variables
 from bot.queue import QueueMixin
 from bot.system_handlers import SystemCommandsMixin
 
@@ -336,7 +337,28 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
         await chans[0].send(_fit_chat(text))
         return True
 
-    async def send_multiline_response(self, channel, response_text, username):
+    def _response_values(self, message, cmd):
+        """Placeholders of a command response (core/variables.py)."""
+        name = getattr(getattr(message, "author", None), "name", "") or ""
+        cm = getattr(self, "currency_manager", None)
+        try:
+            count = int(cmd.get("Count", 0) or 0) + 1      # this use included
+        except (TypeError, ValueError):
+            count = 1
+
+        def points():
+            return variables.format_points(cm.get_points(name.lower())) if cm is not None else "0"
+
+        def currency():
+            try:
+                return cm.get_currency_name()
+            except Exception:
+                return "points"
+        # a queue entry restored after a restart has no message text
+        return variables.command_values(name, getattr(message, "content", "") or "", channel=self.channel,
+                                        count=count, points=points, currency=currency)
+
+    async def send_multiline_response(self, channel, response_text, username, values=None):
         """
         Отправляет многострочный ответ, где каждая строка отправляется отдельным сообщением.
         Строки, содержащие только пробелы, создают задержку в 1 секунду.
@@ -354,8 +376,8 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
                 await asyncio.sleep(0.2)
                 continue
 
-            # Заменяем {user} на имя пользователя
-            formatted_line = line.replace("{user}", username)
+            # {user}, {target}, {count}, {random:1-6}... (core/variables.py)
+            formatted_line = variables.render(line, values or {"user": username})
             
             # Отправляем непустую строку как отдельное сообщение
             if formatted_line.strip():
@@ -501,7 +523,8 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             if not cmd.get("Enabled", False):
                 continue
             cmd_key = self.normalize_command_key(cmd["Command"].lstrip(self.prefix).lower())
-            if cmd_key != key:
+            if cmd_key != key and key not in [self.normalize_command_key(a)
+                                             for a in variables.alias_names(cmd.get("Aliases", ""))]:
                 continue
             print(f"Command matched: '{key}' (cost {cmd.get('Cost', 0)})")
             await self.run_command(message, cmd)

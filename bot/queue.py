@@ -487,7 +487,8 @@ class QueueMixin(object):
 
             response = cmd.get("Response", "")
             if response:
-                await self.send_multiline_response(message.channel, response, username)
+                await self.send_multiline_response(message.channel, response, username,
+                                                   values=self._response_values(message, cmd))
                 print(f"Sent response for queued command !{cmd_name}")
 
             self._count_use(cmd)
