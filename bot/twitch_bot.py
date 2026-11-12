@@ -952,13 +952,15 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             # По умолчанию не модератор при ошибке
             return False
             
-    def _count_use(self, cmd):
-        """+1 к счётчику своей копии и сообщение редактору."""
+    def _count_use(self, cmd, username=None):
+        """+1 к счётчику своей копии и сообщение редактору (счётчик и, для
+        оверлея OBS, кто вызвал)."""
         try:
             cmd["Count"] = int(cmd.get("Count", 0) or 0) + 1
         except (TypeError, ValueError):
             pass
         self._notify("command_used", cmd)
+        self._notify("command_run", str(cmd.get("Command", "")), str(username or ""))
 
     def _notify(self, what, *args):
         """Сообщить окну (self.ui). Окно не может сломать бота: ошибки

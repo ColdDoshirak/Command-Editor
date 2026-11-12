@@ -525,7 +525,7 @@ class QueueMixin(object):
                                                    values=self._response_values(message, cmd))
                 print(f"Sent response for queued command !{cmd_name}")
 
-            self._count_use(cmd)
+            self._count_use(cmd, username)
 
             print(f"--- Finished execution of queued command: !{cmd_name} ---")
 

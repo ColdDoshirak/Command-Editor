@@ -30,6 +30,7 @@ class BotBridge(QObject):
     stream_status_ready = pyqtSignal(bool)
     moderators_ready = pyqtSignal(list)
     command_ran = pyqtSignal(object)
+    command_ran_by = pyqtSignal(str, str)      # command, user
     # internal: a submitted coroutine finished -> (callback, result, error)
     _finished = pyqtSignal(object, object, object)
 
@@ -58,6 +59,9 @@ class BotBridge(QObject):
 
     def command_used(self, cmd):
         self.command_ran.emit(cmd)
+
+    def command_run(self, command, user):
+        self.command_ran_by.emit(str(command), str(user))
 
     # ------------------------------------------------------------------
     # the bot this window talks to

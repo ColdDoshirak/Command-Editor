@@ -36,6 +36,7 @@ SCRIPTS = [
     "check_commands_model.py",
     "check_user_currency.py",
     "check_hotkeys.py",
+    "check_overlay.py",
 ]
 TIMEOUT = 180
 

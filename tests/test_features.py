@@ -264,3 +264,114 @@ async def test_hotkey_actions_on_the_bot():
             w.cancel()
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- OBS overlay --------------------------------------------------------------------
+
+def _get(url):
+    import urllib.request
+    with urllib.request.urlopen(url, timeout=5) as r:
+        return r.status, r.headers.get("Content-Type", ""), r.read().decode("utf-8")
+
+
+async def test_overlay_server_serves_page_and_state():
+    import json
+    import socket
+    from core.overlay import OverlayServer
+    from core.overlay_page import PAGE
+    srv = OverlayServer(PAGE)
+    try:
+        assert srv.start(0), srv.error
+        base = "http://127.0.0.1:%d" % srv.port
+        status, ctype, body = _get(base + "/")
+        assert status == 200 and "text/html" in ctype and "state.json" in body
+        srv.update({"connected": True, "live": True, "now": [{"group": "SONG", "command": "!a",
+                                                              "user": "alice", "elapsed": 5}],
+                    "queues": [], "recent": [{"command": "!hi", "user": "bob"}]})
+        status, ctype, body = _get(base + "/state.json")
+        st = json.loads(body)
+        assert status == 200 and "json" in ctype and st["now"][0]["user"] == "alice", st
+        # a busy port is reported, not crashed on
+        busy = srv.port
+        other = OverlayServer(PAGE)
+        assert not other.start(busy) and other.error, other.error
+        srv.stop()
+        assert not srv.running()
+        s = socket.socket()
+        assert s.connect_ex(("127.0.0.1", busy)) != 0, "stopped server no longer listens"
+        s.close()
+    finally:
+        srv.stop()
+
+
+async def test_overlay_snapshot_from_the_bot_queues():
+    import os as _os
+    from core.overlay import snapshot_from_bot
+    from harness import make_bot, make_command, make_sound_file, FakeChannel, FakeMessage, wait_until
+    from stubs import set_sound_duration
+    tmp = new_tmpdir()
+    try:
+        for n in ("a.mp3", "b.mp3"):
+            make_sound_file(tmp, n)
+            set_sound_duration(_os.path.join(tmp, n), 5.0)
+        cmds = [make_command("!a", "SONG", SoundFile="a.mp3"), make_command("!b", "SONG", SoundFile="b.mp3")]
+        bot, _cm, _ = make_bot(tmp, cmds, {"SONG": {"queue_enabled": True, "audio_channel": 1}})
+        ch = FakeChannel()
+        await bot.event_message(FakeMessage("alice", "!a", ch))
+        await bot.event_message(FakeMessage("bob", "!b", ch))
+        assert await wait_until(lambda: "SONG" in bot.queue_current, 2)
+        st = snapshot_from_bot(bot, recent=[{"command": "!x", "user": "c"}] * 30)
+        assert st["now"] == [{"group": "SONG", "command": "!a", "user": "alice", "elapsed": 0}], st["now"]
+        assert st["queues"][0]["pending"] == [{"command": "!b", "user": "bob"}], st["queues"]
+        assert len(st["recent"]) == 10
+        assert snapshot_from_bot(None)["connected"] is False
+        for w in list(bot.queue_workers.values()):
+            w.cancel()
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_overlay_page_script_renders():
+    """Run the page's JavaScript in Node with a fake DOM (skipped without Node)."""
+    import json
+    import re
+    import shutil
+    from core.overlay_page import PAGE
+    node = shutil.which("node")
+    if not node:
+        return
+    script = re.search(r"<script>(.*)</script>", PAGE, re.S).group(1)
+    state = {"connected": True, "live": True,
+             "now": [{"group": "SONG", "command": "!a<b>", "user": "alice", "elapsed": 65}],
+             "queues": [{"group": "SONG", "paused": True, "pending": [{"command": "!b", "user": "bob"}],
+                         "more": 3}],
+             "recent": [{"command": "!x", "user": "u1"}, {"command": "!y", "user": "u2"}]}
+    harness_js = """
+var els = {now: {}, queue: {}, recent: {}};
+var document = {getElementById: function (id) { return els[id]; },
+                body: {style: {setProperty: function () {}}}};
+var location = {search: "?show=now,queue"};
+var fetched = 0;
+function fetch() { fetched++; return {then: function () { return {then: function () {
+  return {catch: function () { return {then: function () {}}; }}; }}; }}; }
+function setTimeout() {}
+%s
+render(%s);
+console.log(JSON.stringify({now: els.now.innerHTML, queue: els.queue.innerHTML,
+                            recentClass: els.recent.className, fetched: fetched}));
+""" % (script, json.dumps(state))
+    tmp = new_tmpdir()
+    try:
+        path = os.path.join(tmp, "page.js")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(harness_js)
+        out = subprocess.run([node, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+        assert out.returncode == 0, out.stderr.decode("utf-8", "replace")
+        res = json.loads(out.stdout.decode("utf-8").strip().splitlines()[-1])
+        assert "1:05" in res["now"] and "alice" in res["now"], res["now"]
+        assert "&lt;b&gt;" in res["now"] and "<b>" not in res["now"], "names are escaped"
+        assert "(paused)" in res["queue"] and "+3 more" in res["queue"] and "bob" in res["queue"]
+        assert "hidden" in res["recentClass"], "?show= hides the other blocks"
+        assert res["fetched"] == 1, "polls state.json"
+    finally:
+        drop_tmpdir(tmp)

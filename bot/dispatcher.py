@@ -189,7 +189,7 @@ class CommandDispatcher(object):
             executed = True
 
         if executed:
-            self._count_use(cmd)
+            self._count_use(cmd, username)
             print(f"Command '{key}' executed by {username} (count {cmd.get('Count')})")
             return True
 

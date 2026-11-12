@@ -5,7 +5,8 @@ Python 3.8 / PyQt5.
 """
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QComboBox,
-                             QSpinBox, QScrollArea, QKeySequenceEdit)
+                             QSpinBox, QScrollArea, QKeySequenceEdit, QLineEdit, QPushButton,
+                             QApplication)
 from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QKeySequence
 from ui.hotkeys import ACTIONS as HOTKEY_ACTIONS, available as hotkeys_available
@@ -124,6 +125,14 @@ class SettingsPanel(QWidget):
             self._hotkey_rows(cv)
             v.addWidget(card)
 
+        if hasattr(e, "overlay_settings"):
+            card, cv = self._card(
+                "OBS overlay",
+                "A page for an OBS Browser Source: now playing, the queues, recent commands. "
+                "Only this computer can open it (127.0.0.1).")
+            self._overlay_rows(cv)
+            v.addWidget(card)
+
         card, cv = self._card("Appearance", "")
         row = QHBoxLayout()
         row.setContentsMargins(0, 8, 0, 12)
@@ -195,6 +204,65 @@ class SettingsPanel(QWidget):
         labels = dict((n, l) for n, l, _d in HOTKEY_ACTIONS)
         lines = ["%s: %s" % (labels.get(n, n), why) for n, why in sorted(problems.items())]
         self.hotkey_status.setText("\n".join(lines))
+
+    def _overlay_rows(self, layout):
+        e = self.editor
+        s = e.overlay_settings()
+        row = QFrame()
+        row.setObjectName("switchRow")
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 10, 0, 10)
+        t = QLabel("Enable the overlay")
+        t.setObjectName("switchTitle")
+        h.addWidget(t, 1)
+        self.overlay_port = QSpinBox()
+        self.overlay_port.setRange(1024, 65535)
+        self.overlay_port.setValue(int(s.get("port", 8765) or 8765))
+        self.overlay_port.setPrefix("port ")
+        self.overlay_port.setFixedWidth(120)
+        self.overlay_port.editingFinished.connect(self._overlay_changed)
+        h.addWidget(self.overlay_port)
+        self.overlay_switch = ToggleSwitch(self.pal)
+        self.overlay_switch.setChecked(bool(s.get("enabled")))
+        self.overlay_switch.toggled.connect(self._overlay_changed)
+        h.addWidget(self.overlay_switch)
+        layout.addWidget(row)
+        r = QHBoxLayout()
+        r.setContentsMargins(0, 6, 0, 6)
+        self.overlay_url = QLineEdit()
+        self.overlay_url.setReadOnly(True)
+        self.overlay_url.setPlaceholderText("off")
+        r.addWidget(self.overlay_url, 1)
+        copy_btn = QPushButton("Copy")
+        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.overlay_url.text()))
+        r.addWidget(copy_btn)
+        layout.addLayout(r)
+        self.overlay_status = QLabel("")
+        self.overlay_status.setObjectName("switchDesc")
+        self.overlay_status.setWordWrap(True)
+        layout.addWidget(self.overlay_status)
+        self._show_overlay()
+
+    def _overlay_changed(self, *_):
+        settings = {"enabled": self.overlay_switch.isChecked(), "port": self.overlay_port.value()}
+        if settings != {k: self.editor.overlay_settings().get(k) for k in settings} \
+                or settings["enabled"] != self.editor.overlay.running():
+            self.editor.apply_overlay_settings(settings)
+        self._show_overlay()
+
+    def _show_overlay(self):
+        e = self.editor
+        url = e.overlay_url()
+        self.overlay_url.setText(url)
+        if url:
+            self.overlay_status.setText(
+                "OBS: Sources -> Browser, this URL, width 400, height 600. "
+                "Options: ?show=now,queue,recent (blocks) and &size=28 (font).")
+        elif e.overlay_settings().get("enabled"):
+            self.overlay_status.setText("Could not start on port %d: %s"
+                                        % (self.overlay_port.value(), e.overlay.error or "?"))
+        else:
+            self.overlay_status.setText("")
 
     def showEvent(self, event):
         # Re-read values: they may have been changed elsewhere (e.g. restore).

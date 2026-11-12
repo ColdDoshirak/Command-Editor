@@ -28,6 +28,8 @@ from ui.update_notification import UpdateNotificationWidget
 from ui.theme_switch import ThemeSwitchMixin
 from ui.classic_commands import ClassicCommandsMixin
 from ui.hotkeys import GlobalHotkeys, ACTIONS as HOTKEY_ACTIONS, DEFAULTS as HOTKEY_DEFAULTS
+from core.overlay import OverlayServer, snapshot_from_bot, RECENT_MAX as OVERLAY_RECENT
+from core.overlay_page import PAGE as OVERLAY_PAGE
 
 # регистрируем QTextCursor для передачи в сигналах
 QMetaType.type("QTextCursor")
@@ -209,6 +211,20 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
             if self.currency_auto_save_enabled:
                 self.currency_auto_backup_timer.start(self.currency_backup_interval * 1000)
         
+        # глобальные горячие клавиши (ui/hotkeys.py): работают и в свёрнутом окне
+        self.hotkeys = GlobalHotkeys(self)
+        self.hotkeys.triggered.connect(self._on_hotkey)
+        self.hotkey_problems = self.hotkeys.apply(self.hotkey_settings())
+
+        # оверлей для OBS (core/overlay.py): своя нить, только 127.0.0.1
+        self.overlay = OverlayServer(OVERLAY_PAGE)
+        self._overlay_recent = []
+        self.twitch_tab.bridge.command_ran_by.connect(self._on_command_ran_by)
+        self._overlay_timer = QTimer(self)
+        self._overlay_timer.setInterval(500)
+        self._overlay_timer.timeout.connect(self._push_overlay)
+        self.apply_overlay_settings()
+
         # Apply the selected UI theme (classic / sidebar / spreadsheet)
         self.apply_theme(self.theme)
         
@@ -229,10 +245,6 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         # Create update notification widget
         self.update_notification = UpdateNotificationWidget(self)
 
-        # глобальные горячие клавиши (ui/hotkeys.py): работают и в свёрнутом окне
-        self.hotkeys = GlobalHotkeys(self)
-        self.hotkeys.triggered.connect(self._on_hotkey)
-        self.hotkey_problems = self.hotkeys.apply(self.hotkey_settings())
           # Auto-check for updates on startup (silent check)
         self.auto_check_updates()
 
@@ -361,9 +373,40 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
             pygame.mixer.stop()
         self.twitch_tab.add_to_chat_safe(f"[Hotkey] {label}")
 
+    # -- OBS overlay ------------------------------------------------------------------
+    def overlay_settings(self):
+        return self.config_manager.get_overlay()
+
+    def apply_overlay_settings(self, settings=None):
+        """Save (if given) and start / stop the overlay. Returns its URL, or
+        None (off, or the port is taken: self.overlay.error)."""
+        if settings is not None:
+            self.config_manager.set_overlay(settings)
+        s = self.overlay_settings()
+        self.overlay.stop()
+        self._overlay_timer.stop()
+        if not s.get("enabled"):
+            return None
+        if not self.overlay.start(int(s.get("port", 8765) or 8765)):
+            return None
+        self._push_overlay()
+        self._overlay_timer.start()
+        return self.overlay_url()
+
+    def overlay_url(self):
+        return "http://127.0.0.1:%d/" % self.overlay.port if self.overlay.running() else ""
+
+    def _on_command_ran_by(self, command, user):
+        self._overlay_recent.append({"command": command, "user": user})
+        del self._overlay_recent[:-OVERLAY_RECENT]
+
+    def _push_overlay(self):
+        self.overlay.update(snapshot_from_bot(self.twitch_tab.bot, self._overlay_recent))
+
     def closeEvent(self, event):
         try:
             self.hotkeys.clear()
+            self.overlay.stop()
             # First, stop any playing sounds
             if pygame.mixer.get_busy():
                 pygame.mixer.stop()

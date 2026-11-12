@@ -349,6 +349,18 @@ class ConfigManager:
         self.config['volume'] = max(0.0, min(1.0, volume))
         self.save_config()
 
+    def get_overlay(self):
+        """OBS overlay: {"enabled": bool, "port": int}."""
+        o = self.config.get('overlay')
+        out = {"enabled": False, "port": 8765}
+        if isinstance(o, dict):
+            out.update(o)
+        return out
+
+    def set_overlay(self, overlay):
+        self.config['overlay'] = dict(overlay or {})
+        self.save_config()
+
     def get_hotkeys(self):
         """Global hotkeys as stored ({"enabled": bool, "skip": "Ctrl+Alt+S", ...})."""
         h = self.config.get('hotkeys')

@@ -31,6 +31,9 @@ class BotUi(object):
     def command_used(self, cmd):
         """A command ran; cmd is the bot's own copy from the snapshot."""
 
+    def command_run(self, command, user):
+        """A command ran, by whom (the OBS overlay's "Recent")."""
+
 
 class CallbackUi(BotUi):
     """Compatibility: a bare message callback receives the chat lines."""
