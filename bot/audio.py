@@ -87,6 +87,7 @@ class SoundPreview(object):
         self.channel = channel
         self.cache = cache
         self._mine = False      # this preview started what the channel plays
+        self._picks = {}
 
     def is_playing(self):
         if self._mine and not self.channel.get_busy():
@@ -108,6 +109,7 @@ class SoundPreview(object):
         if self.is_playing():
             self.stop()
             return "stopped"
+        path = pick_sound(path, self._picks)          # a folder: a random sound
         if not path or not os.path.exists(path):
             return "missing"
         if not may_start(self.channel, allow_interrupt):
@@ -142,3 +144,30 @@ def ensure_channels():
         have = 0
     if have < MIXER_CHANNELS:
         pygame.mixer.set_num_channels(MIXER_CHANNELS)
+
+
+# ---- a folder as the sound (2.0): a random file from it ------------------------
+SOUND_EXTS = (".wav", ".mp3", ".ogg", ".flac")
+
+
+def pick_sound(path, last=None, rng=None):
+    """`path` itself if it is a file; for a folder a random sound file from it
+    (never the one picked last time from that folder, when there is a choice);
+    "" for a folder without sounds. `last` is a dict the caller keeps."""
+    import random
+    path = str(path or "")
+    if not os.path.isdir(path):
+        return path
+    try:
+        files = sorted(os.path.join(path, n) for n in os.listdir(path)
+                       if n.lower().endswith(SOUND_EXTS) and os.path.isfile(os.path.join(path, n)))
+    except OSError:
+        files = []
+    if not files:
+        return ""
+    if last is not None and len(files) > 1 and last.get(path) in files:
+        files = [f for f in files if f != last.get(path)]
+    choice = (rng or random).choice(files)
+    if last is not None:
+        last[path] = choice
+    return choice

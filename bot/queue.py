@@ -546,6 +546,10 @@ class QueueMixin(object):
         if not sound_path.is_absolute():
             sound_path = Path(self.config_manager.get_sound_config().get("sound_dir", "")) / sound_file
 
+        if sound_path.is_dir():                    # a folder: a random sound from it
+            from bot.audio import pick_sound
+            picked = pick_sound(str(sound_path), self.__dict__.setdefault("_sound_picks", {}))
+            sound_path = Path(picked) if picked else sound_path / "__no_sound__"
         if not sound_path.exists():
             print(f"Sound file not found: {sound_path}")
             return

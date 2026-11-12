@@ -11,7 +11,7 @@ from typing import Union
 
 from core.system_commands import merge_with_defaults, name_of as sys_cmd_name
 from bot.dispatcher import CommandDispatcher
-from bot.audio import SoundCache, may_start, ensure_channels
+from bot.audio import SoundCache, may_start, ensure_channels, pick_sound
 from bot.helix import HelixClient, logins as helix_logins
 from bot.ui_port import BotUi, CallbackUi
 from core import permissions
@@ -134,6 +134,7 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             
             # Инициализация для проигрывания звуков
             self.loaded_sounds = SoundCache(limit=32)
+            self._sound_picks = {}      # папка -> последний выбранный файл
             if sound_channel:
                 self.sound_channel = sound_channel
             else:
@@ -672,8 +673,10 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
         """Проигрывание звукового файла с учетом настроек прерывания и громкости
         Возвращает True, если звук был успешно запущен, False в противном случае"""
         try:
+            # папка вместо файла: случайный звук из неё (2.0)
+            filepath = pick_sound(filepath, self._sound_picks)
             # Проверка существования файла
-            if not os.path.exists(filepath):
+            if not filepath or not os.path.exists(filepath):
                 print(f"Sound file not found: {filepath}")
                 return False
 

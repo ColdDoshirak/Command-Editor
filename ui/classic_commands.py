@@ -160,12 +160,17 @@ class ClassicCommandsMixin(object):
         self.fk_sound_file_btn = QPushButton("Browse")
         
         self.sound_file_btn.clicked.connect(lambda: self.browse_file(self.sound_file_edit))
+        # папка вместо файла: каждый раз - случайный звук из неё (2.0)
+        self.sound_folder_btn = QPushButton("Folder…")
+        self.sound_folder_btn.setToolTip("A folder: a random sound from it plays each time")
+        self.sound_folder_btn.clicked.connect(lambda: self.browse_folder(self.sound_file_edit))
         self.fk_sound_file_btn.clicked.connect(lambda: self.browse_file(self.fk_sound_file_edit))
         
         right_column.addWidget(QLabel("Sound File:"))
         sound_file_layout = QHBoxLayout()
         sound_file_layout.addWidget(self.sound_file_edit)
         sound_file_layout.addWidget(self.sound_file_btn)
+        sound_file_layout.addWidget(self.sound_folder_btn)
         right_column.addLayout(sound_file_layout)
         
         # Add Play/Stop button for sound
@@ -442,9 +447,25 @@ class ClassicCommandsMixin(object):
         file_name, _ = QFileDialog.getOpenFileName(self, "Select Sound File", "", "Sound Files (*.mp3 *.wav *.ogg)")
         if file_name:
             line_edit.setText(file_name)
-            # setText не даёт editingFinished: сохраняем явно (S12)
-            column = 11 if line_edit is self.sound_file_edit else 12
-            self.update_command_field(file_name, column)
+            # setText не даёт editingFinished: поля классической панели
+            # сохраняем явно (S12). Поля тем сохраняют себя сами (их правки) -
+            # раньше любое не-классическое поле уходило в колонку 12
+            # (FKSoundFile) строки, выбранной в классической таблице, то есть
+            # часто в чужую команду.
+            if line_edit is self.sound_file_edit:
+                self.update_command_field(file_name, 11)
+            elif line_edit is self.fk_sound_file_edit:
+                self.update_command_field(file_name, 12)
+
+    def browse_folder(self, line_edit):
+        """A folder as the sound: a random file from it plays each time."""
+        folder = QFileDialog.getExistingDirectory(
+            self, "Folder with sounds (a random one plays each time)", line_edit.text() or "")
+        if folder:
+            line_edit.setText(folder)
+            if line_edit is self.sound_file_edit:
+                self.update_command_field(folder, 11)
+        return folder
 
     def on_command_selected(self):
         """Handle command selection in the table.

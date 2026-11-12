@@ -203,6 +203,11 @@ class CommandDetailEditor(QScrollArea):
         b.setToolTip("Browse…")
         b.clicked.connect(lambda: self.editor.browse_file(self.f_sound))
         srow.addWidget(b)
+        self.browse_btn = b
+        self.folder_btn = QPushButton("Folder…")
+        self.folder_btn.setToolTip("A folder: a random sound from it plays each time")
+        self.folder_btn.clicked.connect(lambda: self.editor.browse_folder(self.f_sound))
+        srow.addWidget(self.folder_btn)
         self.play_btn = QPushButton()
         self.play_btn.setIcon(make_icon("play", self.pal["accent"]))
         self.play_btn.setToolTip("Preview sound (click again to stop)")

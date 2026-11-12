@@ -147,3 +147,56 @@ async def test_group_channel_32_exists_and_preview_has_its_own():
         assert _mixer().get_num_channels() == 64, "never lowers the number of channels"
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- 2.0: a folder as the sound -> a random file from it ---------------------
+
+async def test_pick_from_folder():
+    import random
+    from bot.audio import pick_sound
+    tmp = new_tmpdir()
+    try:
+        folder = os.path.join(tmp, "laughs")
+        os.makedirs(folder)
+        for n in ("a.wav", "b.mp3", "c.ogg", "notes.txt"):
+            open(os.path.join(folder, n), "wb").close()
+        last = {}
+        rng = random.Random(3)
+        picks = [pick_sound(folder, last, rng) for _ in range(60)]
+        assert set(os.path.basename(p) for p in picks) == {"a.wav", "b.mp3", "c.ogg"}, set(picks)
+        assert all(a != b for a, b in zip(picks, picks[1:])), "never the same sound twice in a row"
+        single = os.path.join(tmp, "one")
+        os.makedirs(single)
+        open(os.path.join(single, "x.wav"), "wb").close()
+        assert pick_sound(single, last) == os.path.join(single, "x.wav")
+        empty = os.path.join(tmp, "empty")
+        os.makedirs(empty)
+        assert pick_sound(empty, last) == "", "an empty folder plays nothing"
+        f = os.path.join(folder, "a.wav")
+        assert pick_sound(f, last) == f, "a file stays a file"
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_command_with_a_folder_plays_one_of_its_sounds():
+    tmp = new_tmpdir()
+    try:
+        folder = os.path.join(tmp, "fx")
+        os.makedirs(folder)
+        for n in ("1.mp3", "2.mp3"):
+            open(os.path.join(folder, n), "wb").close()
+        cmds = [make_command("!fx", SoundFile=folder),
+                make_command("!q", "SONG", SoundFile=folder)]
+        bot, _cm, _ = make_bot(tmp, cmds, {"SONG": {"queue_enabled": True, "audio_channel": 2}})
+        bot.allow_sound_interruption = True
+        await bot.event_message(FakeMessage("u", "!fx", FakeChannel()))
+        played = [p for _t, p in _mixer().Channel(0).play_log]
+        assert len(played) == 1 and os.path.dirname(played[0]) == folder, played
+        await bot.event_message(FakeMessage("u", "!q", FakeChannel()))
+        from harness import wait_until
+        assert await wait_until(lambda: len(_mixer().Channel(2).play_log) == 1, 3)
+        assert os.path.dirname(_mixer().Channel(2).play_log[0][1]) == folder
+        for w in list(bot.queue_workers.values()):
+            w.cancel()
+    finally:
+        drop_tmpdir(tmp)
