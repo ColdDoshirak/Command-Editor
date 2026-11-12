@@ -38,6 +38,7 @@ SCRIPTS = [
     "check_hotkeys.py",
     "check_overlay.py",
     "check_timers.py",
+    "check_command_test.py",
 ]
 TIMEOUT = 180
 

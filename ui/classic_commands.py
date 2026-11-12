@@ -167,6 +167,11 @@ class ClassicCommandsMixin(object):
         self.play_sound_btn = QPushButton("Play Sound")
         self.play_sound_btn.clicked.connect(self.play_or_stop_sound)
         sound_file_layout.addWidget(self.play_sound_btn)
+        # проверка команды без Twitch (2.0): сухой прогон, ничего не списывается
+        self.test_cmd_btn = QPushButton("Test…")
+        self.test_cmd_btn.setToolTip("What happens if a viewer writes it - without Twitch")
+        self.test_cmd_btn.clicked.connect(lambda: self.test_command())
+        sound_file_layout.addWidget(self.test_cmd_btn)
         
         right_column.addWidget(QLabel("FK Sound File:"))
         right_column.addWidget(self.fk_sound_file_edit)
@@ -513,6 +518,18 @@ class ClassicCommandsMixin(object):
             # Keep the themed Commands view (sidebar detail) in sync
             if self.themed_commands_view is not None and hasattr(self.themed_commands_view, "select_from_table"):
                 self.themed_commands_view.select_from_table(row)
+
+    def test_command(self, row=None):
+        """The "Test command" dialog for a row (default: the selected one)."""
+        from ui.command_test_dialog import CommandTestDialog
+        row = self._selected_row() if row is None else row
+        if not (0 <= row < len(self.commands)):
+            QMessageBox.warning(self, "Warning", "No command selected.")
+            return None
+        dlg = CommandTestDialog(self, row)
+        self._last_test_dialog = dlg
+        dlg.exec_()
+        return dlg
 
     def update_command_extra(self, key, value):
         """A field outside the table columns (Aliases) -> the repository."""

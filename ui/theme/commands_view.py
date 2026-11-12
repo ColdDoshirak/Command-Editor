@@ -208,6 +208,10 @@ class CommandDetailEditor(QScrollArea):
         self.play_btn.setToolTip("Preview sound (click again to stop)")
         self.play_btn.clicked.connect(self._preview)
         srow.addWidget(self.play_btn)
+        self.test_btn = QPushButton("Test…")
+        self.test_btn.setToolTip("What happens if a viewer writes it - without Twitch")
+        self.test_btn.clicked.connect(self._test)
+        srow.addWidget(self.test_btn)
         v.addLayout(srow)
         self.missing_lab = QLabel("File not found (moved?). Use “Fix sound paths” in the file menu.")
         self.missing_lab.setStyleSheet("color: %s; font-size: 11px;" % self.pal["red"])
@@ -262,7 +266,7 @@ class CommandDetailEditor(QScrollArea):
                                self.f_cd, self.f_ucd, self.f_cost, self.f_count, self.f_info,
                                self.f_aliases,
                                self.f_sound, self.f_fk, self.f_volume, self.f_response,
-                               self.d_enabled, self.d_delete, self.play_btn, b, b2]
+                               self.d_enabled, self.d_delete, self.play_btn, self.test_btn, b, b2]
         self.setWidget(panel)
 
     # -- edits --------------------------------------------------------
@@ -301,6 +305,11 @@ class CommandDetailEditor(QScrollArea):
         if self.row >= 0:
             self.table.selectRow(self.row)
             self.editor.play_or_stop_sound()
+
+    def _test(self):
+        self.flush()
+        if self.row >= 0:
+            self.editor.test_command(self.row)
 
     def _remove(self):
         self.flush()
@@ -737,10 +746,12 @@ class SpreadsheetCommandsView(QWidget):
         h.addWidget(sep)
         self.browse_btn = self._tool("Sound…", self._browse, "Choose a sound file for the selected row")
         self.play_btn = self._tool("▶ Play", self._preview, "Preview the selected row's sound")
+        self.test_btn = self._tool("Test…", self._test, "What happens if a viewer writes it - without Twitch")
         self.resp_btn = self._tool("Edit response…", self._edit_response,
                                    "Multi-line response editor (or double-click the Response cell)")
         h.addWidget(self.browse_btn)
         h.addWidget(self.play_btn)
+        h.addWidget(self.test_btn)
         h.addWidget(self.resp_btn)
         _toolbar_stretch(bar)
         self.details_btn = self._tool("Details ▾", self._toggle_details,
@@ -1017,6 +1028,11 @@ class SpreadsheetCommandsView(QWidget):
         self.table.selectRow(idx)
         self.editor.play_or_stop_sound()
 
+    def _test(self):
+        idx = self._selected_idx()
+        if idx is not None:
+            self.editor.test_command(idx)
+
     def _add(self):
         self.on_add()
         self.search_edit.clear()
@@ -1036,7 +1052,7 @@ class SpreadsheetCommandsView(QWidget):
 
     def _update_actions(self):
         has = self._selected_idx() is not None
-        for b in (self.del_btn, self.browse_btn, self.play_btn, self.resp_btn):
+        for b in (self.del_btn, self.browse_btn, self.play_btn, self.test_btn, self.resp_btn):
             b.setEnabled(has)
 
     def _on_selection(self):

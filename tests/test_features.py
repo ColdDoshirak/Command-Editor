@@ -422,3 +422,23 @@ async def test_bot_posts_timers():
         assert ch.sent == ["Hi from testchan 7"], "not again before the interval"
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- "Test command" dry run ------------------------------------------------------------
+
+async def test_simulate_a_command():
+    from core.command_test import simulate
+    from harness import make_command
+    cmd = make_command("!hug", Response="{user} hugs {target}!\n \nThat was hug #{count}", Count=2,
+                       Permission="Subscriber", Cost=10, Aliases="!cuddle", SoundFile="C:/no/such.wav")
+    r = simulate(cmd, "!cuddle @Bob", user="alice", role="VIP", points=25)
+    assert r["matches"] and r["allowed"] and r["enough_points"], r
+    assert r["lines"] == ["alice hugs Bob!", None, "That was hug #3"], r["lines"]
+    assert r["sound"] and not r["sound_ok"] and any("not found" in p for p in r["problems"])
+    r = simulate(cmd, "!hug", user="newbie", role="Everyone", points=3, exists=lambda p: True)
+    assert not r["allowed"] and not r["enough_points"], r
+    assert any("needs Subscriber" in p for p in r["problems"]) and any("costs 10" in p for p in r["problems"])
+    r = simulate(cmd, "!other", role="Admin", points=99, exists=lambda p: True)
+    assert not r["matches"] and r["problems"][0].startswith("The message does not call"), r
+    assert simulate(dict(cmd, Enabled=False), "!hug", role="Admin", points=99,
+                    exists=lambda p: True)["problems"] == ["The command is disabled"]
