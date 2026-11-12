@@ -35,6 +35,7 @@ SCRIPTS = [
     "check_twitch_reconnect.py",
     "check_commands_model.py",
     "check_user_currency.py",
+    "check_hotkeys.py",
 ]
 TIMEOUT = 180
 

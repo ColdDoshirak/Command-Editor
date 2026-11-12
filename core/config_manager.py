@@ -349,6 +349,15 @@ class ConfigManager:
         self.config['volume'] = max(0.0, min(1.0, volume))
         self.save_config()
 
+    def get_hotkeys(self):
+        """Global hotkeys as stored ({"enabled": bool, "skip": "Ctrl+Alt+S", ...})."""
+        h = self.config.get('hotkeys')
+        return dict(h) if isinstance(h, dict) else {}
+
+    def set_hotkeys(self, hotkeys):
+        self.config['hotkeys'] = dict(hotkeys or {})
+        self.save_config()
+
     def get_theme(self):
         """Return the active UI theme name (classic/sidebar/spreadsheet)."""
         t = self.config.get('theme', 'classic')

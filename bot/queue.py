@@ -350,6 +350,40 @@ class QueueMixin(object):
         else:
             self.queue_paused.discard(group)
 
+    # -- global hotkeys (ui/hotkeys.py; called in the bot loop via the bridge) --
+    def hotkey_skip(self):
+        """Skip what every queue is playing; without one, stop the shared
+        channel's sound. Returns how many queue items were skipped."""
+        skipped = sum(1 for g in list(self.queue_current) if self.skip_queue_current(g))
+        if not skipped and self.sound_channel is not None:
+            try:
+                if self.sound_channel.get_busy():
+                    self.sound_channel.stop()
+            except Exception:
+                pass
+        return skipped
+
+    def hotkey_toggle_pause(self):
+        """Pause every queue (or resume them all if all are paused).
+        Returns True when the queues are paused now."""
+        groups = list(self.command_queues)
+        pause = any(g not in self.queue_paused for g in groups)
+        for g in groups:
+            self.set_queue_paused(g, pause)
+        return pause
+
+    def hotkey_stop_all(self):
+        """The panic button: stop every sound now and pause the queues
+        (resume with the pause hotkey)."""
+        for g in list(self.command_queues):
+            self.set_queue_paused(g, True)
+        for g in list(self.queue_current):
+            self.skip_queue_current(g)
+        try:
+            pygame.mixer.stop()
+        except Exception:
+            pass
+
     def _remove_queue_item(self, group, item):
         q = self.command_queues.get(group)
         try:

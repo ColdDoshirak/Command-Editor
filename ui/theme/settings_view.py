@@ -5,8 +5,10 @@ Python 3.8 / PyQt5.
 """
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QComboBox,
-                             QSpinBox, QScrollArea)
+                             QSpinBox, QScrollArea, QKeySequenceEdit)
 from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QKeySequence
+from ui.hotkeys import ACTIONS as HOTKEY_ACTIONS, available as hotkeys_available
 from ui.theme.style import (THEMES, THEME_LABELS, layout_of, palette_for)
 from ui.theme.widgets import (ToggleSwitch)
 
@@ -114,6 +116,14 @@ class SettingsPanel(QWidget):
                          e.currency_auto_save_checkbox, e.currency_backup_interval_input, last=True)
         v.addWidget(card)
 
+        if hasattr(e, "hotkey_settings"):
+            card, cv = self._card(
+                "Global hotkeys",
+                "Work while the window is minimised or a game has the focus. Off by default: "
+                "while on, these keys do nothing in other programs.")
+            self._hotkey_rows(cv)
+            v.addWidget(card)
+
         card, cv = self._card("Appearance", "")
         row = QHBoxLayout()
         row.setContentsMargins(0, 8, 0, 12)
@@ -134,6 +144,57 @@ class SettingsPanel(QWidget):
         v.addStretch(1)
         scroll.setWidget(body)
         outer.addWidget(scroll)
+
+    def _hotkey_rows(self, layout):
+        e = self.editor
+        settings = e.hotkey_settings()
+        row = QFrame()
+        row.setObjectName("switchRow")
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 10, 0, 10)
+        t = QLabel("Enable global hotkeys")
+        t.setObjectName("switchTitle")
+        h.addWidget(t, 1)
+        self.hotkey_switch = ToggleSwitch(self.pal)
+        self.hotkey_switch.setChecked(bool(settings.get("enabled")))
+        self.hotkey_switch.setEnabled(hotkeys_available())
+        self.hotkey_switch.toggled.connect(self._hotkeys_changed)
+        h.addWidget(self.hotkey_switch)
+        layout.addWidget(row)
+        self.hotkey_edits = {}
+        for name, label, default in HOTKEY_ACTIONS:
+            r = QHBoxLayout()
+            r.setContentsMargins(0, 6, 0, 6)
+            lab = QLabel(label)
+            lab.setObjectName("switchDesc")
+            r.addWidget(lab, 1)
+            ed = QKeySequenceEdit(QKeySequence(settings.get(name, default) or ""))
+            ed.setFixedWidth(170)
+            ed.editingFinished.connect(self._hotkeys_changed)
+            r.addWidget(ed)
+            layout.addLayout(r)
+            self.hotkey_edits[name] = ed
+        self.hotkey_status = QLabel("")
+        self.hotkey_status.setObjectName("switchDesc")
+        self.hotkey_status.setWordWrap(True)
+        layout.addWidget(self.hotkey_status)
+        self._show_hotkey_problems(getattr(e, "hotkey_problems", {}) or {})
+
+    def _hotkeys_changed(self, *_):
+        settings = {"enabled": self.hotkey_switch.isChecked()}
+        for name, ed in self.hotkey_edits.items():
+            # one combination per action (QKeySequenceEdit allows up to four)
+            text = ed.keySequence().toString(QKeySequence.PortableText).split(",")[0].strip()
+            settings[name] = text
+        self._show_hotkey_problems(self.editor.set_hotkey_settings(settings))
+
+    def _show_hotkey_problems(self, problems):
+        if not hotkeys_available():
+            self.hotkey_status.setText("Global hotkeys work on Windows only.")
+            return
+        labels = dict((n, l) for n, l, _d in HOTKEY_ACTIONS)
+        lines = ["%s: %s" % (labels.get(n, n), why) for n, why in sorted(problems.items())]
+        self.hotkey_status.setText("\n".join(lines))
 
     def showEvent(self, event):
         # Re-read values: they may have been changed elsewhere (e.g. restore).

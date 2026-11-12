@@ -27,6 +27,7 @@ from bot.audio import SoundCache, SoundPreview, ensure_channels, PREVIEW_CHANNEL
 from ui.update_notification import UpdateNotificationWidget
 from ui.theme_switch import ThemeSwitchMixin
 from ui.classic_commands import ClassicCommandsMixin
+from ui.hotkeys import GlobalHotkeys, ACTIONS as HOTKEY_ACTIONS, DEFAULTS as HOTKEY_DEFAULTS
 
 # регистрируем QTextCursor для передачи в сигналах
 QMetaType.type("QTextCursor")
@@ -227,6 +228,11 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         
         # Create update notification widget
         self.update_notification = UpdateNotificationWidget(self)
+
+        # глобальные горячие клавиши (ui/hotkeys.py): работают и в свёрнутом окне
+        self.hotkeys = GlobalHotkeys(self)
+        self.hotkeys.triggered.connect(self._on_hotkey)
+        self.hotkey_problems = self.hotkeys.apply(self.hotkey_settings())
           # Auto-check for updates on startup (silent check)
         self.auto_check_updates()
 
@@ -331,8 +337,33 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         else:
             QMessageBox.information(self, "Info", "No new sound files to assign.")
 
+    # -- global hotkeys -----------------------------------------------------------
+    _HOTKEY_BOT = {"skip": "hotkey_skip", "pause": "hotkey_toggle_pause", "stop": "hotkey_stop_all"}
+
+    def hotkey_settings(self):
+        settings = dict(HOTKEY_DEFAULTS)
+        settings.update(self.config_manager.get_hotkeys())
+        return settings
+
+    def set_hotkey_settings(self, settings):
+        """Save and re-register. Returns {action: problem}."""
+        self.config_manager.set_hotkeys(settings)
+        self.hotkey_problems = self.hotkeys.apply(self.hotkey_settings())
+        return self.hotkey_problems
+
+    def _on_hotkey(self, name):
+        """A global hotkey was pressed (UI thread): the action runs in the bot
+        loop; without a bot, Skip / Stop at least silence the editor."""
+        label = dict((n, l) for n, l, _d in HOTKEY_ACTIONS).get(name, name)
+        sent = self.twitch_tab.bridge.call(self._HOTKEY_BOT.get(name, ""))
+        if not sent and name in ("skip", "stop"):
+            self.preview.stop()
+            pygame.mixer.stop()
+        self.twitch_tab.add_to_chat_safe(f"[Hotkey] {label}")
+
     def closeEvent(self, event):
         try:
+            self.hotkeys.clear()
             # First, stop any playing sounds
             if pygame.mixer.get_busy():
                 pygame.mixer.stop()

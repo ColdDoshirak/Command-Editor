@@ -231,3 +231,36 @@ async def test_queued_command_response_uses_variables():
             w.cancel()
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- hotkey actions (the bot side) ---------------------------------------------------
+
+async def test_hotkey_actions_on_the_bot():
+    import os as _os
+    import sys as _sys
+    from harness import make_bot, make_command, make_sound_file, FakeChannel, FakeMessage, wait_until
+    from stubs import set_sound_duration
+    tmp = new_tmpdir()
+    try:
+        for n in ("a.mp3", "b.mp3"):
+            make_sound_file(tmp, n)
+            set_sound_duration(_os.path.join(tmp, n), 5.0)
+        cmds = [make_command("!a", "SONG", SoundFile="a.mp3"), make_command("!b", "SONG", SoundFile="b.mp3")]
+        bot, _cm, _ = make_bot(tmp, cmds, {"SONG": {"queue_enabled": True, "audio_channel": 1}})
+        ch = FakeChannel()
+        await bot.event_message(FakeMessage("u", "!a", ch))
+        await bot.event_message(FakeMessage("u", "!b", ch))
+        assert await wait_until(lambda: "SONG" in bot.queue_current, 2)
+        first = bot.queue_current["SONG"]["item"]
+        assert bot.hotkey_skip() == 1, "one queue was playing"
+        assert await wait_until(lambda: bot.queue_current.get("SONG", {}).get("item") not in (None, first), 3)
+        assert bot.hotkey_toggle_pause() is True and "SONG" in bot.queue_paused
+        assert bot.hotkey_toggle_pause() is False and "SONG" not in bot.queue_paused
+        bot.hotkey_stop_all()
+        mixer = _sys.modules["pygame"].mixer
+        assert "SONG" in bot.queue_paused, "the panic button also pauses the queues"
+        assert not mixer.Channel(1).get_busy(), "and stops what plays"
+        for w in list(bot.queue_workers.values()):
+            w.cancel()
+    finally:
+        drop_tmpdir(tmp)
