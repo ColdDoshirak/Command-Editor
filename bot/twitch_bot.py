@@ -1016,6 +1016,9 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             pass
         self._notify("command_used", cmd)
         self._notify("command_run", str(cmd.get("Command", "")), str(username or ""))
+        stats = getattr(getattr(self, "currency_manager", None), "stats", None)
+        if stats is not None:
+            stats.record("command", name=str(cmd.get("Command", "")))
 
     def _notify(self, what, *args):
         """Сообщить окну (self.ui). Окно не может сломать бота: ошибки
@@ -1096,6 +1099,8 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
             rewards = usernotice_rewards(tags, currency.settings)
             for r in rewards:
                 currency.add_points(r.user, r.points)
+                if getattr(currency, "stats", None) is not None:
+                    currency.stats.record("rewards", r.points)
                 if r.subscriber and r.user in currency.users:
                     currency.users[r.user]['is_subscriber'] = True
                 print(r.ui)

@@ -86,6 +86,9 @@ class CurrencyManager:
         self.users_lock = threading.RLock()  # Реентерабельный: add_points берёт его повторно (check_rank_promotion и др.)
         # кто когда последний раз писал в чат (только в памяти): Active Bonus
         self._last_chat = {}
+        # статистика по дням (core/stats.py): начисления, траты, переводы
+        from core.stats import Stats
+        self.stats = Stats(paths.stats_file())
 
         # Ранги - из того же data/ranks.json, что у вкладки Ranks (S6:
         # раньше не загружались вовсе и всегда были пустыми).
@@ -255,6 +258,7 @@ class CurrencyManager:
                     self._save_pending = True
                     raise
             print(f"Пользователи сохранены в {self.users_file}")
+            self.stats.flush()
             return True
         except Exception as e:
             print(f"Ошибка сохранения данных пользователей: {e}")
@@ -613,6 +617,7 @@ class CurrencyManager:
             self.users[sender]['last_seen'] = now
             self.check_rank_promotion(target)
             self._save_pending = True
+        self.stats.record("given", amount)
         return True, ""
 
     def add_rank(self, name, required, group, description=""):
@@ -761,6 +766,7 @@ class CurrencyManager:
                 return False
             user['points'] = self._format_points(user['points'] - cost)
             self._save_pending = True
+        self.stats.record("spent", cost)
         # Сохраняем сразу, чтобы списание не зависело от того, вызовет ли бот
         # save_users, - но ПОСЛЕ лока: save_users берёт блокировку файла, потом
         # users_lock; запись под users_lock могла взаимно заблокироваться с
@@ -897,6 +903,7 @@ class CurrencyManager:
             hours_added = round(elapsed_minutes / 60, 2) if add_hours else 0
 
             viewers_awarded = 0
+            earned_total = 0.0
             # Под users_lock целиком: бот меняет тех же зрителей из своего
             # потока (раньше часы прибавлялись мимо лока). Записи на диск здесь
             # нет - она ниже, после лока (порядок: файл -> users_lock).
@@ -931,8 +938,10 @@ class CurrencyManager:
                     print(f"[{datetime.now().isoformat()}] awarded {total:.2f} to {uname} {bonus_str} "
                           f"→ new total {self.users.get(uname, {}).get('points', 0):.2f}{hours_info}")
                     viewers_awarded += 1
+                    earned_total += total
                 if hours_added > 0:
                     self._save_pending = True
+            self.stats.record("earned", earned_total)
 
             # Use enhanced save with backup creation for major currency updates
             if not self.enhanced_save_users(force_backup=True):

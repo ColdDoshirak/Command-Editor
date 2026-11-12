@@ -4,3 +4,4 @@ command_editor.log*
 command_editor_crash.log*
 command_editor.lock
 command_trash.json
+stats.json

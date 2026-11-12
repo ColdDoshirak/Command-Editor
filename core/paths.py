@@ -72,6 +72,10 @@ def command_trash_file():
     return path("command_trash.json")
 
 
+def stats_file():
+    return path("stats.json")
+
+
 def moderators_file():
     return path("moderators.json")
 

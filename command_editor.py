@@ -25,6 +25,7 @@ from core import paths
 from core.commands import CommandRepository
 from ui.backups_tab import HistoryTab, FullBackupsTab
 from ui.timers_tab import TimersTab
+from ui.stats_tab import StatsTab
 from core.trash import CommandTrash
 from bot.audio import SoundCache, SoundPreview, ensure_channels, PREVIEW_CHANNEL
 from ui.update_notification import UpdateNotificationWidget
@@ -171,6 +172,10 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         # таймеры (2.0): сообщения бота в чат по расписанию
         self.timers_tab = TimersTab(self)
         self.tab_widget.addTab(self.timers_tab, "Timers")
+
+        # статистика (2.0): команды, оборот очков, зрители
+        self.stats_tab = StatsTab(self)
+        self.tab_widget.addTab(self.stats_tab, "Stats")
         
         # Load saved commands and configuration
         self.load_saved_data()
@@ -420,6 +425,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         try:
             self.hotkeys.clear()
             self.overlay.stop()
+            self.currency_manager.stats.flush()
             # First, stop any playing sounds
             if pygame.mixer.get_busy():
                 pygame.mixer.stop()
@@ -893,6 +899,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         "History": ("history_tab", "History", "command log", 9),
         "Backups": ("backup_tab", "Backups", "safety", 10),
         "Timers": ("timers_tab", "Timers", "chat messages", 11),
+        "Stats": ("stats_tab", "Stats", "commands · points · viewers", 12),
     }
 
 if __name__ == "__main__":

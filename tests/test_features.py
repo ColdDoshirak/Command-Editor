@@ -470,3 +470,62 @@ async def test_command_trash():
         assert len(CommandTrash(path)) == 0, "a broken file does not stop the program"
     finally:
         drop_tmpdir(tmp)
+
+
+# ---- statistics -------------------------------------------------------------------------
+
+async def test_stats_by_day():
+    from datetime import date, timedelta
+    from core.stats import Stats
+    tmp = new_tmpdir()
+    try:
+        path = os.path.join(tmp, "stats.json")
+        today = [date(2026, 11, 1)]
+        st = Stats(path, keep_days=3, today=lambda: today[0])
+        st.record("earned", 10.5)
+        st.record("spent", 5)
+        st.record("command", name="!hi")
+        st.record("command", name="!hi")
+        today[0] += timedelta(days=1)
+        st.record("earned", 2)
+        st.record("command", name="!yo")
+        s1, s7 = st.summary(1), st.summary(7)
+        assert s1["earned"] == 2 and s1["commands"] == {"!yo": 1}, s1
+        assert s7["earned"] == 12.5 and s7["spent"] == 5 and s7["commands"] == {"!hi": 2, "!yo": 1}, s7
+        assert st.flush() and not st.flush(), "written once, then nothing new"
+        again = Stats(path, keep_days=3, today=lambda: today[0])
+        assert again.summary(7) == s7, "kept on disk"
+        today[0] += timedelta(days=5)
+        again.record("given", 1)
+        assert list(again.days) == [today[0].isoformat()], "old days dropped"
+    finally:
+        drop_tmpdir(tmp)
+
+
+async def test_stats_from_real_flows():
+    import os as _os
+    from harness import (make_bot, make_command, make_real_currency, make_sound_file, FakeChannel,
+                         FakeMessage)
+    tmp = new_tmpdir()
+    try:
+        cur = make_real_currency(tmp)
+        cur.users.update({"alice": {"points": 100, "hours": 0}, "bob": {"points": 0, "hours": 0}})
+        cmds = [make_command("!hi", Response="hello", Cost=5),
+                make_command("!fx", SoundFile=_os.path.join(tmp, "missing.mp3"), Cost=3)]
+        bot, cm, _ = make_bot(tmp, cmds, currency=cur)
+        # after the bot: it reloads the currency settings when created
+        cur.settings.update({"live_payout": 10, "online_interval": 5, "raid_points": 7,
+                             "raid_points_per_viewer": 0})
+        cm.save_system_commands([{"command": "!give", "permission": "Everyone", "enabled": True,
+                                  "cooldown": 0, "user_cooldown": 0, "cost": 0, "is_original": True}])
+        ch = FakeChannel()
+        await bot.event_message(FakeMessage("alice", "!hi", ch))       # spent 5
+        await bot.event_message(FakeMessage("alice", "!fx", ch))       # spent 3, refunded 3
+        await bot.event_message(FakeMessage("alice", "!give bob 20", ch))
+        await bot.event_raw_usernotice(ch, {"msg-id": "raid", "login": "raider", "msg-param-viewerCount": "1"})
+        cur.process_currency_update(is_live=True, all_viewers=["alice", "bob"])   # 1 each (first tick)
+        s = cur.stats.summary(1)
+        assert s["spent"] == 5 and s["given"] == 20 and s["rewards"] == 7 and s["earned"] == 2, s
+        assert s["commands"] == {"!hi": 1}, s["commands"]
+    finally:
+        drop_tmpdir(tmp)

@@ -41,6 +41,7 @@ SCRIPTS = [
     "check_command_test.py",
     "check_trash.py",
     "check_sound_browse.py",
+    "check_stats.py",
 ]
 TIMEOUT = 180
 

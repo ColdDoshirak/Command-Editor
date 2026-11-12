@@ -429,9 +429,10 @@ class SidebarNav(QFrame):
         ("Economy", [
             (3, "Currency", "coin"),
             (4, "Users", "bars"),
+            (12, "Stats", "star"),
         ]),
         ("System", [
-            (12, "Settings", "gear"),
+            (13, "Settings", "gear"),
             (9, "History", "lines"),
             (10, "Backups", "shield"),
             (8, "About", "info"),

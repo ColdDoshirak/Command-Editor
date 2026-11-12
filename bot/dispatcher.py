@@ -62,6 +62,9 @@ class CommandDispatcher(object):
 
     def _refund(self, username, cost):
         self.currency_manager.add_points(username, cost)
+        stats = getattr(self.currency_manager, "stats", None)
+        if stats is not None:
+            stats.record("spent", -cost)            # it was not spent after all
         self.currency_manager.save_users()
 
     async def run_command(self, message, cmd):

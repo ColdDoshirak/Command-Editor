@@ -84,7 +84,7 @@ def body(k):
     check("midnight nav", w.sidebar_nav is not None and w.sidebar_nav.isVisible())
     check("now playing bar", getattr(w, "now_playing_bar", None) is not None)
     for i, n in ((0, "commands"), (2, "twitch"), (7, "queue"), (6, "groups"),
-                 (12, "settings"), (3, "currency"), (11, "timers")):
+                 (13, "settings"), (3, "currency"), (11, "timers"), (12, "stats")):
         w.tab_widget.setCurrentIndex(i); pump(300)
         shot("themes_midnight_" + n)
 
