@@ -53,6 +53,7 @@ TEST_MODULES = [
     ("bugs", "test_minor_bugs"),
     ("stage6", "test_sys_handlers"),
     ("stage6", "test_active_bonus"),
+    ("2.0", "test_features"),
 ]
 
 

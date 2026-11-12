@@ -820,6 +820,17 @@ if __name__ == "__main__":
     from ui.qt_log import install_qt_message_handler
     install_qt_message_handler()
 
+    # Одна программа на одну папку данных: две копии над одними файлами
+    # перезаписывают сохранения друг друга.
+    from ui.single_instance import acquire
+    _instance_lock = acquire(paths.app_dir())
+    if _instance_lock is None:
+        QMessageBox.warning(
+            None, "Command Editor is already running",
+            "Command Editor is already running with this data folder:\n%s\n\n"
+            "Use the window that is already open." % paths.app_dir())
+        sys.exit(1)
+
     # Create and show the main window
     window = CommandEditor()
     window.show()
