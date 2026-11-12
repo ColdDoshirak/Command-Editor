@@ -39,6 +39,7 @@ SCRIPTS = [
     "check_overlay.py",
     "check_timers.py",
     "check_command_test.py",
+    "check_trash.py",
 ]
 TIMEOUT = 180
 

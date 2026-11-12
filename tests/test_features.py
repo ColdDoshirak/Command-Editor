@@ -442,3 +442,31 @@ async def test_simulate_a_command():
     assert not r["matches"] and r["problems"][0].startswith("The message does not call"), r
     assert simulate(dict(cmd, Enabled=False), "!hug", role="Admin", points=99,
                     exists=lambda p: True)["problems"] == ["The command is disabled"]
+
+
+# ---- command trash ------------------------------------------------------------------
+
+async def test_command_trash():
+    from core.trash import CommandTrash
+    from harness import make_command
+    tmp = new_tmpdir()
+    try:
+        path = os.path.join(tmp, "command_trash.json")
+        trash = CommandTrash(path, limit=3)
+        for i in range(5):
+            trash.add(make_command("!c%d" % i), row=i)
+        assert [e["command"]["Command"] for e in trash.items] == ["!c4", "!c3", "!c2"], "newest first, limited"
+        again = CommandTrash(path, limit=3)
+        assert len(again) == 3, "kept on disk"
+        cmd, row = again.take()
+        assert cmd["Command"] == "!c4" and row == 4 and len(CommandTrash(path)) == 2
+        cmd, row = again.take(1)
+        assert cmd["Command"] == "!c2"
+        assert again.take(5) is None
+        again.clear()
+        assert len(CommandTrash(path)) == 0
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("{broken")
+        assert len(CommandTrash(path)) == 0, "a broken file does not stop the program"
+    finally:
+        drop_tmpdir(tmp)

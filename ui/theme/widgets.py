@@ -609,6 +609,9 @@ def _more_menu(parent, editor):
     m.addSeparator()
     m.addAction("Auto-assign sounds…", editor.auto_assign_sounds)
     m.addAction("Fix sound paths (moved folder)…", editor.fix_sound_paths)
+    m.addSeparator()
+    m.addAction("Undo delete (Ctrl+Z)", editor.undo_delete)
+    m.addAction("Trash…", editor.open_trash)
     return m
 
 

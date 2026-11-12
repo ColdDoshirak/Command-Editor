@@ -73,6 +73,11 @@ class ClassicCommandsMixin(object):
         self.save_btn.clicked.connect(self.save_file)
         buttons_layout.addWidget(self.save_btn)
         
+        self.trash_btn = QPushButton("Trash…")
+        self.trash_btn.setToolTip("Deleted commands - put them back (Ctrl+Z: the last one)")
+        self.trash_btn.clicked.connect(lambda: self.open_trash())
+        buttons_layout.addWidget(self.trash_btn)
+
         self.save_legacy_btn = QPushButton("Save Legacy Format")
         self.save_legacy_btn.clicked.connect(self.save_legacy_format)
         buttons_layout.addWidget(self.save_legacy_btn)
@@ -419,11 +424,12 @@ class ClassicCommandsMixin(object):
             name = self.commands[current_row].get("Command", "")
             reply = QMessageBox.question(
                 self, "Delete command",
-                f"Delete the command {name}?\n\nIt can be restored from the History tab.",
+                f"Delete the command {name}?\n\nIt goes to the Trash: Ctrl+Z puts it back.",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply != QMessageBox.Yes:
                 return
             cmd_to_delete = self.command_repo.remove(current_row)
+            self.command_trash.add(cmd_to_delete, current_row)
             # Remove from original commands list (find by Command name)
             for i, cmd in enumerate(self.original_commands):
                 if cmd["Command"] == cmd_to_delete["Command"]:
@@ -518,6 +524,27 @@ class ClassicCommandsMixin(object):
             # Keep the themed Commands view (sidebar detail) in sync
             if self.themed_commands_view is not None and hasattr(self.themed_commands_view, "select_from_table"):
                 self.themed_commands_view.select_from_table(row)
+
+    def undo_delete(self, index=0):
+        """Put a deleted command back where it was (index 0 = the last one).
+        Returns its row, or -1 if the trash is empty."""
+        taken = self.command_trash.take(index)
+        if taken is None:
+            return -1
+        cmd, row = taken
+        row = self.command_repo.add(cmd, min(max(0, row), len(self.commands)))
+        self.original_commands.append(dict(self.commands[row]))
+        self.save_commands()
+        self.refresh_themed_commands()
+        self.table.selectRow(row)
+        return row
+
+    def open_trash(self):
+        from ui.trash_dialog import TrashDialog
+        dlg = TrashDialog(self)
+        self._last_trash_dialog = dlg
+        dlg.exec_()
+        return dlg
 
     def test_command(self, row=None):
         """The "Test command" dialog for a row (default: the selected one)."""

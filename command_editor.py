@@ -2,8 +2,9 @@ import json
 import os
 import configparser
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QCheckBox,
-                             QFileDialog, QMessageBox, QTabWidget, QDialog)
+                             QFileDialog, QMessageBox, QTabWidget, QDialog, QShortcut)
 from PyQt5.QtCore import Qt, QTimer, QMetaType
+from PyQt5.QtGui import QKeySequence
 import pygame
 from ui.twitch_auth import TwitchAuthDialog
 from ui.twitch_tab import TwitchTab
@@ -24,6 +25,7 @@ from core import paths
 from core.commands import CommandRepository
 from ui.backups_tab import HistoryTab, FullBackupsTab
 from ui.timers_tab import TimersTab
+from core.trash import CommandTrash
 from bot.audio import SoundCache, SoundPreview, ensure_channels, PREVIEW_CHANNEL
 from ui.update_notification import UpdateNotificationWidget
 from ui.theme_switch import ThemeSwitchMixin
@@ -83,6 +85,12 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         # self.commands - тот же объект списка, его identity не меняется.
         self.command_repo = CommandRepository(paths.commands_file())
         self.commands = self.command_repo.items
+        # удалённые команды (2.0): Ctrl+Z или Trash... возвращают их
+        self.command_trash = CommandTrash(paths.command_trash_file())
+        # Ctrl+Z: последнюю удалённую команду назад (в полях ввода Ctrl+Z
+        # по-прежнему отменяет набранный текст - поле перехватывает его первым)
+        self._undo_delete_shortcut = QShortcut(QKeySequence.Undo, self)
+        self._undo_delete_shortcut.activated.connect(lambda: self.undo_delete())
 
         # Add an attribute to track original command order
         self.original_commands = []
