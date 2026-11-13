@@ -14,6 +14,7 @@ from PyQt5.QtGui import (
     QLinearGradient, QPainterPath, QPolygonF,
 )
 from ui.theme.style import (FONT_FAMILY, is_dark)
+from ui.i18n import tr, N_
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ def pill_colors(kind, pal):
 
 def make_pill_label(text, kind, pal):
     bg, fg = pill_colors(kind, pal)
-    lab = QLabel(text)
+    lab = QLabel(tr(text))
     lab.setStyleSheet(
         "background: %s; color: %s; border-radius: 8px; padding: 1px 8px;"
         "font-size: 10px; font-weight: 600;" % (bg, fg))
@@ -398,7 +399,7 @@ class MasterDelegate(QStyledItemDelegate):
                 meta.append("%s min" % cd)
             if cost:
                 meta.append("%s pts" % cost)
-            meta.append("%d%%" % cmd_volume(cmd) if has_sound else "no sound")
+            meta.append("%d%%" % cmd_volume(cmd) if has_sound else tr("no sound"))
             meta_text = " · ".join(meta)
         meta_rect = QRectF(rect.left() + 30, rect.top() + 30, rect.width() - 44, 16)
         painter.drawText(meta_rect, Qt.AlignVCenter | Qt.AlignLeft,
@@ -415,27 +416,27 @@ class SidebarNav(QFrame):
     """Left navigation rail. NAV items map to main-tab indices."""
 
     NAV = [
-        ("Manage", [
-            (0, "Commands", "lines"),
-            (7, "Queue Control", "queue"),
-            (1, "Sys.Commands", "clock"),
-            (6, "Group Settings", "layers"),
+        (N_("Manage"), [
+            (0, N_("Commands"), "lines"),
+            (7, N_("Queue Control"), "queue"),
+            (1, N_("Sys.Commands"), "clock"),
+            (6, N_("Group Settings"), "layers"),
         ]),
-        ("Twitch", [
-            (2, "Twitch", "rect"),
-            (11, "Timers", "clock"),
-            (5, "Ranks", "star"),
+        (N_("Twitch"), [
+            (2, N_("Twitch"), "rect"),
+            (11, N_("Timers"), "clock"),
+            (5, N_("Ranks"), "star"),
         ]),
-        ("Economy", [
-            (3, "Currency", "coin"),
-            (4, "Users", "bars"),
-            (12, "Stats", "star"),
+        (N_("Economy"), [
+            (3, N_("Currency"), "coin"),
+            (4, N_("Users"), "bars"),
+            (12, N_("Stats"), "star"),
         ]),
-        ("System", [
-            (13, "Settings", "gear"),
-            (9, "History", "lines"),
-            (10, "Backups", "shield"),
-            (8, "About", "info"),
+        (N_("System"), [
+            (13, N_("Settings"), "gear"),
+            (9, N_("History"), "lines"),
+            (10, N_("Backups"), "shield"),
+            (8, N_("About"), "info"),
         ]),
     ]
 
@@ -457,7 +458,7 @@ class SidebarNav(QFrame):
         brand = QHBoxLayout()
         brand.setSpacing(9)
         brand.addWidget(LogoBadge(self.pal))
-        name = QLabel("Command Editor")
+        name = QLabel(tr("Command Editor"))
         name.setObjectName("brandName")
         brand.addWidget(name)
         brand.addStretch(1)
@@ -472,12 +473,12 @@ class SidebarNav(QFrame):
         iv.setContentsMargins(0, 0, 0, 0)
         iv.setSpacing(2)
         for section, items in self.NAV:
-            lbl = QLabel(section.upper())
+            lbl = QLabel(tr(section).upper())
             lbl.setObjectName("navSection")
             lbl.setContentsMargins(10, 12, 0, 4)
             iv.addWidget(lbl)
             for idx, label, icon in items:
-                b = QPushButton("  " + label)
+                b = QPushButton("  " + tr(label))
                 b.setObjectName("navBtn")
                 b.setIcon(make_icon(icon, self.pal["text2"]))
                 b.setIconSize(QSize(17, 17))
@@ -604,15 +605,15 @@ def _known_groups(commands, editor):
 def _more_menu(parent, editor):
     """Secondary file actions that were missing from the themed views."""
     m = QMenu(parent)
-    m.addAction("Load file…", editor.load_file)
-    m.addAction("Save file", editor.save_file)
-    m.addAction("Save legacy format…", editor.save_legacy_format)
+    m.addAction(tr("Load file…"), editor.load_file)
+    m.addAction(tr("Save file"), editor.save_file)
+    m.addAction(tr("Save legacy format…"), editor.save_legacy_format)
     m.addSeparator()
-    m.addAction("Auto-assign sounds…", editor.auto_assign_sounds)
-    m.addAction("Fix sound paths (moved folder)…", editor.fix_sound_paths)
+    m.addAction(tr("Auto-assign sounds…"), editor.auto_assign_sounds)
+    m.addAction(tr("Fix sound paths (moved folder)…"), editor.fix_sound_paths)
     m.addSeparator()
-    m.addAction("Undo delete (Ctrl+Z)", editor.undo_delete)
-    m.addAction("Trash…", editor.open_trash)
+    m.addAction(tr("Undo delete (Ctrl+Z)"), editor.undo_delete)
+    m.addAction(tr("Trash…"), editor.open_trash)
     return m
 
 

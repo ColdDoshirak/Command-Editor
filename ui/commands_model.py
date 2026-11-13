@@ -16,6 +16,16 @@ Python 3.8 / PyQt5.
 from PyQt5.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSignal
 
 from core.commands import FIELDS
+from ui.i18n import tr, N_
+
+# column titles for the stored field names (the names themselves stay as in the file)
+HEADERS = {
+    "Command": N_("Command"), "Permission": N_("Permission"), "Info": N_("Info"),
+    "Group": N_("Group"), "Response": N_("Response"), "Cooldown": N_("Cooldown"),
+    "UserCooldown": N_("User cooldown"), "Cost": N_("Cost"), "Count": N_("Used"),
+    "Usage": N_("Usage"), "Enabled": N_("Enabled"), "SoundFile": N_("Sound file"),
+    "FKSoundFile": N_("Fallback sound"), "Volume": N_("Volume"),
+}
 
 
 def display_text(cmd, key):
@@ -75,7 +85,8 @@ class CommandsTableModel(QAbstractTableModel):
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal:
-            return self.field(section)
+            key = self.field(section)
+            return tr(HEADERS.get(key, key)) if key else None
         return str(section + 1)
 
     def flags(self, index):

@@ -12,8 +12,9 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
 
 from core import variables
 from core.timers import DEFAULT_TIMER
+from ui.i18n import tr, N_
 
-COLUMNS = ("On", "Message", "Every (min)", "After chat lines", "Live only")
+COLUMNS = (N_("On"), N_("Message"), N_("Every (min)"), N_("After chat lines"), N_("Live only"))
 
 
 class TimersTab(QWidget):
@@ -24,14 +25,14 @@ class TimersTab(QWidget):
         self._loading = False
         v = QVBoxLayout(self)
         intro = QLabel(
-            "The bot posts these messages to chat by itself: every N minutes, but only after "
+            tr("The bot posts these messages to chat by itself: every N minutes, but only after "
             "at least M chat messages since its last post (so it does not talk to an empty chat). "
-            "{channel} and {random:1-100} work in the text.")
+            "{channel} and {random:1-100} work in the text."))
         intro.setWordWrap(True)
         v.addWidget(intro)
 
         self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels(COLUMNS)
+        self.table.setHorizontalHeaderLabels([tr(c) for c in COLUMNS])
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(1, QHeaderView.Stretch)
         for c in (0, 2, 3, 4):
@@ -42,12 +43,12 @@ class TimersTab(QWidget):
         v.addWidget(self.table, 1)
 
         buttons = QHBoxLayout()
-        self.add_btn = QPushButton("Add timer")
+        self.add_btn = QPushButton(tr("Add timer"))
         self.add_btn.clicked.connect(self.add_timer)
-        self.remove_btn = QPushButton("Remove")
+        self.remove_btn = QPushButton(tr("Remove"))
         self.remove_btn.clicked.connect(self.remove_selected)
-        self.post_btn = QPushButton("Post now")
-        self.post_btn.setToolTip("Send the selected message to chat now (the bot must be connected)")
+        self.post_btn = QPushButton(tr("Post now"))
+        self.post_btn.setToolTip(tr("Send the selected message to chat now (the bot must be connected)"))
         self.post_btn.clicked.connect(self.post_selected)
         for b in (self.add_btn, self.remove_btn, self.post_btn):
             buttons.addWidget(b)
@@ -62,7 +63,7 @@ class TimersTab(QWidget):
         on = QCheckBox()
         on.setChecked(timer["enabled"])
         msg = QLineEdit(timer["message"])
-        msg.setPlaceholderText("Follow the channel to get notified!")
+        msg.setPlaceholderText(tr("Follow the channel to get notified!"))
         every = QSpinBox()
         every.setRange(1, 1440)
         every.setValue(timer["interval"])
@@ -119,7 +120,7 @@ class TimersTab(QWidget):
         if self._loading:
             return
         self.config_manager.set_timers(self.timers())
-        self.status.setText("Saved")
+        self.status.setText(tr("Saved"))
 
     def add_timer(self):
         msg = self._append(dict(DEFAULT_TIMER))
@@ -150,7 +151,7 @@ class TimersTab(QWidget):
         channel = getattr(getattr(tab, "bot", None), "channel", "") if tab else ""
         text = variables.render(text, {"channel": channel})
         if tab is not None and tab.bridge.submit("send_chat", text):
-            self.status.setText("Posted")
-            tab.add_to_chat_safe(f"[Timer] {text}")
+            self.status.setText(tr("Posted"))
+            tab.add_to_chat_safe(tr('[Timer] {0}').format(text))
         else:
-            self.status.setText("Not connected")
+            self.status.setText(tr("Not connected"))

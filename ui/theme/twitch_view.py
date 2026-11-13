@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, 
 from PyQt5.QtCore import Qt, QTimer
 from ui.theme.style import (palette_for)
 from ui.theme.widgets import (LogoBadge, _held, _overflow_toolbar, _scroll_wrap, _toolbar_stretch)
+from ui.i18n import tr, N_
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ class TwitchThemedBase(QWidget):
         h.setSpacing(7)
         dot = QLabel("\u25cf")
         dot.setObjectName("authDot")
-        text = QLabel("Not authenticated")
+        text = QLabel(tr("Not authenticated"))
         text.setObjectName("authText")
         h.addWidget(dot)
         h.addWidget(text)
@@ -59,11 +60,11 @@ class TwitchThemedBase(QWidget):
         if authed:
             bg = "rgba(22,163,74,0.10)"
             fg = self.pal["green"]
-            self._auth_text.setText("Authenticated")
+            self._auth_text.setText(tr("Authenticated"))
         else:
             bg = "rgba(220,38,38,0.08)"
             fg = self.pal["red"]
-            self._auth_text.setText("Not authenticated")
+            self._auth_text.setText(tr("Not authenticated"))
         self._auth_pill.setStyleSheet(
             "QFrame#authPill{background:%s;border:none;}"
             "QLabel{color:%s;font-size:12px;font-weight:500;}" % (bg, fg))
@@ -78,10 +79,10 @@ class TwitchThemedBase(QWidget):
         h.setContentsMargins(16, 8, 16, 8)
         h.setSpacing(0)
         boxes = [
-            ("\u25cf Live", "Stream status", "statLive"),
-            ("0", "Active viewers", "statActive"),
-            ("0", "All viewers", "statAll"),
-            ("0", "Moderators", "statMods"),
+            ("\u25cf Live", N_("Stream status"), "statLive"),
+            ("0", N_("Active viewers"), "statActive"),
+            ("0", N_("All viewers"), "statAll"),
+            ("0", N_("Moderators"), "statMods"),
         ]
         self._stat_live = self._stat_active = self._stat_all = self._stat_mods = None
         for i, (val, lab, key) in enumerate(boxes):
@@ -92,7 +93,7 @@ class TwitchThemedBase(QWidget):
             boxv.setSpacing(2)
             v = QLabel(val)
             v.setObjectName("statVal")
-            l = QLabel(lab)
+            l = QLabel(tr(lab))
             boxv.addWidget(v)
             boxv.addWidget(l)
             h.addWidget(box, 1)
@@ -113,7 +114,7 @@ class TwitchThemedBase(QWidget):
             return
         tt = self.twitch_tab
         live = getattr(tt, "currently_live", False)
-        self._stat_live.setText("\u25cf Live" if live else "\u25cb Offline")
+        self._stat_live.setText(tr("\u25cf Live") if live else tr("\u25cb Offline"))
         self._stat_live.setStyleSheet(
             "color:%s;font-size:16px;font-weight:600;" %
             (self.pal["green"] if live else self.pal["text3"]))
@@ -145,7 +146,7 @@ class TwitchThemedBase(QWidget):
     def _update_statusbar(self):
         tt = self.twitch_tab
         connected = bool(tt.bot and getattr(tt.bot, "is_running", False))
-        self.connection_status.setText("connected" if connected else "not connected")
+        self.connection_status.setText(tr("connected") if connected else tr("not connected"))
         self.connection_status.setStyleSheet(
             "color:%s;font-size:11.5px;" %
             (self.pal["green"] if connected else self.pal["text3"]))
@@ -178,16 +179,16 @@ class TwitchThemedBase(QWidget):
         row = QHBoxLayout()
         row.setSpacing(14)
         for color, label in [
-            (self.pal["text3"], "API"),
-            (self.pal["green"], "manual"),
-            (self.pal["accent"], "both"),
-            (self.pal["red"], "excluded"),
+            (self.pal["text3"], N_("from Twitch")),
+            (self.pal["green"], N_("manual")),
+            (self.pal["accent"], N_("both")),
+            (self.pal["red"], N_("excluded")),
         ]:
             li = QHBoxLayout()
             li.setSpacing(5)
             sw = QLabel("\u25cf")
             sw.setStyleSheet("color:%s;font-size:8px;" % color)
-            tx = QLabel(label)
+            tx = QLabel(tr(label))
             tx.setStyleSheet("color:%s;font-size:11px;" % self.pal["text3"])
             li.addWidget(sw)
             li.addWidget(tx)
@@ -220,8 +221,8 @@ class _Segment(QWidget):
         h.setContentsMargins(3, 3, 3, 3)
         h.setSpacing(2)
         self._btns = []
-        for i, label in enumerate(["All", "Active", "Moderators"]):
-            b = QPushButton(label)
+        for i, label in enumerate([N_("All"), N_("Active"), N_("Moderators")]):
+            b = QPushButton(tr(label))
             b.setCursor(Qt.PointingHandCursor)
             b.clicked.connect(lambda _=False, i=i: self._pick(i))
             self._btns.append(b)
@@ -275,10 +276,10 @@ class SidebarTwitchView(TwitchThemedBase):
         th = QHBoxLayout(top)
         th.setContentsMargins(18, 0, 18, 0)
         th.setSpacing(12)
-        title = QLabel("Twitch")
+        title = QLabel(tr("Twitch"))
         title.setObjectName("topTitle")
         th.addWidget(title)
-        crumb = QLabel("/ connection \u00b7 chat \u00b7 viewers")
+        crumb = QLabel(tr("/ connection \u00b7 chat \u00b7 viewers"))
         crumb.setObjectName("crumb")
         th.addWidget(crumb)
         th.addStretch(1)
@@ -306,7 +307,7 @@ class SidebarTwitchView(TwitchThemedBase):
         lv.setSpacing(14)
 
         # auth panel
-        ap, av = self._panel("Authentication", "Twitch OAuth")
+        ap, av = self._panel(tr("Authentication"), tr("Twitch OAuth"))
         arow = QHBoxLayout()
         arow.setSpacing(10)
         arow.addWidget(self._build_auth_pill())
@@ -318,7 +319,7 @@ class SidebarTwitchView(TwitchThemedBase):
         lv.addWidget(ap)
 
         # connection panel
-        cp, cvv = self._panel("Connection", "chat channel")
+        cp, cvv = self._panel(tr("Connection"), tr("chat channel"))
         crow = QHBoxLayout()
         crow.setSpacing(10)
         tt.channel_input.setMinimumWidth(220)
@@ -329,7 +330,7 @@ class SidebarTwitchView(TwitchThemedBase):
         lv.addWidget(cp)
 
         # chat panel
-        chp, chv = self._panel("Chat", "live preview")
+        chp, chv = self._panel(tr("Chat"), tr("live preview"))
         chv.addWidget(tt.chat_display, 1)
         comp = QHBoxLayout()
         comp.setSpacing(8)
@@ -345,7 +346,7 @@ class SidebarTwitchView(TwitchThemedBase):
         rv.setSpacing(0)
 
         # viewers panel
-        vp, vv = self._panel("Viewers", "total")
+        vp, vv = self._panel(tr("Viewers"), tr("total"))
         self._seg = _Segment(tt.viewers_tabs, self.pal)
         vv.addWidget(self._seg)
         vv.addWidget(tt.viewers_tabs, 1)
@@ -353,7 +354,7 @@ class SidebarTwitchView(TwitchThemedBase):
         rrow = QHBoxLayout()
         rrow.setSpacing(10)
         rrow.addWidget(tt.refresh_viewers_button)
-        auto = QLabel("Auto:")
+        auto = QLabel(tr("Auto:"))
         auto.setStyleSheet("color:%s;font-size:12px;" % self.pal["text3"])
         rrow.addWidget(auto)
         rrow.addWidget(tt.update_frequency)
@@ -394,7 +395,7 @@ class SpreadsheetTwitchView(TwitchThemedBase):
         th.setContentsMargins(18, 0, 18, 0)
         th.setSpacing(10)
         th.addWidget(LogoBadge(self.pal))
-        name = QLabel("Command Editor")
+        name = QLabel(tr("Command Editor"))
         name.setStyleSheet("font-size:14px;font-weight:600;color:%s;" % self.pal["text"])
         th.addWidget(name)
         th.addStretch(1)
@@ -407,7 +408,7 @@ class SpreadsheetTwitchView(TwitchThemedBase):
         tb = _overflow_toolbar(46)
         tbh = tb
         tbh.addWidget(self._build_auth_pill())
-        chan = QLabel("channel")
+        chan = QLabel(tr("channel"))
         chan.setStyleSheet("color:%s;font-size:12px;" % self.pal["text2"])
         tbh.addWidget(chan)
         tt.channel_input.setFixedWidth(150)
@@ -463,7 +464,7 @@ class SpreadsheetTwitchView(TwitchThemedBase):
         footv.setContentsMargins(14, 8, 14, 8)
         footv.setSpacing(8)
         footv.addWidget(tt.refresh_viewers_button)
-        auto = QLabel("Auto:")
+        auto = QLabel(tr("Auto:"))
         auto.setStyleSheet("color:%s;font-size:11.5px;" % self.pal["text3"])
         footv.addWidget(auto)
         footv.addWidget(tt.update_frequency)
@@ -482,7 +483,7 @@ class SpreadsheetTwitchView(TwitchThemedBase):
         tt = self.twitch_tab
         live = getattr(tt, "currently_live", False)
         self._tb_stats.setText(
-            "%s \u00b7 %s active \u00b7 %s all \u00b7 %s mods" % (
+            tr("%s \u00b7 %s active \u00b7 %s all \u00b7 %s mods") % (
                 "Live" if live else "Offline",
                 len(getattr(tt, "active_users", []) or []),
                 self.all_viewers_count.text().split(":")[-1].strip(),

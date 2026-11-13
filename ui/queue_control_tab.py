@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPush
                              QMessageBox)
 from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF, QSize
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPolygonF, QPen, QBrush, QKeySequence
+from ui.i18n import tr
 
 
 def _draw_icon(kind, size=32, color=(60, 60, 60)):
@@ -122,13 +123,13 @@ class QueueControlTab(QWidget):
 
         # Group selector row
         top = QHBoxLayout()
-        top.addWidget(QLabel("Group:"))
+        top.addWidget(QLabel(tr("Group:")))
         self.group_combo = QComboBox()
         self.group_combo.setMinimumWidth(220)
         self.group_combo.currentIndexChanged.connect(self._on_group_changed)
         top.addWidget(self.group_combo)
         self.refresh_groups_btn = QPushButton(_draw_icon("refresh"), "")
-        self.refresh_groups_btn.setToolTip("Reload the list of queue groups")
+        self.refresh_groups_btn.setToolTip(tr("Reload the list of queue groups"))
         self.refresh_groups_btn.setFixedSize(34, 34)
         self.refresh_groups_btn.clicked.connect(self.refresh_groups)
         top.addWidget(self.refresh_groups_btn)
@@ -146,7 +147,7 @@ class QueueControlTab(QWidget):
         nc.setContentsMargins(14, 10, 14, 10)
         texts = QVBoxLayout()
         texts.setSpacing(2)
-        cap = QLabel("NOW PLAYING")
+        cap = QLabel(tr("NOW PLAYING"))
         cap.setObjectName("navSection")
         f = cap.font()
         f.setBold(True)
@@ -162,14 +163,14 @@ class QueueControlTab(QWidget):
         texts.addWidget(self.now_title)
         texts.addWidget(self.now_sub)
         nc.addLayout(texts, 1)
-        self.pause_btn = self._btn("pause", "Pause", "Pause the queue (the current item finishes)", self.toggle_pause)
-        self.skip_btn = self._btn("skip", "Skip", "Skip the item that is playing now", self.skip_current)
+        self.pause_btn = self._btn("pause", tr("Pause"), tr("Pause the queue (the current item finishes)"), self.toggle_pause)
+        self.skip_btn = self._btn("skip", tr("Skip"), tr("Skip the item that is playing now"), self.skip_current)
         nc.addWidget(self.pause_btn)
         nc.addWidget(self.skip_btn)
         layout.addWidget(self.now_card)
 
         # Pending list + side controls
-        layout.addWidget(QLabel("Up next — drag to reorder, Del to remove:"))
+        layout.addWidget(QLabel(tr("Up next — drag to reorder, Del to remove:")))
         body = QHBoxLayout()
         self.queue_list = QListWidget()
         self.queue_list.setDragDropMode(QAbstractItemView.InternalMove)
@@ -180,10 +181,10 @@ class QueueControlTab(QWidget):
         body.addWidget(self.queue_list, 1)
 
         side = QVBoxLayout()
-        self.up_btn = self._btn("up", "Up", "Move selected item up", lambda: self.move_selected(-1))
-        self.down_btn = self._btn("down", "Down", "Move selected item down", lambda: self.move_selected(1))
-        self.remove_btn = self._btn("remove", "Remove", "Remove selected item from the queue", self.remove_selected)
-        self.clear_btn = self._btn("clear", "Clear all", "Remove every pending item", self.clear_queue)
+        self.up_btn = self._btn("up", tr("Up"), tr("Move selected item up"), lambda: self.move_selected(-1))
+        self.down_btn = self._btn("down", tr("Down"), tr("Move selected item down"), lambda: self.move_selected(1))
+        self.remove_btn = self._btn("remove", tr("Remove"), tr("Remove selected item from the queue"), self.remove_selected)
+        self.clear_btn = self._btn("clear", tr("Clear all"), tr("Remove every pending item"), self.clear_queue)
         for b in (self.up_btn, self.down_btn, self.remove_btn):
             side.addWidget(b)
         side.addStretch(1)
@@ -191,7 +192,7 @@ class QueueControlTab(QWidget):
         body.addLayout(side)
         layout.addLayout(body, 1)
 
-        self.status_label = QLabel("Waiting for bot...")
+        self.status_label = QLabel(tr("Waiting for bot..."))
         self.status_label.setObjectName("statusLabel")
         layout.addWidget(self.status_label)
 
@@ -308,7 +309,7 @@ class QueueControlTab(QWidget):
                     self.group_combo.setItemText(i, text)
 
         if bot is None:
-            self._render_idle("Bot is not running. Connect on the Twitch tab to manage queues.")
+            self._render_idle(tr("Bot is not running. Connect on the Twitch tab to manage queues."))
             return
         if not group:
             self._render_idle("No groups with a queue. Enable one in Group Settings.")
@@ -321,14 +322,14 @@ class QueueControlTab(QWidget):
         # Now playing
         cur = snap['current']
         if cur is not None:
-            self.now_title.setText("!%s" % cur['command'])
-            self.now_sub.setText("by %s · %s%s" % (
+            self.now_title.setText(tr("!%s") % cur['command'])
+            self.now_sub.setText(tr("by %s · %s%s") % (
                 cur['user'], _fmt_elapsed(cur.get('started')),
                 " · skipping…" if cur.get('skipped') else ""))
         else:
-            self.now_title.setText("Nothing playing")
-            self.now_sub.setText("Paused — press Resume to continue" if snap['paused']
-                                 else "Waiting for viewers' commands")
+            self.now_title.setText(tr("Nothing playing"))
+            self.now_sub.setText(tr("Paused — press Resume to continue") if snap['paused']
+                                 else tr("Waiting for viewers' commands"))
 
         # Pending list (don't touch it mid-drag)
         dragging = self.queue_list.state() == QAbstractItemView.DraggingState
@@ -352,15 +353,15 @@ class QueueControlTab(QWidget):
             self._pause_key = pause_key
             self.pause_btn.setIcon(_draw_icon("play" if paused else "pause",
                                               color=pause_key[1] or (60, 60, 60)))
-            self.pause_btn.setText(" Resume" if paused else " Pause")
+            self.pause_btn.setText(tr(" Resume") if paused else tr(" Pause"))
         if snap['max'] > 0:
-            self.limit_label.setText("Limit %d · %d free" % (snap['max'], snap['free'] or 0))
+            self.limit_label.setText(tr("Limit %d · %d free") % (snap['max'], snap['free'] or 0))
         else:
-            self.limit_label.setText("No size limit")
+            self.limit_label.setText(tr("No size limit"))
         state = "PAUSED" if paused else ("playing" if cur else "idle")
         if not snap.get('enabled', True):
             state += " · queue disabled, finishing remaining items"
-        self.status_label.setText("%s · %d waiting · %s" % (group, len(snap['pending']), state))
+        self.status_label.setText(tr("%s · %d waiting · %s") % (group, len(snap['pending']), state))
         self._update_buttons(snap)
 
     def _render_idle(self, message):
@@ -420,8 +421,8 @@ class QueueControlTab(QWidget):
         if n == 0:
             return
         answer = QMessageBox.question(
-            self, "Clear queue",
-            "Remove all %d waiting item(s) from %s?\nPoints are not refunded." % (n, group),
+            self, tr("Clear queue"),
+            tr("Remove all %d waiting item(s) from %s?\nPoints are not refunded.") % (n, group),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer == QMessageBox.Yes:
             self._send(bot.clear_queue, group)

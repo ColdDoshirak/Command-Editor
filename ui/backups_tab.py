@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
 
 from core import paths
 from core.backups import FullBackups
+from ui.i18n import tr, N_
 
 
 def _header(text):
@@ -40,34 +41,34 @@ class HistoryTab(QWidget):
         layout = QVBoxLayout(self)
 
         header_layout = QHBoxLayout()
-        create_backup_btn = QPushButton("Create Backup Now")
+        create_backup_btn = QPushButton(tr("Create Backup Now"))
         create_backup_btn.clicked.connect(self.create_backup)
-        header_layout.addWidget(_header("Command History"))
+        header_layout.addWidget(_header(tr("Command History")))
         header_layout.addStretch()
         header_layout.addWidget(create_backup_btn)
         layout.addLayout(header_layout)
 
-        description = QLabel("The system automatically saves backups when you make significant "
-                             "changes. You can restore previous versions from here.")
+        description = QLabel(tr("The system automatically saves backups when you make significant "
+                             "changes. You can restore previous versions from here."))
         description.setWordWrap(True)
         layout.addWidget(description)
 
         self.backup_table = QTableWidget()
         self.backup_table.setColumnCount(4)
-        self.backup_table.setHorizontalHeaderLabels(["Date & Time", "Size (KB)", "Actions", ""])
+        self.backup_table.setHorizontalHeaderLabels([tr("Date & Time"), tr("Size (KB)"), tr("Actions"), ""])
         self.backup_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.backup_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.refresh()
         layout.addWidget(self.backup_table)
 
-        backup_settings = QGroupBox("Backup Settings")
+        backup_settings = QGroupBox(tr("Backup Settings"))
         backup_settings_layout = QHBoxLayout()
         self.max_backups_spin = QSpinBox()
         self.max_backups_spin.setMinimum(1)
         self.max_backups_spin.setMaximum(100)
         self.max_backups_spin.setValue(self.history.max_backups)
         self.max_backups_spin.valueChanged.connect(self.update_max_backups)
-        backup_settings_layout.addWidget(QLabel("Maximum number of backups:"))
+        backup_settings_layout.addWidget(QLabel(tr("Maximum number of backups:")))
         backup_settings_layout.addWidget(self.max_backups_spin)
         backup_settings_layout.addStretch()
         backup_settings.setLayout(backup_settings_layout)
@@ -79,38 +80,38 @@ class HistoryTab(QWidget):
             self.backup_table.insertRow(i)
             self.backup_table.setItem(i, 0, QTableWidgetItem(backup["readable_time"]))
             self.backup_table.setItem(i, 1, QTableWidgetItem(f"{backup['size']} KB"))
-            restore_btn = QPushButton("Restore")
+            restore_btn = QPushButton(tr("Restore"))
             restore_btn.clicked.connect(lambda checked, path=backup["path"]: self.restore(path))
-            view_btn = QPushButton("View")
+            view_btn = QPushButton(tr("View"))
             view_btn.clicked.connect(lambda checked, path=backup["path"]: self.view(path))
             self.backup_table.setCellWidget(i, 2, restore_btn)
             self.backup_table.setCellWidget(i, 3, view_btn)
 
     def create_backup(self):
         if not self.editor.commands:
-            QMessageBox.warning(self, "Warning", "No commands to backup.")
+            QMessageBox.warning(self, tr("Warning"), tr("No commands to backup."))
             return
         if self.history.save_backup(self.editor.commands):
             self.refresh()
-            QMessageBox.information(self, "Success", "Backup created successfully!")
+            QMessageBox.information(self, tr("Success"), tr("Backup created successfully!"))
         else:
-            QMessageBox.warning(self, "Error", "Failed to create backup.")
+            QMessageBox.warning(self, tr("Error"), tr("Failed to create backup."))
 
     def restore(self, backup_path):
         if not backup_path:
             return
         reply = QMessageBox.question(
-            self, "Confirm Restore",
-            "Restoring will replace your current commands. Continue?",
+            self, tr("Confirm Restore"),
+            tr("Restoring will replace your current commands. Continue?"),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
         commands = self.history.restore_backup(backup_path)
         if commands:
             self.editor.replace_commands(commands)
-            QMessageBox.information(self, "Success", "Commands restored successfully!")
+            QMessageBox.information(self, tr("Success"), tr("Commands restored successfully!"))
         else:
-            QMessageBox.warning(self, "Error", "Failed to restore backup.")
+            QMessageBox.warning(self, tr("Error"), tr("Failed to restore backup."))
 
     def view(self, backup_path):
         if not backup_path:
@@ -119,16 +120,16 @@ class HistoryTab(QWidget):
             with open(backup_path, 'r', encoding='utf-8') as f:
                 commands = json.load(f)
             dialog = QDialog(self)
-            dialog.setWindowTitle("Backup Contents")
+            dialog.setWindowTitle(tr("Backup Contents"))
             dialog.setMinimumSize(800, 600)
             dialog_layout = QVBoxLayout(dialog)
             view = QTableWidget()
-            cols = [("Command", "Command", ""), ("Sound File", "SoundFile", ""),
-                    ("Response", "Response", ""), ("Group", "Group", ""),
-                    ("Enabled", "Enabled", True), ("Volume", "Volume", 100),
-                    ("Cooldown", "Cooldown", 0)]
+            cols = [(N_("Command"), "Command", ""), (N_("Sound file"), "SoundFile", ""),
+                    (N_("Response"), "Response", ""), (N_("Group"), "Group", ""),
+                    (N_("Enabled"), "Enabled", True), (N_("Volume"), "Volume", 100),
+                    (N_("Cooldown"), "Cooldown", 0)]
             view.setColumnCount(len(cols))
-            view.setHorizontalHeaderLabels([c[0] for c in cols])
+            view.setHorizontalHeaderLabels([tr(c[0]) for c in cols])
             view.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
             view.setRowCount(len(commands))
             for i, cmd in enumerate(commands):
@@ -138,12 +139,12 @@ class HistoryTab(QWidget):
                         value = "✓" if value else "✗"
                     view.setItem(i, j, QTableWidgetItem(str(value)))
             dialog_layout.addWidget(view)
-            close_btn = QPushButton("Close")
+            close_btn = QPushButton(tr("Close"))
             close_btn.clicked.connect(dialog.close)
             dialog_layout.addWidget(close_btn)
             dialog.exec_()
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to view backup: {str(e)}")
+            QMessageBox.warning(self, tr("Error"), tr('Failed to view backup: {0}').format(str(e)))
 
     def update_max_backups(self, value):
         self.history.max_backups = value
@@ -161,29 +162,29 @@ class FullBackupsTab(QWidget):
         layout = QVBoxLayout(self)
 
         header_layout = QHBoxLayout()
-        header_layout.addWidget(_header("Comprehensive System Backups"))
+        header_layout.addWidget(_header(tr("Comprehensive System Backups")))
         header_layout.addStretch()
         layout.addLayout(header_layout)
 
         description = QLabel(
-            "Create and manage full system backups that include all commands, moderator settings, "
+            tr("Create and manage full system backups that include all commands, moderator settings, "
             "currency user data, and application settings. This allows you to restore the entire "
-            "application state in case of major issues.")
+            "application state in case of major issues."))
         description.setWordWrap(True)
         layout.addWidget(description)
 
-        create_group = QGroupBox("Create Backup")
+        create_group = QGroupBox(tr("Create Backup"))
         create_layout = QVBoxLayout()
         create_info = QLabel(
-            "A comprehensive backup includes:\n"
+            tr("A comprehensive backup includes:\n"
             "• All commands and their settings\n"
             "• Currency users and points\n"
             "• Moderator settings\n"
             "• Application configuration\n"
-            "• Rank settings")
+            "• Rank settings"))
         create_info.setStyleSheet("color: gray;")
         create_layout.addWidget(create_info)
-        self.create_system_backup_btn = QPushButton("Create Full System Backup")
+        self.create_system_backup_btn = QPushButton(tr("Create Full System Backup"))
         self.create_system_backup_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50;
@@ -205,7 +206,7 @@ class FullBackupsTab(QWidget):
         create_group.setLayout(create_layout)
         layout.addWidget(create_group)
 
-        settings_group = QGroupBox("Backup Settings")
+        settings_group = QGroupBox(tr("Backup Settings"))
         settings_layout = QVBoxLayout()
         max_backups_layout = QHBoxLayout()
         self.max_comprehensive_backups_spin = QSpinBox()
@@ -213,20 +214,20 @@ class FullBackupsTab(QWidget):
         self.max_comprehensive_backups_spin.setMaximum(50)
         self.max_comprehensive_backups_spin.setValue(self.config_manager.get_max_comprehensive_backups())
         self.max_comprehensive_backups_spin.valueChanged.connect(self.update_max_backups)
-        max_backups_layout.addWidget(QLabel("Maximum Backups:"))
+        max_backups_layout.addWidget(QLabel(tr("Maximum Backups:")))
         max_backups_layout.addWidget(self.max_comprehensive_backups_spin)
         max_backups_layout.addStretch()
         settings_layout.addLayout(max_backups_layout)
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
 
-        list_group = QGroupBox("Available Backups")
+        list_group = QGroupBox(tr("Available Backups"))
         list_layout = QVBoxLayout()
         controls_layout = QHBoxLayout()
-        controls_layout.addWidget(QLabel("Status:"))
-        self.system_backup_status_label = QLabel("Loading...")
+        controls_layout.addWidget(QLabel(tr("Status:")))
+        self.system_backup_status_label = QLabel(tr("Loading..."))
         controls_layout.addWidget(self.system_backup_status_label)
-        refresh_btn = QPushButton("Refresh List")
+        refresh_btn = QPushButton(tr("Refresh List"))
         refresh_btn.clicked.connect(self.refresh)
         controls_layout.addWidget(refresh_btn)
         controls_layout.addStretch()
@@ -285,25 +286,25 @@ class FullBackupsTab(QWidget):
                     item.widget().deleteLater()
             entries = self.store.entries()
             if not entries:
-                no_backups_label = QLabel("No comprehensive backups found.")
+                no_backups_label = QLabel(tr("No comprehensive backups found."))
                 no_backups_label.setStyleSheet("color: gray; font-style: italic;")
                 layout.addWidget(no_backups_label)
-                self.system_backup_status_label.setText("No backups")
+                self.system_backup_status_label.setText(tr("No backups"))
                 self.system_backup_status_label.setStyleSheet("color: gray;")
                 return
-            self.system_backup_status_label.setText(f"{len(entries)} backups available")
+            self.system_backup_status_label.setText(tr('{0} backups available').format(len(entries)))
             self.system_backup_status_label.setStyleSheet("color: #3B82F6;")
             for i, entry in enumerate(entries):
                 layout.addWidget(self._card(entry, latest=(i == 0)))
                 layout.addSpacing(5)
         except Exception as e:
             print(f"Error refreshing comprehensive backups: {e}")
-            self.system_backup_status_label.setText("Error loading backups")
+            self.system_backup_status_label.setText(tr("Error loading backups"))
             self.system_backup_status_label.setStyleSheet("color: red;")
 
     def _card(self, entry, latest):
         if entry["error"]:
-            label = QLabel(f"⚠️ Error loading backup: {entry['path'].name}")
+            label = QLabel(tr('⚠️ Error loading backup: {0}').format(entry['path'].name))
             label.setStyleSheet("color: red;")
             return label
         meta = entry["meta"]
@@ -317,9 +318,7 @@ class FullBackupsTab(QWidget):
         name_label.setStyleSheet("font-weight: bold;")
         header_layout.addWidget(name_label)
         header_layout.addWidget(QLabel(f"💾 {entry['size_text']}"))
-        header_layout.addWidget(QLabel(f"📋 {meta.get('commands_count', '?')} cmds, "
-                                       f"👥 {meta.get('users_count', '?')} users, "
-                                       f"🛡️ {meta.get('moderators_count', '?')} mods"))
+        header_layout.addWidget(QLabel(tr('📋 {0} cmds, 👥 {1} users, 🛡️ {2} mods').format(meta.get('commands_count', '?'), meta.get('users_count', '?'), meta.get('moderators_count', '?'))))
         if 'backup_time' in meta:
             when = datetime.fromtimestamp(meta['backup_time']).strftime("%H:%M %d/%m/%Y")
             time_label = QLabel(f"⏰ {when}")
@@ -330,12 +329,12 @@ class FullBackupsTab(QWidget):
 
         buttons_layout = QHBoxLayout()
         buttons_layout.addSpacing(10)
-        restore_btn = QPushButton("Restore System")
-        restore_btn.setToolTip("Restore the entire system from this backup")
+        restore_btn = QPushButton(tr("Restore System"))
+        restore_btn.setToolTip(tr("Restore the entire system from this backup"))
         restore_btn.clicked.connect(lambda checked, p=entry["path"]: self.restore(p))
         buttons_layout.addWidget(restore_btn)
-        info_btn = QPushButton("Details")
-        info_btn.setToolTip("Show detailed backup information")
+        info_btn = QPushButton(tr("Details"))
+        info_btn.setToolTip(tr("Show detailed backup information"))
         info_btn.clicked.connect(lambda checked, p=entry["path"]: self.show_info(p))
         buttons_layout.addWidget(info_btn)
         buttons_layout.addStretch()
@@ -359,22 +358,22 @@ class FullBackupsTab(QWidget):
     def restore(self, backup_file):
         try:
             reply = QMessageBox.question(
-                self, "⚠️ Dangerous Operation",
-                "This will REPLACE your entire current system state with the backup data.\n\n"
+                self, tr("⚠️ Dangerous Operation"),
+                tr("This will REPLACE your entire current system state with the backup data.\n\n"
                 "This includes:\n"
                 "• All commands\n"
                 "• All user points and hours\n"
                 "• Moderator settings\n"
                 "• Application configuration\n\n"
                 "Are you ABSOLUTELY sure you want to continue?\n\n"
-                "It is recommended to create a manual backup first!",
+                "It is recommended to create a manual backup first!"),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply != QMessageBox.Yes:
                 return
             reply2 = QMessageBox.question(
-                self, "Final Confirmation",
-                "This action cannot be undone easily.\n\n"
-                "Do you really want to restore the entire system?",
+                self, tr("Final Confirmation"),
+                tr("This action cannot be undone easily.\n\n"
+                "Do you really want to restore the entire system?"),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply2 != QMessageBox.Yes:
                 return
@@ -394,43 +393,34 @@ class FullBackupsTab(QWidget):
             ed.update_commands()
 
             QMessageBox.information(
-                self, "Restoration Complete",
-                "System has been successfully restored from backup!\n\n"
-                "Please restart the application to ensure all changes take effect.")
+                self, tr("Restoration Complete"),
+                tr("System has been successfully restored from backup!\n\n"
+                "Please restart the application to ensure all changes take effect."))
         except Exception as e:
             print(f"Error during comprehensive restoration: {e}")
-            QMessageBox.critical(self, "Restoration Failed",
-                                 f"Failed to restore system from backup:\n\n{str(e)}")
+            QMessageBox.critical(self, tr("Restoration Failed"),
+                                 tr('Failed to restore system from backup:\n\n{0}').format(str(e)))
 
     def show_info(self, backup_file):
         try:
             data = self.store.load(backup_file)
             dialog = QDialog(self)
-            dialog.setWindowTitle("Comprehensive Backup Details")
+            dialog.setWindowTitle(tr("Comprehensive Backup Details"))
             dialog.setModal(True)
             dialog.setMinimumSize(600, 400)
             layout = QVBoxLayout(dialog)
 
             info = data.get('backup_info', {})
-            info_group = QGroupBox("Backup Information")
+            info_group = QGroupBox(tr("Backup Information"))
             info_layout = QVBoxLayout(info_group)
-            info_label = QLabel(f"""
-            <b>Timestamp:</b> {info.get('timestamp', 'Unknown')}
-            <b>Version:</b> {info.get('version', 'Unknown')}
-            <b>Description:</b> {info.get('description', 'Unknown')}
-            """)
+            info_label = QLabel(tr('\n            <b>Timestamp:</b> {0}\n            <b>Version:</b> {1}\n            <b>Description:</b> {2}\n            ').format(info.get('timestamp', 'Unknown'), info.get('version', 'Unknown'), info.get('description', 'Unknown')))
             info_label.setTextFormat(1)  # Rich text
             info_layout.addWidget(info_label)
             layout.addWidget(info_group)
 
-            content_group = QGroupBox("Content Summary")
+            content_group = QGroupBox(tr("Content Summary"))
             content_layout = QVBoxLayout(content_group)
-            content_label = QLabel(f"""
-            <b>Commands:</b> {len(data.get('commands', []))}
-            <b>Currency Users:</b> {len(data.get('currency_users', {}))}
-            <b>Moderators:</b> {len(data.get('moderators', {}).get('manual', []))}
-            <b>Ranks:</b> {len(data.get('ranks', []))}
-            """)
+            content_label = QLabel(tr('\n            <b>Commands:</b> {0}\n            <b>Currency Users:</b> {1}\n            <b>Moderators:</b> {2}\n            <b>Ranks:</b> {3}\n            ').format(len(data.get('commands', [])), len(data.get('currency_users', {})), len(data.get('moderators', {}).get('manual', [])), len(data.get('ranks', []))))
             content_label.setTextFormat(1)  # Rich text
             content_layout.addWidget(content_label)
             layout.addWidget(content_group)
@@ -441,4 +431,4 @@ class FullBackupsTab(QWidget):
             dialog.exec_()
         except Exception as e:
             print(f"Error showing comprehensive backup info: {e}")
-            QMessageBox.warning(self, "Error", f"Failed to show backup details:\n\n{str(e)}")
+            QMessageBox.warning(self, tr("Error"), tr('Failed to show backup details:\n\n{0}').format(str(e)))

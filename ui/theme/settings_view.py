@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, 
 from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QKeySequence
 from ui.hotkeys import ACTIONS as HOTKEY_ACTIONS, available as hotkeys_available
+from ui import i18n
+from ui.i18n import tr
 from ui.theme.style import (THEMES, THEME_LABELS, layout_of, palette_for)
 from ui.theme.widgets import (ToggleSwitch)
 
@@ -40,11 +42,11 @@ class SettingsPanel(QWidget):
         v = QVBoxLayout(card)
         v.setContentsMargins(18, 14, 18, 8)
         v.setSpacing(0)
-        t = QLabel(title)
+        t = QLabel(tr(title))
         t.setObjectName("sectionTitle")
         v.addWidget(t)
         if desc:
-            d = QLabel(desc)
+            d = QLabel(tr(desc))
             d.setObjectName("switchDesc")
             d.setWordWrap(True)
             v.addWidget(d)
@@ -99,40 +101,40 @@ class SettingsPanel(QWidget):
         v.setContentsMargins(4, 4, 4, 4)
         v.setSpacing(14)
 
-        card, cv = self._card("Sound", "How sounds of commands WITHOUT a queue behave on the shared channel.")
-        self._switch_row(cv, "Allow sounds to interrupt each other",
-                         "A new command stops the sound that is playing. Off: the new sound is skipped.",
+        card, cv = self._card(tr("Sound"), tr("How sounds of commands WITHOUT a queue behave on the shared channel."))
+        self._switch_row(cv, tr("Allow sounds to interrupt each other"),
+                         tr("A new command stops the sound that is playing. Off: the new sound is skipped."),
                          e.allow_interruption_check)
-        self._switch_row(cv, "Tell the viewer when their sound was blocked",
-                         "Sends a chat message and refunds the points.",
+        self._switch_row(cv, tr("Tell the viewer when their sound was blocked"),
+                         tr("Sends a chat message and refunds the points."),
                          e.show_interruption_message_check, last=True)
         v.addWidget(card)
 
-        card, cv = self._card("Auto-save & backups", "Intervals are in seconds.")
-        self._switch_row(cv, "Auto-save commands", "Write commands.json periodically.",
+        card, cv = self._card(tr("Auto-save & backups"), tr("Intervals are in seconds."))
+        self._switch_row(cv, tr("Auto-save commands"), tr("Write commands.json periodically."),
                          e.auto_save_checkbox, e.auto_save_interval_input)
-        self._switch_row(cv, "Automatic full backups", "Commands + currency + settings snapshot.",
+        self._switch_row(cv, tr("Automatic full backups"), tr("Commands + currency + settings snapshot."),
                          e.system_auto_backup_checkbox, e.system_backup_interval_input)
-        self._switch_row(cv, "Auto-save currency users", "Points, hours and ranks.",
+        self._switch_row(cv, tr("Auto-save currency users"), tr("Points, hours and ranks."),
                          e.currency_auto_save_checkbox, e.currency_backup_interval_input, last=True)
         v.addWidget(card)
 
         cfg = getattr(e, "config_manager", None)
         if cfg is not None and hasattr(cfg, "get_moderators_are_admins"):
             card, cv = self._card(
-                "Permissions",
-                "Admin commands: the channel owner and the \"admins\" list in moderators.json "
-                "(Twitch tab -> Open moderators file).")
+                tr("Permissions"),
+                tr("Admin commands: the channel owner and the \"admins\" list in moderators.json "
+                "(Twitch tab -> Open moderators file)."))
             row = QFrame()
             row.setObjectName("")
             h = QHBoxLayout(row)
             h.setContentsMargins(0, 10, 0, 10)
             texts = QVBoxLayout()
-            t = QLabel("Moderators have Admin rights")
+            t = QLabel(tr("Moderators have Admin rights"))
             t.setObjectName("switchTitle")
             texts.addWidget(t)
-            d = QLabel("On (as in 1.x): every moderator may use Admin commands. "
-                       "Off: only the channel owner and the admins list.")
+            d = QLabel(tr("On (as in 1.x): every moderator may use Admin commands. "
+                       "Off: only the channel owner and the admins list."))
             d.setObjectName("switchDesc")
             d.setWordWrap(True)
             texts.addWidget(d)
@@ -146,30 +148,51 @@ class SettingsPanel(QWidget):
 
         if hasattr(e, "hotkey_settings"):
             card, cv = self._card(
-                "Global hotkeys",
-                "Work while the window is minimised or a game has the focus. Off by default: "
-                "while on, these keys do nothing in other programs.")
+                tr("Global hotkeys"),
+                tr("Work while the window is minimised or a game has the focus. Off by default: "
+                "while on, these keys do nothing in other programs."))
             self._hotkey_rows(cv)
             v.addWidget(card)
 
         if hasattr(e, "overlay_settings"):
             card, cv = self._card(
-                "OBS overlay",
-                "A page for an OBS Browser Source: now playing, the queues, recent commands. "
-                "Only this computer can open it (127.0.0.1).")
+                tr("OBS overlay"),
+                tr("A page for an OBS Browser Source: now playing, the queues, recent commands. "
+                "Only this computer can open it (127.0.0.1)."))
             self._overlay_rows(cv)
             v.addWidget(card)
 
-        card, cv = self._card("Appearance", "")
+        cfg_lang = getattr(getattr(e, "config_manager", None), "get_language", None)
+        if cfg_lang is not None:
+            card, cv = self._card(tr("Language"), tr(
+                "The language of the interface. \"System\": Russian when Windows is in Russian, "
+                "otherwise English."))
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 8, 0, 4)
+            self.language_combo = QComboBox()
+            for key, label in i18n.LANGUAGES:
+                self.language_combo.addItem(tr(label), key)
+            self.language_combo.setCurrentIndex(
+                max(0, [k for k, _l in i18n.LANGUAGES].index(cfg_lang())))
+            self.language_combo.activated.connect(self._language_changed)
+            row.addStretch(1)
+            row.addWidget(self.language_combo)
+            cv.addLayout(row)
+            self.language_note = QLabel("")
+            self.language_note.setObjectName("switchDesc")
+            cv.addWidget(self.language_note)
+            v.addWidget(card)
+
+        card, cv = self._card(tr("Appearance"), "")
         row = QHBoxLayout()
         row.setContentsMargins(0, 8, 0, 12)
-        lab = QLabel("Theme")
+        lab = QLabel(tr("Theme"))
         lab.setObjectName("switchTitle")
         row.addWidget(lab)
         row.addStretch(1)
         self.theme_combo = QComboBox()
         for key in THEMES:
-            self.theme_combo.addItem(THEME_LABELS[key], key)
+            self.theme_combo.addItem(tr(THEME_LABELS[key]), key)
         self.theme_combo.setCurrentIndex(max(0, list(THEMES).index(getattr(e, "theme", "sidebar"))
                                             if getattr(e, "theme", "") in THEMES else 0))
         self.theme_combo.activated.connect(
@@ -188,7 +211,7 @@ class SettingsPanel(QWidget):
         row.setObjectName("switchRow")
         h = QHBoxLayout(row)
         h.setContentsMargins(0, 10, 0, 10)
-        t = QLabel("Enable global hotkeys")
+        t = QLabel(tr("Enable global hotkeys"))
         t.setObjectName("switchTitle")
         h.addWidget(t, 1)
         self.hotkey_switch = ToggleSwitch(self.pal)
@@ -201,7 +224,7 @@ class SettingsPanel(QWidget):
         for name, label, default in HOTKEY_ACTIONS:
             r = QHBoxLayout()
             r.setContentsMargins(0, 6, 0, 6)
-            lab = QLabel(label)
+            lab = QLabel(tr(label))
             lab.setObjectName("switchDesc")
             r.addWidget(lab, 1)
             ed = QKeySequenceEdit(QKeySequence(settings.get(name, default) or ""))
@@ -226,7 +249,7 @@ class SettingsPanel(QWidget):
 
     def _show_hotkey_problems(self, problems):
         if not hotkeys_available():
-            self.hotkey_status.setText("Global hotkeys work on Windows only.")
+            self.hotkey_status.setText(tr("Global hotkeys work on Windows only."))
             return
         labels = dict((n, l) for n, l, _d in HOTKEY_ACTIONS)
         lines = ["%s: %s" % (labels.get(n, n), why) for n, why in sorted(problems.items())]
@@ -239,13 +262,13 @@ class SettingsPanel(QWidget):
         row.setObjectName("switchRow")
         h = QHBoxLayout(row)
         h.setContentsMargins(0, 10, 0, 10)
-        t = QLabel("Enable the overlay")
+        t = QLabel(tr("Enable the overlay"))
         t.setObjectName("switchTitle")
         h.addWidget(t, 1)
         self.overlay_port = QSpinBox()
         self.overlay_port.setRange(1024, 65535)
         self.overlay_port.setValue(int(s.get("port", 8765) or 8765))
-        self.overlay_port.setPrefix("port ")
+        self.overlay_port.setPrefix(tr("port "))
         self.overlay_port.setFixedWidth(120)
         self.overlay_port.editingFinished.connect(self._overlay_changed)
         h.addWidget(self.overlay_port)
@@ -258,9 +281,9 @@ class SettingsPanel(QWidget):
         r.setContentsMargins(0, 6, 0, 6)
         self.overlay_url = QLineEdit()
         self.overlay_url.setReadOnly(True)
-        self.overlay_url.setPlaceholderText("off")
+        self.overlay_url.setPlaceholderText(tr("off"))
         r.addWidget(self.overlay_url, 1)
-        copy_btn = QPushButton("Copy")
+        copy_btn = QPushButton(tr("Copy"))
         copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.overlay_url.text()))
         r.addWidget(copy_btn)
         layout.addLayout(r)
@@ -283,13 +306,19 @@ class SettingsPanel(QWidget):
         self.overlay_url.setText(url)
         if url:
             self.overlay_status.setText(
-                "OBS: Sources -> Browser, this URL, width 400, height 600. "
-                "Options: ?show=now,queue,recent (blocks) and &size=28 (font).")
+                tr("OBS: Sources -> Browser, this URL, width 400, height 600. "
+                "Options: ?show=now,queue,recent (blocks) and &size=28 (font)."))
         elif e.overlay_settings().get("enabled"):
-            self.overlay_status.setText("Could not start on port %d: %s"
+            self.overlay_status.setText(tr("Could not start on port %d: %s")
                                         % (self.overlay_port.value(), e.overlay.error or "?"))
         else:
             self.overlay_status.setText("")
+
+    def _language_changed(self, *_):
+        key = self.language_combo.currentData()
+        self.editor.config_manager.set_language(key)
+        differs = i18n.resolve(key) != i18n.language()
+        self.language_note.setText(tr("Restart Command Editor to switch the language.") if differs else "")
 
     def showEvent(self, event):
         # Re-read values: they may have been changed elsewhere (e.g. restore).

@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLa
                              QMessageBox)
 from PyQt5.QtCore import Qt, QTimer
 from core.currency_manager import CurrencyManager
+from ui.i18n import tr
 
 class CurrencyTab(QWidget):
     def __init__(self, parent=None):
@@ -28,25 +29,25 @@ class CurrencyTab(QWidget):
         # Создаем контейнер для содержимого скролла
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)        # === GENERAL SECTION ===
-        general_group = QGroupBox("General")
+        general_group = QGroupBox(tr("General"))
         general_layout = QVBoxLayout()
         
         # Currency Accumulation Toggle - добавляем переключатель в начале секции
-        self.accumulation_check = QCheckBox("Enable Currency Accumulation")
+        self.accumulation_check = QCheckBox(tr("Enable Currency Accumulation"))
         self.accumulation_check.setChecked(self.currency_manager.settings.get('accumulation_enabled', True))
         self.accumulation_check.stateChanged.connect(self.save_settings)
-        self.accumulation_check.setToolTip("When enabled, users will earn currency while watching the stream")
+        self.accumulation_check.setToolTip(tr("When enabled, users will earn currency while watching the stream"))
         general_layout.addWidget(self.accumulation_check)
           # Добавляем опцию показа служебных сообщений в окне программы
-        self.show_service_messages_check = QCheckBox("Show Service Messages in Program")
+        self.show_service_messages_check = QCheckBox(tr("Show Service Messages in Program"))
         self.show_service_messages_check.setChecked(self.currency_manager.settings.get('show_service_messages', False))
         self.show_service_messages_check.stateChanged.connect(self.save_settings)
-        self.show_service_messages_check.setToolTip("When enabled, service messages about points calculation will be shown in the program's chat window")
+        self.show_service_messages_check.setToolTip(tr("When enabled, service messages about points calculation will be shown in the program's chat window"))
         general_layout.addWidget(self.show_service_messages_check)
         
         # Name
         name_layout = QHBoxLayout()
-        name_label = QLabel("Name:")
+        name_label = QLabel(tr("Name:"))
         self.name_input = QLineEdit("Points")
         name_layout.addWidget(name_label)
         name_layout.addWidget(self.name_input)
@@ -54,7 +55,7 @@ class CurrencyTab(QWidget):
         
         # Response
         response_layout = QHBoxLayout()
-        response_label = QLabel("Response:")
+        response_label = QLabel(tr("Response:"))
         self.response_input = QLineEdit("$username [$rank] - Hours: $hours - $currencyname: $points")
         response_layout.addWidget(response_label)
         response_layout.addWidget(self.response_input)
@@ -62,7 +63,7 @@ class CurrencyTab(QWidget):
         
         # Cooldown
         cooldown_layout = QHBoxLayout()
-        cooldown_label = QLabel("Cooldown (sec):")
+        cooldown_label = QLabel(tr("Cooldown (sec):"))
         self.cooldown_slider = QSlider(Qt.Horizontal)
         self.cooldown_slider.setMinimum(0)
         self.cooldown_slider.setMaximum(60)
@@ -80,12 +81,12 @@ class CurrencyTab(QWidget):
         general_layout.addLayout(cooldown_layout)
           # Rank settings
         rank_layout = QHBoxLayout()
-        rank_label = QLabel("Assign ranks based on x amount of")
+        rank_label = QLabel(tr("Assign ranks based on x amount of"))
         self.rank_type = QComboBox()
         self.rank_type.addItems(["Points", "Hours"])
         self.rank_type.setCurrentText(self.currency_manager.settings.get('rank_type', 'Points'))
         self.rank_type.currentTextChanged.connect(self.save_settings)
-        rank_suffix = QLabel("gained/spent in chat")
+        rank_suffix = QLabel(tr("gained/spent in chat"))
         rank_layout.addWidget(rank_label)
         rank_layout.addWidget(self.rank_type)
         rank_layout.addWidget(rank_suffix)
@@ -93,12 +94,12 @@ class CurrencyTab(QWidget):
         general_layout.addLayout(rank_layout)
         
         # Options
-        self.offline_hours_check = QCheckBox("Take offline hours in to account for total hours in the stream")
+        self.offline_hours_check = QCheckBox(tr("Take offline hours in to account for total hours in the stream"))
         self.offline_hours_check.setChecked(self.currency_manager.settings.get('offline_hours', False))
         self.offline_hours_check.stateChanged.connect(self.save_settings)
         general_layout.addWidget(self.offline_hours_check)
         
-        self.auto_regular_check = QCheckBox("Automatically become a regular at")
+        self.auto_regular_check = QCheckBox(tr("Automatically become a regular at"))
         self.auto_regular_check.setChecked(self.currency_manager.settings.get('auto_regular', False))
         self.auto_regular_check.stateChanged.connect(self.save_settings)
         
@@ -120,7 +121,7 @@ class CurrencyTab(QWidget):
         auto_regular_layout.addStretch(1)
         general_layout.addLayout(auto_regular_layout)
         
-        self.streamlabs_check = QCheckBox("Бесполезная галочка, на которой был Streamlabs")
+        self.streamlabs_check = QCheckBox(tr("A useless checkbox left over from Streamlabs"))
         self.streamlabs_check.setChecked(self.currency_manager.settings.get('streamlabs_currency', False))
         self.streamlabs_check.stateChanged.connect(self.save_settings)
         general_layout.addWidget(self.streamlabs_check)
@@ -129,12 +130,12 @@ class CurrencyTab(QWidget):
         scroll_layout.addWidget(general_group)
         
         # === INTERVALS SECTION ===
-        intervals_group = QGroupBox("Intervals")
+        intervals_group = QGroupBox(tr("Intervals"))
         intervals_layout = QVBoxLayout()
         
         # Online Interval
         online_layout = QHBoxLayout()
-        online_label = QLabel("Online Interval:")
+        online_label = QLabel(tr("Online Interval:"))
         self.online_interval_slider = QSlider(Qt.Horizontal)
         self.online_interval_slider.setMinimum(1)
         self.online_interval_slider.setMaximum(60)
@@ -153,7 +154,7 @@ class CurrencyTab(QWidget):
         intervals_layout.addLayout(online_layout)
           # Offline Interval
         offline_layout = QHBoxLayout()
-        offline_label = QLabel("Offline Interval:")
+        offline_label = QLabel(tr("Offline Interval:"))
         self.offline_interval_slider = QSlider(Qt.Horizontal)
         self.offline_interval_slider.setMinimum(1)
         self.offline_interval_slider.setMaximum(60)
@@ -174,7 +175,7 @@ class CurrencyTab(QWidget):
         time_info_layout = QHBoxLayout()
         self.time_info_label = QLabel()
         self.time_info_label.setAlignment(Qt.AlignCenter)  # По центру
-        self.time_info_label.setText("[LIVE] Min: 0/h - Max: 0/h    [OFFLINE] Min: 0/h - Max: 0/h")
+        self.time_info_label.setText(tr("[LIVE] Min: 0/h - Max: 0/h    [OFFLINE] Min: 0/h - Max: 0/h"))
         time_info_layout.addWidget(self.time_info_label)
         intervals_layout.addLayout(time_info_layout)
         
@@ -182,7 +183,7 @@ class CurrencyTab(QWidget):
         scroll_layout.addWidget(intervals_group)
         
         # === PAYOUT SECTION ===
-        payout_group = QGroupBox("Payout")
+        payout_group = QGroupBox(tr("Payout"))
         payout_layout = QVBoxLayout()
         
         # Live & Offline payout
@@ -190,7 +191,7 @@ class CurrencyTab(QWidget):
         
         # Live payout
         live_layout = QVBoxLayout()
-        live_label = QLabel("Live Payout:")
+        live_label = QLabel(tr("Live Payout:"))
         self.live_payout_input = QSpinBox()
         self.live_payout_input.setRange(0, 100)
         self.live_payout_input.setValue(self.currency_manager.settings.get('live_payout', 5))
@@ -202,7 +203,7 @@ class CurrencyTab(QWidget):
         
         # Offline payout
         offline_layout = QVBoxLayout()
-        offline_label = QLabel("Offline Payout:")
+        offline_label = QLabel(tr("Offline Payout:"))
         self.offline_payout_input = QSpinBox()
         self.offline_payout_input.setRange(0, 100)
         self.offline_payout_input.setValue(self.currency_manager.settings.get('offline_payout', 0))
@@ -219,7 +220,7 @@ class CurrencyTab(QWidget):
         
         # Regular Bonus
         regular_layout = QVBoxLayout()
-        regular_label = QLabel("Regular Bonus:")
+        regular_label = QLabel(tr("Regular Bonus:"))
         self.regular_bonus_input = QSpinBox()
         self.regular_bonus_input.setRange(0, 100)
         self.regular_bonus_input.setValue(self.currency_manager.settings.get('regular_bonus', 0))
@@ -233,13 +234,13 @@ class CurrencyTab(QWidget):
         sub_layout = QVBoxLayout()
         # Не "+N", как остальные бонусы, а множитель очков подписчика:
         # 1 - как у всех, 3 - втрое больше. 0 оставлял подписчиков без очков.
-        self.sub_label = QLabel("Sub multiplier:")
+        self.sub_label = QLabel(tr("Sub multiplier:"))
         self.sub_bonus_input = QSpinBox()
         self.sub_bonus_input.setRange(1, 100)
         self.sub_bonus_input.setPrefix("\u00d7")
         self.sub_bonus_input.setToolTip(
-            "Subscribers get the watch-time points multiplied by this: "
-            "\u00d71 = the same as everyone, \u00d73 = three times as much")
+            tr("Subscribers get the watch-time points multiplied by this: "
+            "\u00d71 = the same as everyone, \u00d73 = three times as much"))
         self.sub_label.setToolTip(self.sub_bonus_input.toolTip())
         self.sub_bonus_input.setValue(max(1, int(self.currency_manager.settings.get('sub_bonus', 1) or 1)))
         self.sub_bonus_input.valueChanged.connect(self.save_settings)
@@ -250,7 +251,7 @@ class CurrencyTab(QWidget):
         
         # Mod Bonus
         mod_layout = QVBoxLayout()
-        mod_label = QLabel("Moderator Bonus:")
+        mod_label = QLabel(tr("Moderator Bonus:"))
         self.mod_bonus_input = QSpinBox()
         self.mod_bonus_input.setRange(0, 100)
         self.mod_bonus_input.setValue(self.currency_manager.settings.get('mod_bonus', 0))
@@ -262,7 +263,7 @@ class CurrencyTab(QWidget):
         
         # Active Bonus
         active_layout = QVBoxLayout()
-        active_label = QLabel("Active Bonus:")
+        active_label = QLabel(tr("Active Bonus:"))
         self.active_bonus_input = QSpinBox()
         self.active_bonus_input.setRange(0, 100)
         self.active_bonus_input.setValue(self.currency_manager.settings.get('active_bonus', 0))
@@ -270,10 +271,10 @@ class CurrencyTab(QWidget):
         self.active_bonus_input.valueChanged.connect(self.update_min_max_labels)
         active_layout.addWidget(active_label)
         active_layout.addWidget(self.active_bonus_input)
-        self.offline_active_bonus_check = QCheckBox("also offline")
+        self.offline_active_bonus_check = QCheckBox(tr("also offline"))
         self.offline_active_bonus_check.setToolTip(
-            "Pay the Active Bonus while the stream is offline too "
-            "(to viewers who wrote in chat since the previous payout)")
+            tr("Pay the Active Bonus while the stream is offline too "
+            "(to viewers who wrote in chat since the previous payout)"))
         self.offline_active_bonus_check.setChecked(
             bool(self.currency_manager.settings.get('offline_active_bonus', False)))
         self.offline_active_bonus_check.stateChanged.connect(self.save_settings)
@@ -286,7 +287,7 @@ class CurrencyTab(QWidget):
         scroll_layout.addWidget(payout_group)
         
         # === EVENT PAYOUT SECTION ===
-        event_group = QGroupBox("Event Payout")
+        event_group = QGroupBox(tr("Event Payout"))
         event_layout = QVBoxLayout()
         
         # First row of event payouts
@@ -294,7 +295,7 @@ class CurrencyTab(QWidget):
         
         # On Raid
         raid_layout = QVBoxLayout()
-        raid_label = QLabel("On Raid:")
+        raid_label = QLabel(tr("On Raid:"))
         self.raid_payout_input = QSpinBox()
         self.raid_payout_input.setRange(0, 1000)
         self.raid_payout_input.setValue(self.currency_manager.settings.get('raid_points', 10))
@@ -305,7 +306,7 @@ class CurrencyTab(QWidget):
         
         # On Follow
         follow_layout = QVBoxLayout()
-        follow_label = QLabel("On Follow:")
+        follow_label = QLabel(tr("On Follow:"))
         self.follow_payout_input = QSpinBox()
         self.follow_payout_input.setRange(0, 1000)
         self.follow_payout_input.setValue(self.currency_manager.settings.get('follow_points', 5))
@@ -316,7 +317,7 @@ class CurrencyTab(QWidget):
         
         # On Sub
         sub_event_layout = QVBoxLayout()
-        sub_event_label = QLabel("On Sub:")
+        sub_event_label = QLabel(tr("On Sub:"))
         self.sub_event_payout_input = QSpinBox()
         self.sub_event_payout_input.setRange(0, 1000)
         self.sub_event_payout_input.setValue(self.currency_manager.settings.get('sub_points', 20))
@@ -327,7 +328,7 @@ class CurrencyTab(QWidget):
         
         # Mass Sub Gift
         mass_sub_layout = QVBoxLayout()
-        mass_sub_label = QLabel("Mass Sub Gift Amount (per Sub):")
+        mass_sub_label = QLabel(tr("Mass Sub Gift Amount (per Sub):"))
         self.mass_sub_payout_input = QSpinBox()
         self.mass_sub_payout_input.setRange(0, 1000)
         self.mass_sub_payout_input.setValue(self.currency_manager.settings.get('mass_sub_points', 0))
@@ -342,13 +343,13 @@ class CurrencyTab(QWidget):
         scroll_layout.addWidget(event_group)
 
         # === BACKUP MANAGEMENT SECTION ===
-        backup_group = QGroupBox("Currency Data Backup & Recovery")
+        backup_group = QGroupBox(tr("Currency Data Backup & Recovery"))
         backup_layout = QVBoxLayout()
 
         # Backup info
         backup_info = QLabel(
-            "Automatic backups are created regularly and when major changes occur. "
-            "You can manually create backups or restore from existing ones here."
+            tr("Automatic backups are created regularly and when major changes occur. "
+            "You can manually create backups or restore from existing ones here.")
         )
         backup_info.setWordWrap(True)
         backup_layout.addWidget(backup_info)
@@ -357,19 +358,19 @@ class CurrencyTab(QWidget):
         backup_controls_layout = QHBoxLayout()
 
         # Create backup button
-        self.create_backup_btn = QPushButton("Create Manual Backup")
+        self.create_backup_btn = QPushButton(tr("Create Manual Backup"))
         self.create_backup_btn.clicked.connect(self.create_manual_backup)
-        self.create_backup_btn.setToolTip("Create a backup of the current currency data")
+        self.create_backup_btn.setToolTip(tr("Create a backup of the current currency data"))
         backup_controls_layout.addWidget(self.create_backup_btn)
 
         # Refresh backups button
-        self.refresh_backups_btn = QPushButton("Refresh List")
+        self.refresh_backups_btn = QPushButton(tr("Refresh List"))
         self.refresh_backups_btn.clicked.connect(self.refresh_backup_list)
         backup_controls_layout.addWidget(self.refresh_backups_btn)
 
         # Backup status
-        self.backup_status_label = QLabel("Loading...")
-        backup_controls_layout.addWidget(QLabel("Status:"))
+        self.backup_status_label = QLabel(tr("Loading..."))
+        backup_controls_layout.addWidget(QLabel(tr("Status:")))
         backup_controls_layout.addWidget(self.backup_status_label)
         backup_controls_layout.addStretch()
 
@@ -377,7 +378,7 @@ class CurrencyTab(QWidget):
 
         # Backup settings
         backup_settings_layout = QHBoxLayout()
-        max_backups_label = QLabel("Maximum Backups:")
+        max_backups_label = QLabel(tr("Maximum Backups:"))
         self.max_currency_backups_spin = QSpinBox()
         self.max_currency_backups_spin.setMinimum(1)
         self.max_currency_backups_spin.setMaximum(100)
@@ -513,8 +514,7 @@ class CurrencyTab(QWidget):
             
             # Обновляем метку с расчетными значениями
             self.time_info_label.setText(
-                f"[LIVE] Min: {live_min_rounded}{unit} - Max: {live_max_rounded}{unit}    "
-                f"[OFFLINE] Min: {offline_min_rounded}{unit} - Max: {offline_max_rounded}{unit}"
+                tr('[LIVE] Min: {0}{1} - Max: {2}{3}    [OFFLINE] Min: {4}{5} - Max: {6}{7}').format(live_min_rounded, unit, live_max_rounded, unit, offline_min_rounded, unit, offline_max_rounded, unit)
             )
         except Exception as e:
             print(f"Error updating min/max labels: {e}")
@@ -525,7 +525,7 @@ class CurrencyTab(QWidget):
         """Create a manual backup of currency data"""
         try:
             self.create_backup_btn.setEnabled(False)
-            self.create_backup_btn.setText("Creating...")
+            self.create_backup_btn.setText(tr("Creating..."))
 
             success = self.currency_manager.create_backup(force=True)
 
@@ -533,19 +533,19 @@ class CurrencyTab(QWidget):
                 # Refresh the backup list
                 self.refresh_backup_list()
                 # Update status
-                self.backup_status_label.setText("Backup created successfully")
+                self.backup_status_label.setText(tr("Backup created successfully"))
                 self.backup_status_label.setStyleSheet("color: green;")
             else:
-                self.backup_status_label.setText("Failed to create backup")
+                self.backup_status_label.setText(tr("Failed to create backup"))
                 self.backup_status_label.setStyleSheet("color: red;")
 
         except Exception as e:
             print(f"Error creating manual backup: {e}")
-            self.backup_status_label.setText("Error creating backup")
+            self.backup_status_label.setText(tr("Error creating backup"))
             self.backup_status_label.setStyleSheet("color: red;")
         finally:
             self.create_backup_btn.setEnabled(True)
-            self.create_backup_btn.setText("Create Manual Backup")
+            self.create_backup_btn.setText(tr("Create Manual Backup"))
 
     def refresh_backup_list(self):
         """Refresh the list of available backups"""
@@ -563,15 +563,15 @@ class CurrencyTab(QWidget):
             backups = self.currency_manager.get_available_backups()
 
             if not backups:
-                no_backups_label = QLabel("No backups found. Automatic backups will be created during normal operation.")
+                no_backups_label = QLabel(tr("No backups found. Automatic backups will be created during normal operation."))
                 no_backups_label.setStyleSheet("color: gray; font-style: italic;")
                 layout.addWidget(no_backups_label)
-                self.backup_status_label.setText("No backups")
+                self.backup_status_label.setText(tr("No backups"))
                 self.backup_status_label.setStyleSheet("color: gray;")
                 return
 
             # Update status
-            self.backup_status_label.setText(f"{len(backups)} backups available")
+            self.backup_status_label.setText(tr('{0} backups available').format(len(backups)))
             self.backup_status_label.setStyleSheet("color: blue;")
 
             # Add each backup to the list
@@ -592,7 +592,7 @@ class CurrencyTab(QWidget):
                 size_label = QLabel(f"📊 {backup['size_str']}")
                 header_layout.addWidget(size_label)
 
-                users_label = QLabel(f"👥 {backup['user_count']} users")
+                users_label = QLabel(tr('👥 {0} users').format(backup['user_count']))
                 header_layout.addWidget(users_label)
 
                 header_layout.addStretch()
@@ -603,7 +603,7 @@ class CurrencyTab(QWidget):
 
                 if backup['total_points'] != 'Unknown' and backup['total_hours'] != 'Unknown':
                     details_label = QLabel(
-                        f"Points: {backup['total_points']}, Hours: {backup['total_hours']}"
+                        tr('Points: {0}, Hours: {1}').format(backup['total_points'], backup['total_hours'])
                     )
                     details_label.setStyleSheet("color: gray; padding-left: 10px;")
                     details_layout.addWidget(details_label)
@@ -613,14 +613,14 @@ class CurrencyTab(QWidget):
                 buttons_layout.addSpacing(10)
 
                 # Restore button
-                restore_btn = QPushButton("Restore")
-                restore_btn.setToolTip(f"Restore currency data from this backup")
+                restore_btn = QPushButton(tr("Restore"))
+                restore_btn.setToolTip(tr('Restore currency data from this backup').format())
                 restore_btn.clicked.connect(lambda checked, path=backup['path']: self.restore_from_backup(path))
                 buttons_layout.addWidget(restore_btn)
 
                 # View info button
-                info_btn = QPushButton("Info")
-                info_btn.setToolTip("Show detailed backup information")
+                info_btn = QPushButton(tr("Info"))
+                info_btn.setToolTip(tr("Show detailed backup information"))
                 info_btn.clicked.connect(lambda checked, b=backup: self.show_backup_info(b))
                 buttons_layout.addWidget(info_btn)
 
@@ -639,7 +639,7 @@ class CurrencyTab(QWidget):
                             background-color: #f9fff9;
                         }
                     """)
-                    latest_label = QLabel("🆕 Latest Backup")
+                    latest_label = QLabel(tr("🆕 Latest Backup"))
                     latest_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
                     backup_frame_layout.insertWidget(0, latest_label)
 
@@ -650,10 +650,10 @@ class CurrencyTab(QWidget):
 
         except Exception as e:
             print(f"Error refreshing backup list: {e}")
-            error_label = QLabel(f"Error loading backups: {e}")
+            error_label = QLabel(tr('Error loading backups: {0}').format(e))
             error_label.setStyleSheet("color: red;")
             self.backup_list_layout.addWidget(error_label)
-            self.backup_status_label.setText("Error")
+            self.backup_status_label.setText(tr("Error"))
             self.backup_status_label.setStyleSheet("color: red;")
 
     def restore_from_backup(self, backup_path):
@@ -664,9 +664,9 @@ class CurrencyTab(QWidget):
             # Confirm restoration
             reply = QMessageBox.question(
                 self,
-                "Confirm Restore",
-                "This will replace the current currency data with the selected backup.\n\n"
-                "An emergency backup will be created first.\n\nContinue?",
+                tr("Confirm Restore"),
+                tr("This will replace the current currency data with the selected backup.\n\n"
+                "An emergency backup will be created first.\n\nContinue?"),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -680,9 +680,9 @@ class CurrencyTab(QWidget):
             if success:
                 QMessageBox.information(
                     self,
-                    "Restore Successful",
-                    "Currency data has been successfully restored from backup.\n\n"
-                    "The program may need to be restarted for all changes to take effect."
+                    tr("Restore Successful"),
+                    tr("Currency data has been successfully restored from backup.\n\n"
+                    "The program may need to be restarted for all changes to take effect.")
                 )
 
                 # Refresh backup list to show any changes
@@ -695,17 +695,17 @@ class CurrencyTab(QWidget):
             else:
                 QMessageBox.critical(
                     self,
-                    "Restore Failed",
-                    "Failed to restore currency data from backup.\n\n"
-                    "Check the program logs for more details."
+                    tr("Restore Failed"),
+                    tr("Failed to restore currency data from backup.\n\n"
+                    "Check the program logs for more details.")
                 )
 
         except Exception as e:
             print(f"Error during backup restoration: {e}")
             QMessageBox.critical(
                 self,
-                "Error",
-                f"An error occurred during restoration:\n\n{e}"
+                tr("Error"),
+                tr('An error occurred during restoration:\n\n{0}').format(e)
             )
 
     def show_backup_info(self, backup):
@@ -714,7 +714,7 @@ class CurrencyTab(QWidget):
             from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox
 
             dialog = QDialog(self)
-            dialog.setWindowTitle("Backup Information")
+            dialog.setWindowTitle(tr("Backup Information"))
             dialog.setModal(True)
 
             layout = QVBoxLayout()
@@ -745,7 +745,7 @@ class CurrencyTab(QWidget):
 
         except Exception as e:
             print(f"Error showing backup info: {e}")
-            QMessageBox.warning(self, "Error", f"Failed to show backup information: {e}")
+            QMessageBox.warning(self, tr("Error"), tr('Failed to show backup information: {0}').format(e))
 
     def update_max_currency_backups(self, value):
         """Update the maximum number of currency backups to keep"""

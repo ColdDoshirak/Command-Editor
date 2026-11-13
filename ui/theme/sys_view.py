@@ -11,6 +11,7 @@ from PyQt5.QtCore import Qt, QSize, QTimer
 from core.permissions import name_of as permission_name
 from ui.theme.style import (PERMISSIONS, USAGES, palette_for)
 from ui.theme.widgets import (MasterDelegate, ToggleSwitch, _known_groups, _shrinkable, make_icon)
+from ui.i18n import tr
 
 
 # ---------------------------------------------------------------------------
@@ -61,13 +62,13 @@ class SysCommandsView(QWidget):
     def _make_top(self):
         self.search_edit = QLineEdit()
         self.search_edit.setObjectName("searchBox")
-        self.search_edit.setPlaceholderText("Search…")
+        self.search_edit.setPlaceholderText(tr("Search…"))
         self.search_edit.setClearButtonEnabled(True)
         _shrinkable(self.search_edit, 200, 90)
         self.search_edit.textChanged.connect(lambda _t: self.refresh())
-        self.dup_btn = QPushButton("Duplicate")
-        self.dup_btn.setToolTip("Create a copy of this command under another name "
-                                "(e.g. !money as an alias of !points)")
+        self.dup_btn = QPushButton(tr("Duplicate"))
+        self.dup_btn.setToolTip(tr("Create a copy of this command under another name "
+                                "(e.g. !money as an alias of !points)"))
         self.dup_btn.clicked.connect(self._duplicate)
 
     # -- construction -----------------------------------------------------
@@ -114,7 +115,7 @@ class SysCommandsView(QWidget):
         tt.addWidget(self.d_sub)
         head.addLayout(tt)
         head.addStretch(1)
-        lab = QLabel("Enabled")
+        lab = QLabel(tr("Enabled"))
         lab.setObjectName("switchDesc")
         head.addWidget(lab)
         self.f_enabled = ToggleSwitch(self.pal)
@@ -123,7 +124,7 @@ class SysCommandsView(QWidget):
         self.rm_btn = QPushButton()
         self.rm_btn.setObjectName("dangerBtn")
         self.rm_btn.setIcon(make_icon("trash", self.pal["red"]))
-        self.rm_btn.setToolTip("Remove this duplicate (originals can't be removed)")
+        self.rm_btn.setToolTip(tr("Remove this duplicate (originals can't be removed)"))
         self.rm_btn.clicked.connect(self._remove)
         head.addWidget(self.rm_btn)
         v.addLayout(head)
@@ -143,8 +144,8 @@ class SysCommandsView(QWidget):
         self.f_name.textChanged.connect(lambda t: self._edit("command_name", t))
         self.f_group = QLineEdit()
         self.f_group.textChanged.connect(lambda t: self._edit("group", t))
-        g.addWidget(lab_("Command"), 0, 0)
-        g.addWidget(lab_("Group"), 0, 1)
+        g.addWidget(lab_(tr("Command")), 0, 0)
+        g.addWidget(lab_(tr("Group")), 0, 1)
         g.addWidget(self.f_name, 1, 0)
         g.addWidget(self.f_group, 1, 1)
 
@@ -154,38 +155,38 @@ class SysCommandsView(QWidget):
         self.f_usage = QComboBox()
         self.f_usage.addItems(USAGES)
         self.f_usage.currentTextChanged.connect(lambda t: self._edit("usage", t, now=True))
-        g.addWidget(lab_("Permission"), 2, 0)
-        g.addWidget(lab_("Usage"), 2, 1)
+        g.addWidget(lab_(tr("Permission")), 2, 0)
+        g.addWidget(lab_(tr("Usage")), 2, 1)
         g.addWidget(self.f_perm, 3, 0)
         g.addWidget(self.f_usage, 3, 1)
 
         self.f_cd = QSpinBox()
         self.f_cd.setRange(0, 3600)
         self.f_cd.setSuffix(" min")
-        self.f_cd.setSpecialValueText("none")
-        self.f_cd.setToolTip("Global cooldown in MINUTES")
+        self.f_cd.setSpecialValueText(tr("none"))
+        self.f_cd.setToolTip(tr("Global cooldown in MINUTES"))
         self.f_cd.valueChanged.connect(lambda val: self._edit("cooldown", int(val)))
         self.f_ucd = QSpinBox()
         self.f_ucd.setRange(0, 3600)
         self.f_ucd.setSuffix(" min")
-        self.f_ucd.setSpecialValueText("none")
-        self.f_ucd.setToolTip("Per-viewer cooldown in MINUTES")
+        self.f_ucd.setSpecialValueText(tr("none"))
+        self.f_ucd.setToolTip(tr("Per-viewer cooldown in MINUTES"))
         self.f_ucd.valueChanged.connect(lambda val: self._edit("user_cooldown", int(val)))
-        g.addWidget(lab_("Cooldown"), 4, 0)
-        g.addWidget(lab_("User cooldown"), 4, 1)
+        g.addWidget(lab_(tr("Cooldown")), 4, 0)
+        g.addWidget(lab_(tr("User cooldown")), 4, 1)
         g.addWidget(self.f_cd, 5, 0)
         g.addWidget(self.f_ucd, 5, 1)
 
         self.f_cost = QSpinBox()
         self.f_cost.setRange(0, 1000000)
-        self.f_cost.setSpecialValueText("free")
+        self.f_cost.setSpecialValueText(tr("free"))
         self.f_cost.valueChanged.connect(lambda val: self._edit("cost", int(val)))
-        g.addWidget(lab_("Cost (points)"), 6, 0)
+        g.addWidget(lab_(tr("Cost (points)")), 6, 0)
         g.addWidget(self.f_cost, 7, 0)
 
         self.f_info = QLineEdit()
         self.f_info.textChanged.connect(lambda t: self._edit("info", t))
-        g.addWidget(lab_("Info"), 8, 0, 1, 2)
+        g.addWidget(lab_(tr("Info")), 8, 0, 1, 2)
         g.addWidget(self.f_info, 9, 0, 1, 2)
         v.addLayout(g)
 
@@ -199,18 +200,18 @@ class SysCommandsView(QWidget):
         self.extra_title = QLabel("")
         self.extra_title.setObjectName("sectionTitle")
         ev.addWidget(self.extra_title, 0, 0, 1, 2)
-        self.l_random = lab_("Random group (ALL = any group)")
+        self.l_random = lab_(tr("Random group (ALL = any group)"))
         self.f_random = QComboBox()
         self.f_random.setEditable(True)
         self.f_random.setInsertPolicy(QComboBox.NoInsert)
         self.f_random.editTextChanged.connect(lambda t: self._edit("random_group", t))
-        self.f_show_picked = QCheckBox("Show the picked command in chat")
+        self.f_show_picked = QCheckBox(tr("Show the picked command in chat"))
         self.f_show_picked.toggled.connect(lambda on: self._edit("show_picked_command", bool(on), now=True))
-        self.l_picked = lab_("Picked command message ({command} = picked command)")
+        self.l_picked = lab_(tr("Picked command message ({command} = picked command)"))
         self.f_picked = QLineEdit()
-        self.f_picked.setPlaceholderText("Picked {command}.")
+        self.f_picked.setPlaceholderText(tr("Picked {command}."))
         self.f_picked.textChanged.connect(lambda t: self._edit("picked_command_response", t))
-        self.l_default = lab_("Default group (when !volume is used without a group)")
+        self.l_default = lab_(tr("Default group (when !volume is used without a group)"))
         self.f_default = QComboBox()
         self.f_default.setEditable(True)
         self.f_default.setInsertPolicy(QComboBox.NoInsert)
@@ -228,8 +229,8 @@ class SysCommandsView(QWidget):
         self.error.setStyleSheet("color: %s;" % self.pal["red"])
         self.error.setWordWrap(True)
         v.addWidget(self.error)
-        hint = QLabel("Originals are built into the bot: their name is fixed, everything else can "
-                      "be changed. Use Duplicate to add the same command under another name.")
+        hint = QLabel(tr("Originals are built into the bot: their name is fixed, everything else can "
+                      "be changed. Use Duplicate to add the same command under another name."))
         hint.setObjectName("switchDesc")
         hint.setWordWrap(True)
         v.addWidget(hint)
@@ -322,7 +323,7 @@ class SysCommandsView(QWidget):
             w.setEnabled(ok)
         self.error.setText("")
         if not ok:
-            self.d_title.setText("No command selected")
+            self.d_title.setText(tr("No command selected"))
             self.d_sub.setText("")
             self.extra_card.hide()
             self.dup_btn.setEnabled(False)
@@ -333,8 +334,8 @@ class SysCommandsView(QWidget):
         try:
             self.f_name.setText(self.tab.display_name(cmd))
             self.f_name.setReadOnly(not dup)
-            self.f_name.setToolTip("" if dup else "The name of an original command is fixed. "
-                                   "Duplicate it to use another name.")
+            self.f_name.setToolTip("" if dup else tr("The name of an original command is fixed. "
+                                   "Duplicate it to use another name."))
             self.f_group.setText(cmd.get("group", ""))
             for combo, value in ((self.f_perm, permission_name(cmd.get("permission", "Everyone"))),
                                  (self.f_usage, cmd.get("usage", "Chat"))):
@@ -355,7 +356,7 @@ class SysCommandsView(QWidget):
             for w in (self.l_default, self.f_default):
                 w.setVisible(is_volume)
             self.extra_card.setVisible(is_random or is_volume)
-            self.extra_title.setText("!random settings" if is_random else "!volume settings")
+            self.extra_title.setText(tr("!random settings") if is_random else tr("!volume settings"))
             self.f_random.setEditText(cmd.get("random_group", "ALL"))
             self.f_show_picked.setChecked(bool(cmd.get("show_picked_command", True)))
             self.f_picked.setText(cmd.get("picked_command_response", "Picked {command}."))
@@ -372,11 +373,11 @@ class SysCommandsView(QWidget):
         cmd = self.cmds[self._row]
         self.d_title.setText(self.tab.display_name(cmd))
         if cmd.get("is_duplicate", False):
-            sub = "copy of %s" % cmd.get("command", "")
+            sub = tr("copy of %s") % cmd.get("command", "")
         else:
-            sub = "built-in command"
+            sub = tr("built-in command")
         if not cmd.get("enabled", True):
-            sub += " · disabled"
+            sub += tr(" · disabled")
         self.d_sub.setText(sub)
 
     # -- edits ----------------------------------------------------------------

@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLa
                              QDoubleSpinBox, QMessageBox, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
 from core.currency_manager import CurrencyManager
+from ui.i18n import tr
 
 def _points_box():
     box = QDoubleSpinBox()
@@ -64,28 +65,28 @@ class UserCurrencyTab(QWidget):
         controls_layout = QHBoxLayout()
         
         # Кнопка обновления таблицы
-        self.refresh_button = QPushButton("Refresh Table")
+        self.refresh_button = QPushButton(tr("Refresh Table"))
         self.refresh_button.clicked.connect(self.populate_table)
         controls_layout.addWidget(self.refresh_button)
         
         # Кнопка ручного сохранения пользователей
-        self.save_button = QPushButton("Save Users")
+        self.save_button = QPushButton(tr("Save Users"))
         self.save_button.clicked.connect(self.manual_save_users)
         controls_layout.addWidget(self.save_button)
         
         # Кнопка добавления нового пользователя
-        self.add_user_button = QPushButton("Add User")
+        self.add_user_button = QPushButton(tr("Add User"))
         self.add_user_button.clicked.connect(self.add_user)
         controls_layout.addWidget(self.add_user_button)
         
         # Добавляем чекбокс для автообновления
-        self.auto_refresh = QCheckBox("Auto-refresh")
+        self.auto_refresh = QCheckBox(tr("Auto-refresh"))
         self.auto_refresh.setChecked(True)
         self.auto_refresh.stateChanged.connect(self.toggle_auto_refresh)
         controls_layout.addWidget(self.auto_refresh)
         
         # Добавляем метку с временем последнего обновления
-        self.last_update = QLabel("Last update: Never")
+        self.last_update = QLabel(tr("Last update: Never"))
         controls_layout.addWidget(self.last_update)
         
         controls_layout.addStretch(1)  # Добавим растяжку
@@ -95,7 +96,7 @@ class UserCurrencyTab(QWidget):
         # Создаем таблицу с явно заданными полосами прокрутки
         self.table = QTableWidget()
         self.table.setColumnCount(7)  # User, Points, Hours, Rank, Regular, Edit, Remove
-        self.table.setHorizontalHeaderLabels(["User", "Points", "Hours", "Rank", "Regular", "Edit", "Remove"])
+        self.table.setHorizontalHeaderLabels([tr("User"), tr("Points"), tr("Hours"), tr("Rank"), tr("Regular"), tr("Edit"), tr("Remove")])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         
         # Явно включаем полосы прокрутки
@@ -189,11 +190,11 @@ class UserCurrencyTab(QWidget):
 
                 # Кнопки - один раз на строку
                 if self.table.cellWidget(row, 5) is None:
-                    edit_btn = QPushButton("Edit")
+                    edit_btn = QPushButton(tr("Edit"))
                     edit_btn.clicked.connect(lambda checked=False, r=row: self._on_row_button(r, "edit_user"))
                     self.table.setCellWidget(row, 5, edit_btn)
                 if self.table.cellWidget(row, 6) is None:
-                    remove_btn = QPushButton("Remove")
+                    remove_btn = QPushButton(tr("Remove"))
                     remove_btn.clicked.connect(lambda checked=False, r=row: self._on_row_button(r, "remove_user"))
                     self.table.setCellWidget(row, 6, remove_btn)
 
@@ -206,7 +207,7 @@ class UserCurrencyTab(QWidget):
             
             # Обновить метку времени последнего обновления
             now = QDateTime.currentDateTime().toString("HH:mm:ss")
-            self.last_update.setText(f"Last update: {now}")
+            self.last_update.setText(tr('Last update: {0}').format(now))
             
             print(f"Currency table updated with {len(sorted_users)} users")
             
@@ -255,25 +256,25 @@ class UserCurrencyTab(QWidget):
     def add_user(self):
         """Добавить нового пользователя"""
         dialog = QDialog(self)
-        dialog.setWindowTitle("Add User")
+        dialog.setWindowTitle(tr("Add User"))
         layout = QVBoxLayout()
         
         # Имя пользователя
         name_layout = QHBoxLayout()
-        name_layout.addWidget(QLabel("Username:"))
+        name_layout.addWidget(QLabel(tr("Username:")))
         name_input = QLineEdit()
         name_layout.addWidget(name_input)
         layout.addLayout(name_layout)
         
         # Очки
         points_layout = QHBoxLayout()
-        points_layout.addWidget(QLabel("Points:"))
+        points_layout.addWidget(QLabel(tr("Points:")))
         points_input = _points_box()
         points_layout.addWidget(points_input)
         layout.addLayout(points_layout)
           # Часы (с поддержкой дробных значений)
         hours_layout = QHBoxLayout()
-        hours_layout.addWidget(QLabel("Hours:"))
+        hours_layout.addWidget(QLabel(tr("Hours:")))
         hours_input = QDoubleSpinBox()
         hours_input.setRange(0, 9999)
         hours_input.setDecimals(2)  # Устанавливаем 2 десятичных знака
@@ -282,8 +283,8 @@ class UserCurrencyTab(QWidget):
         
         # Кнопки
         button_layout = QHBoxLayout()
-        save_btn = QPushButton("Save")
-        cancel_btn = QPushButton("Cancel")
+        save_btn = QPushButton(tr("Save"))
+        cancel_btn = QPushButton(tr("Cancel"))
         button_layout.addWidget(save_btn)
         button_layout.addWidget(cancel_btn)
         layout.addLayout(button_layout)
@@ -294,7 +295,7 @@ class UserCurrencyTab(QWidget):
         def save_user():
             username = name_input.text().strip()
             if not username:
-                QMessageBox.warning(dialog, "Error", "Username cannot be empty")
+                QMessageBox.warning(dialog, tr("Error"), tr("Username cannot be empty"))
                 return
             
             points = points_input.value()
@@ -315,7 +316,7 @@ class UserCurrencyTab(QWidget):
                 
                 dialog.accept()
             else:
-                QMessageBox.warning(dialog, "Error", "Currency manager not accessible")
+                QMessageBox.warning(dialog, tr("Error"), tr("Currency manager not accessible"))
         
         save_btn.clicked.connect(save_user)
         cancel_btn.clicked.connect(dialog.reject)
@@ -325,25 +326,25 @@ class UserCurrencyTab(QWidget):
     def edit_user(self, username):
         """Редактировать пользователя"""
         if not self.currency_manager or not hasattr(self.currency_manager, 'users') or not username in self.currency_manager.users:
-            QMessageBox.warning(self, "Error", f"User {username} not found")
+            QMessageBox.warning(self, tr("Error"), tr('User {0} not found').format(username))
             return
         
         user_data = self.currency_manager.users[username]
         
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Edit User: {username}")
+        dialog.setWindowTitle(tr('Edit User: {0}').format(username))
         layout = QVBoxLayout()
         
         # Очки
         points_layout = QHBoxLayout()
-        points_layout.addWidget(QLabel("Points:"))
+        points_layout.addWidget(QLabel(tr("Points:")))
         points_input = _points_box()
         points_input.setValue(float(user_data.get('points', 0) or 0))
         points_layout.addWidget(points_input)
         layout.addLayout(points_layout)
           # Часы (с поддержкой дробных значений)
         hours_layout = QHBoxLayout()
-        hours_layout.addWidget(QLabel("Hours:"))
+        hours_layout.addWidget(QLabel(tr("Hours:")))
         hours_input = QDoubleSpinBox()  # Используем QDoubleSpinBox для дробных значений
         hours_input.setRange(0, 9999)
         hours_input.setDecimals(2)  # Устанавливаем 2 десятичных знака
@@ -353,7 +354,7 @@ class UserCurrencyTab(QWidget):
         
         # Добавить чекбокс для Regular после часов
         is_regular_layout = QHBoxLayout()
-        is_regular_layout.addWidget(QLabel("Regular:"))
+        is_regular_layout.addWidget(QLabel(tr("Regular:")))
         is_regular_check = QCheckBox()
         is_regular_check.setChecked(user_data.get('is_regular', False))
         is_regular_layout.addWidget(is_regular_check)
@@ -361,8 +362,8 @@ class UserCurrencyTab(QWidget):
         
         # Кнопки
         button_layout = QHBoxLayout()
-        save_btn = QPushButton("Save")
-        cancel_btn = QPushButton("Cancel")
+        save_btn = QPushButton(tr("Save"))
+        cancel_btn = QPushButton(tr("Cancel"))
         button_layout.addWidget(save_btn)
         button_layout.addWidget(cancel_btn)
         layout.addLayout(button_layout)
@@ -396,8 +397,8 @@ class UserCurrencyTab(QWidget):
         
         reply = QMessageBox.question(
             self,
-            "Confirm Deletion",
-            f"Are you sure you want to remove user '{username}'?",
+            tr("Confirm Deletion"),
+            tr("Are you sure you want to remove user '{0}'?").format(username),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -425,7 +426,7 @@ class UserCurrencyTab(QWidget):
                 print(f"Error removing user {username}: {e}")
                 import traceback
                 traceback.print_exc()
-                QMessageBox.warning(self, "Error", f"Failed to remove user: {str(e)}")
+                QMessageBox.warning(self, tr("Error"), tr('Failed to remove user: {0}').format(str(e)))
                 return False
     
     def manual_save_users(self):
@@ -435,16 +436,16 @@ class UserCurrencyTab(QWidget):
                 # Явное сохранение по запросу пользователя всегда должно писать файл
                 success = self.currency_manager.save_users(force=True)
                 if success:
-                    QMessageBox.information(self, "Сохранение", "Данные пользователей успешно сохранены!")
+                    QMessageBox.information(self, tr("Saving"), tr("Viewers' data saved!"))
                     # Обновляем время последнего обновления
                     now = QDateTime.currentDateTime().toString("HH:mm:ss")
-                    self.last_update.setText(f"Last update: {now}")
+                    self.last_update.setText(tr('Last update: {0}').format(now))
                 else:
-                    QMessageBox.warning(self, "Предупреждение", "Не удалось сохранить данные пользователей.")
+                    QMessageBox.warning(self, tr("Warning"), tr("Could not save the viewers' data."))
             else:
-                QMessageBox.warning(self, "Ошибка", "Нет доступа к менеджеру валюты")
+                QMessageBox.warning(self, tr("Error"), tr("The currency manager is not available"))
         except Exception as e:
             print(f"Ошибка при сохранении пользователей: {e}")
             import traceback
             traceback.print_exc()
-            QMessageBox.critical(self, "Ошибка", f"Произошла ошибка при сохранении: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr('Error while saving: {0}').format(str(e)))

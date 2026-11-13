@@ -5,6 +5,7 @@ Python 3.8 compatible.
 """
 from core.sound_paths import (common_folder, find_missing, plan_from_folders,
                               plan_prefix_replace, plan_to_changes, remember_folder)
+from ui.i18n import tr
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ def make_relink_dialog(editor):
             self.editor = editor
             self.plan = []
             self.used_folder = None
-            self.setWindowTitle("Fix sound paths")
+            self.setWindowTitle(tr("Fix sound paths"))
             self.resize(900, 520)
             v = QtWidgets.QVBoxLayout(self)
 
@@ -35,21 +36,21 @@ def make_relink_dialog(editor):
 
             row = QtWidgets.QHBoxLayout()
             b_search = QtWidgets.QPushButton("Search in folder…")
-            b_search.setToolTip("Pick the folder the sounds were moved to. "
-                                "Sub-folders are searched too; files are matched by name.")
+            b_search.setToolTip(tr("Pick the folder the sounds were moved to. "
+                                "Sub-folders are searched too; files are matched by name."))
             b_search.clicked.connect(self.search_folder)
             row.addWidget(b_search)
             row.addSpacing(16)
             row.addWidget(QtWidgets.QLabel("Replace folder:"))
             self.old_prefix = QtWidgets.QLineEdit()
-            self.old_prefix.setPlaceholderText("old folder, e.g. D:/Sounds")
+            self.old_prefix.setPlaceholderText(tr("old folder, e.g. D:/Sounds"))
             row.addWidget(self.old_prefix, 1)
             row.addWidget(QtWidgets.QLabel("→"))
             self.new_prefix = QtWidgets.QLineEdit()
-            self.new_prefix.setPlaceholderText("new folder")
+            self.new_prefix.setPlaceholderText(tr("new folder"))
             row.addWidget(self.new_prefix, 1)
             b_browse = QtWidgets.QPushButton("…")
-            b_browse.setToolTip("Choose the new folder")
+            b_browse.setToolTip(tr("Choose the new folder"))
             b_browse.clicked.connect(self._browse_new_prefix)
             row.addWidget(b_browse)
             b_prev = QtWidgets.QPushButton("Preview")
@@ -58,7 +59,7 @@ def make_relink_dialog(editor):
             v.addLayout(row)
 
             self.table = QtWidgets.QTableWidget(0, 4)
-            self.table.setHorizontalHeaderLabels(["Command", "Field", "Old path", "New path"])
+            self.table.setHorizontalHeaderLabels([tr("Command"), tr("Field"), tr("Old path"), tr("New path")])
             hh = self.table.horizontalHeader()
             hh.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
             hh.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
@@ -86,12 +87,12 @@ def make_relink_dialog(editor):
         def show_missing(self):
             missing = find_missing(self.editor.commands)
             if not missing:
-                self.summary.setText("All sound files of all commands exist. Nothing to fix.")
+                self.summary.setText(tr("All sound files of all commands exist. Nothing to fix."))
             else:
                 self.summary.setText(
-                    "%d sound path(s) point to files that do not exist (moved or renamed folder?). "
+                    tr("%d sound path(s) point to files that do not exist (moved or renamed folder?). "
                     "Use “Search in folder…” to find them by name, or replace the old folder "
-                    "with the new one." % len(missing))
+                    "with the new one.") % len(missing))
                 self.old_prefix.setText(common_folder([m[2] for m in missing]))
             self.set_plan([{"row": r, "key": k, "old": p, "new": None, "ambiguous": False}
                            for r, k, p in missing])
@@ -112,8 +113,8 @@ def make_relink_dialog(editor):
                     it = QtWidgets.QTableWidgetItem(p["new"])
                     if p["ambiguous"]:
                         it.setForeground(amber)
-                        it.setToolTip("Several files with this name were found; "
-                                      "the one in the most similar folder was picked.")
+                        it.setToolTip(tr("Several files with this name were found; "
+                                      "the one in the most similar folder was picked."))
                 else:
                     it = QtWidgets.QTableWidgetItem("not found")
                     it.setForeground(red)
@@ -153,7 +154,7 @@ def make_relink_dialog(editor):
         def preview_prefix(self):
             old, new = self.old_prefix.text().strip(), self.new_prefix.text().strip()
             if not old or not new:
-                self.status.setText("Enter both the old and the new folder.")
+                self.status.setText(tr("Enter both the old and the new folder."))
                 return
             self.used_folder = new
             self.set_plan(plan_prefix_replace(self.editor.commands, old, new))

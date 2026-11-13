@@ -10,6 +10,7 @@ import json
 import webbrowser
 
 from core.version import APP_VERSION, is_newer
+from ui.i18n import tr
 
 class UpdateCheckerThread(QThread):
     """Thread for checking updates without blocking the UI"""
@@ -59,7 +60,7 @@ class UpdateDialog(QDialog):
     
     def __init__(self, current_version, new_version, download_url, release_notes, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Update Available")
+        self.setWindowTitle(tr("Update Available"))
         self.setModal(True)
         self.setMinimumSize(500, 400)
         self.download_url = download_url
@@ -68,18 +69,18 @@ class UpdateDialog(QDialog):
         self.setLayout(layout)
         
         # Title
-        title = QLabel(f"New version available: {new_version}")
+        title = QLabel(tr('New version available: {0}').format(new_version))
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2196F3;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
         # Current vs new version
-        version_info = QLabel(f"Current version: {current_version}\nNew version: {new_version}")
+        version_info = QLabel(tr('Current version: {0}\nNew version: {1}').format(current_version, new_version))
         version_info.setAlignment(Qt.AlignCenter)
         layout.addWidget(version_info)
         
         # Release notes
-        notes_label = QLabel("Release Notes:")
+        notes_label = QLabel(tr("Release Notes:"))
         notes_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
         layout.addWidget(notes_label)
         
@@ -92,7 +93,7 @@ class UpdateDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
         
-        download_btn = QPushButton("Download Update")
+        download_btn = QPushButton(tr("Download Update"))
         download_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50;
@@ -108,7 +109,7 @@ class UpdateDialog(QDialog):
         """)
         download_btn.clicked.connect(self.download_update)
         
-        later_btn = QPushButton("Later")
+        later_btn = QPushButton(tr("Later"))
         later_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f44336;
@@ -187,8 +188,8 @@ class UpdateChecker:
         if not self.silent:
             QMessageBox.information(
                 self.parent, 
-                "No Updates", 
-                f"You are running the latest version ({self.current_version})"
+                tr("No Updates"), 
+                tr('You are running the latest version ({0})').format(self.current_version)
             )
     
     def _on_error(self, error_message):
@@ -196,15 +197,15 @@ class UpdateChecker:
         if not self.silent:
             QMessageBox.warning(
                 self.parent, 
-                "Update Check Failed", 
-                f"Failed to check for updates:\n{error_message}"
+                tr("Update Check Failed"), 
+                tr('Failed to check for updates:\n{0}').format(error_message)
             )
     
     def _on_check_finished(self):
         """Handle when update check is finished (reset button state)"""
         if self.check_button and not self.silent:
             self.check_button.setEnabled(True)
-            self.check_button.setText("Check for Updates")
+            self.check_button.setText(tr("Check for Updates"))
 
 class AboutTab(QWidget):
     def __init__(self, parent=None):
@@ -223,12 +224,12 @@ class AboutTab(QWidget):
         
         # Theme switcher (Classic / Sidebar / Spreadsheet)
         theme_row = QHBoxLayout()
-        theme_label = QLabel("Theme:")
+        theme_label = QLabel(tr("Theme:"))
         theme_label.setStyleSheet("font-weight: 600;")
         self.theme_combo = QComboBox()
         from ui import theme as _theme_mod
         for _key in _theme_mod.THEMES:
-            self.theme_combo.addItem(_theme_mod.THEME_LABELS[_key], _key)
+            self.theme_combo.addItem(tr(_theme_mod.THEME_LABELS[_key]), _key)
         current_theme = getattr(self.parent, "theme", "classic") if self.parent is not None else "classic"
         for i in range(self.theme_combo.count()):
             if self.theme_combo.itemData(i) == current_theme:
@@ -246,15 +247,15 @@ class AboutTab(QWidget):
         
         # Add About Me tab
         about_me_widget = self.create_about_me_tab()
-        tab_widget.addTab(about_me_widget, "About Me")
+        tab_widget.addTab(about_me_widget, tr("About Me"))
         
         # Add Instructions tab
         instructions_widget = self.create_instructions_tab()
-        tab_widget.addTab(instructions_widget, "Instructions")
+        tab_widget.addTab(instructions_widget, tr("Instructions"))
         
         # Add Version Info tab
         version_widget = self.create_version_tab()
-        tab_widget.addTab(version_widget, "Version Info")
+        tab_widget.addTab(version_widget, tr("Version Info"))
 
     def _on_theme_changed(self, index):
         """Switch the application theme when the combo changes."""
@@ -269,7 +270,7 @@ class AboutTab(QWidget):
         widget.setLayout(layout)
         
         # Header
-        header = QLabel("About Developer")
+        header = QLabel(tr("About Developer"))
         header.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(16)
@@ -299,7 +300,7 @@ class AboutTab(QWidget):
         layout.addWidget(text_browser)
         
         # Add meme gallery
-        meme_group = QGroupBox("Meme Gallery")
+        meme_group = QGroupBox(tr("Meme Gallery"))
         meme_layout = QVBoxLayout()
         meme_group.setLayout(meme_layout)
         
@@ -321,7 +322,7 @@ class AboutTab(QWidget):
         meme_layout.addWidget(meme_scroll)
         
         # Vibe check label
-        vibe_label = QLabel("It's almost scary how good I am")
+        vibe_label = QLabel(tr("It's almost scary how good I am"))
         vibe_label.setAlignment(Qt.AlignCenter)
         vibe_font = QFont()
         vibe_font.setPointSize(14)
@@ -351,7 +352,7 @@ class AboutTab(QWidget):
             
             # Check if directory exists
             if not os.path.exists(memes_dir):
-                placeholder = QLabel("Meme directory not found! Images should be in 'memes' folder.")
+                placeholder = QLabel(tr("Meme directory not found! Images should be in 'memes' folder."))
                 placeholder.setAlignment(Qt.AlignCenter)
                 layout.addWidget(placeholder)
                 return
@@ -364,7 +365,7 @@ class AboutTab(QWidget):
             
             if not meme_files:
                 # Display message if no meme images found
-                placeholder = QLabel("No meme images found in 'memes' folder!")
+                placeholder = QLabel(tr("No meme images found in 'memes' folder!"))
                 placeholder.setAlignment(Qt.AlignCenter)
                 layout.addWidget(placeholder)
                 return
@@ -410,13 +411,13 @@ class AboutTab(QWidget):
                 layout.addLayout(meme_row)
             else:
                 # No images could be loaded
-                placeholder = QLabel("Could not load any meme images!")
+                placeholder = QLabel(tr("Could not load any meme images!"))
                 placeholder.setAlignment(Qt.AlignCenter)
                 layout.addWidget(placeholder)
                 
         except Exception as e:
             print(f"Error loading meme gallery: {e}")
-            placeholder = QLabel("Error loading meme gallery")
+            placeholder = QLabel(tr("Error loading meme gallery"))
             placeholder.setAlignment(Qt.AlignCenter)
             layout.addWidget(placeholder)
 
@@ -431,7 +432,7 @@ class AboutTab(QWidget):
         layout = QVBoxLayout(content_widget)
         
         # Header
-        header = QLabel("Instructions")
+        header = QLabel(tr("Instructions"))
         header.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(16)
@@ -482,7 +483,7 @@ class AboutTab(QWidget):
         widget.setLayout(layout)
         
         # Header
-        header = QLabel("Version Information")
+        header = QLabel(tr("Version Information"))
         header.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(16)
@@ -517,12 +518,12 @@ class AboutTab(QWidget):
         layout.addWidget(separator)
         
         # Update section
-        update_section = QGroupBox("Updates")
+        update_section = QGroupBox(tr("Updates"))
         update_layout = QVBoxLayout()
         update_section.setLayout(update_layout)
         
         # Update info label
-        update_info = QLabel("Check for updates from GitHub repository")
+        update_info = QLabel(tr("Check for updates from GitHub repository"))
         update_info.setAlignment(Qt.AlignCenter)
         update_layout.addWidget(update_info)
         
@@ -530,7 +531,7 @@ class AboutTab(QWidget):
         button_layout = QHBoxLayout()
         
         # Check for updates button
-        self.check_updates_btn = QPushButton("Check for Updates")
+        self.check_updates_btn = QPushButton(tr("Check for Updates"))
         self.check_updates_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
@@ -557,7 +558,7 @@ class AboutTab(QWidget):
         self.update_checker.set_check_button(self.check_updates_btn)
         
         # Open GitHub button
-        github_btn = QPushButton("Open GitHub Repository")
+        github_btn = QPushButton(tr("Open GitHub Repository"))
         github_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50;
@@ -587,7 +588,7 @@ class AboutTab(QWidget):
     def check_for_updates(self):
         """Check for updates from GitHub"""
         self.check_updates_btn.setEnabled(False)
-        self.check_updates_btn.setText("Checking...")
+        self.check_updates_btn.setText(tr("Checking..."))
         
         # Start checking for updates
         self.update_checker.check_for_updates(silent=False)

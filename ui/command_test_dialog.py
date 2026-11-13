@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLi
 from core import permissions
 from core.command_test import simulate
 from core.currency_manager import CurrencyManager
+from ui.i18n import tr
 
 
 class CommandTestDialog(QDialog):
@@ -18,7 +19,7 @@ class CommandTestDialog(QDialog):
         super(CommandTestDialog, self).__init__(editor)
         self.editor = editor
         self.cmd = editor.commands[row]
-        self.setWindowTitle("Test %s" % self.cmd.get("Command", ""))
+        self.setWindowTitle(tr("Test %s") % self.cmd.get("Command", ""))
         self.resize(520, 420)
         v = QVBoxLayout(self)
         form = QFormLayout()
@@ -30,15 +31,15 @@ class CommandTestDialog(QDialog):
         self.points.setDecimals(2)
         self.points.setRange(0, CurrencyManager.MAX_BALANCE)
         self.points.setValue(1000)
-        form.addRow("Message in chat", self.message)
-        form.addRow("Viewer", self.user)
-        form.addRow("Viewer is", self.role)
-        form.addRow("Viewer's points", self.points)
+        form.addRow(tr("Message in chat"), self.message)
+        form.addRow(tr("Viewer"), self.user)
+        form.addRow(tr("Viewer is"), self.role)
+        form.addRow(tr("Viewer's points"), self.points)
         v.addLayout(form)
         self.result = QTextBrowser()
         v.addWidget(self.result, 1)
         row_b = QHBoxLayout()
-        self.play_btn = QPushButton("Play the sound")
+        self.play_btn = QPushButton(tr("Play the sound"))
         self.play_btn.clicked.connect(self._play)
         row_b.addWidget(self.play_btn)
         row_b.addStretch(1)

@@ -11,14 +11,15 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLa
                              QAbstractItemView)
 
 from core import variables
+from ui.i18n import tr, N_
 
-PERIODS = (("Today", 1), ("Last 7 days", 7), ("Last 30 days", 30), ("Last 90 days", 90))
+PERIODS = ((N_("Today"), 1), (N_("Last 7 days"), 7), (N_("Last 30 days"), 30), (N_("Last 90 days"), 90))
 TOP = 10
 
 
 def _table(headers):
     t = QTableWidget(0, len(headers))
-    t.setHorizontalHeaderLabels(headers)
+    t.setHorizontalHeaderLabels([tr(h) for h in headers])
     t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
     for c in range(1, len(headers)):
         t.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
@@ -44,28 +45,28 @@ class StatsTab(QWidget):
         self.editor = editor
         v = QVBoxLayout(self)
         top = QHBoxLayout()
-        top.addWidget(QLabel("Period:"))
+        top.addWidget(QLabel(tr("Period:")))
         self.period = QComboBox()
         for label, days in PERIODS:
-            self.period.addItem(label, days)
+            self.period.addItem(tr(label), days)
         self.period.setCurrentIndex(1)
         self.period.currentIndexChanged.connect(self.refresh)
         top.addWidget(self.period)
         top.addStretch(1)
-        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn = QPushButton(tr("Refresh"))
         self.refresh_btn.clicked.connect(self.refresh)
         top.addWidget(self.refresh_btn)
         v.addLayout(top)
 
-        eco = QGroupBox("Points")
+        eco = QGroupBox(tr("Points"))
         g = QGridLayout(eco)
         self.values = {}
-        items = (("earned", "Earned by watching"), ("rewards", "Raid / sub rewards"),
-                 ("spent", "Spent on commands"), ("given", "Given between viewers"),
-                 ("circulation", "Held by viewers now"), ("viewers", "Viewers in the system"),
-                 ("active", "Chatting now (10 min)"))
+        items = (("earned", N_("Earned by watching")), ("rewards", N_("Raid / sub rewards")),
+                 ("spent", N_("Spent on commands")), ("given", N_("Given between viewers")),
+                 ("circulation", N_("Held by viewers now")), ("viewers", N_("Viewers in the system")),
+                 ("active", N_("Chatting now (10 min)")))
         for i, (key, label) in enumerate(items):
-            g.addWidget(QLabel(label), i // 4 * 2, i % 4)
+            g.addWidget(QLabel(tr(label)), i // 4 * 2, i % 4)
             val = QLabel("-")
             val.setObjectName("statValue")
             f = val.font()
@@ -77,19 +78,19 @@ class StatsTab(QWidget):
         v.addWidget(eco)
 
         tables = QHBoxLayout()
-        box = QGroupBox("Commands")
+        box = QGroupBox(tr("Commands"))
         bl = QVBoxLayout(box)
-        self.commands_table = _table(["Command", "In the period", "All time"])
+        self.commands_table = _table([N_("Command"), N_("In the period"), N_("All time")])
         bl.addWidget(self.commands_table)
         tables.addWidget(box, 2)
-        box = QGroupBox("Top by points")
+        box = QGroupBox(tr("Top by points"))
         bl = QVBoxLayout(box)
-        self.points_table = _table(["Viewer", "Points"])
+        self.points_table = _table([N_("Viewer"), N_("Points")])
         bl.addWidget(self.points_table)
         tables.addWidget(box, 1)
-        box = QGroupBox("Top by watch time")
+        box = QGroupBox(tr("Top by watch time"))
         bl = QVBoxLayout(box)
-        self.hours_table = _table(["Viewer", "Hours"])
+        self.hours_table = _table([N_("Viewer"), N_("Hours")])
         bl.addWidget(self.hours_table)
         tables.addWidget(box, 1)
         v.addLayout(tables, 1)

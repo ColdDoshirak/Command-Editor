@@ -19,6 +19,7 @@ from ui.theme.widgets import (LogoBadge, MasterDelegate, ToggleSwitch, _ComboDel
                               _overflow_toolbar, _shrinkable, _toolbar_stretch, _ui_font,
                               cmd_volume, connection_state, group_pill_kind, make_icon,
                               pill_colors, rgba_color)
+from ui.i18n import tr, N_
 
 
 class CommandDetailEditor(QScrollArea):
@@ -57,7 +58,7 @@ class CommandDetailEditor(QScrollArea):
         self.populate(-1)
 
     def _label(self, text):
-        lab = QLabel(text)
+        lab = QLabel(tr(text))
         lab.setObjectName("fieldLabel")
         return lab
 
@@ -82,24 +83,24 @@ class CommandDetailEditor(QScrollArea):
         head.addWidget(ico)
         ttl = QVBoxLayout()
         ttl.setSpacing(2)
-        self.d_title = QLabel("!command")
+        self.d_title = QLabel(tr("!command"))
         self.d_title.setObjectName("dTitle")
         self.d_sub = QLabel("")
         self.d_sub.setObjectName("dSub")
         ttl.addWidget(self.d_title)
         ttl.addWidget(self.d_sub)
         head.addLayout(ttl, 1)
-        en_lab = QLabel("Enabled")
+        en_lab = QLabel(tr("Enabled"))
         en_lab.setObjectName("switchDesc")
         head.addWidget(en_lab)
         self.d_enabled = ToggleSwitch(self.pal)
-        self.d_enabled.setToolTip("Enable / disable this command")
+        self.d_enabled.setToolTip(tr("Enable / disable this command"))
         self.d_enabled.toggled.connect(lambda on: self._edit("Enabled", bool(on), now=True))
         head.addWidget(self.d_enabled)
         self.d_delete = QPushButton()
         self.d_delete.setObjectName("dangerBtn")
         self.d_delete.setIcon(make_icon("trash", self.pal["red"]))
-        self.d_delete.setToolTip("Delete this command")
+        self.d_delete.setToolTip(tr("Delete this command"))
         self.d_delete.clicked.connect(self._remove)
         head.addWidget(self.d_delete)
         v.addLayout(head)
@@ -117,42 +118,42 @@ class CommandDetailEditor(QScrollArea):
         self.f_group = QComboBox()
         self.f_group.setEditable(True)
         self.f_group.setInsertPolicy(QComboBox.NoInsert)
-        self.f_group.setToolTip("Commands of a group share queue / channel settings (Group Settings tab)")
+        self.f_group.setToolTip(tr("Commands of a group share queue / channel settings (Group Settings tab)"))
         self.f_group.editTextChanged.connect(lambda t: self._edit("Group", t))
-        pairs += [("Command", self.f_command), ("Group", self.f_group)]
+        pairs += [(N_("Command"), self.f_command), (N_("Group"), self.f_group)]
 
         self.f_perm = QComboBox()
         self.f_perm.addItems(PERMISSIONS)
         self.f_perm.currentTextChanged.connect(lambda t: self._edit("Permission", t, now=True))
         self.f_usage = QComboBox()
         self.f_usage.addItems(USAGES)
-        self.f_usage.setToolTip("SC = Streamer.bot/SC style, Chat = chat only, Both")
+        self.f_usage.setToolTip(tr("SC = Streamer.bot/SC style, Chat = chat only, Both"))
         self.f_usage.currentTextChanged.connect(lambda t: self._edit("Usage", t, now=True))
-        pairs += [("Permission", self.f_perm), ("Usage", self.f_usage)]
+        pairs += [(N_("Permission"), self.f_perm), (N_("Usage"), self.f_usage)]
 
         self.f_cd = QSpinBox()
         self.f_cd.setRange(0, 100000)
         self.f_cd.setSuffix(" min")
-        self.f_cd.setSpecialValueText("none")
-        self.f_cd.setToolTip("Global cooldown in MINUTES")
+        self.f_cd.setSpecialValueText(tr("none"))
+        self.f_cd.setToolTip(tr("Global cooldown in MINUTES"))
         self.f_cd.valueChanged.connect(lambda val: self._edit("Cooldown", val))
         self.f_ucd = QSpinBox()
         self.f_ucd.setRange(0, 100000)
         self.f_ucd.setSuffix(" min")
-        self.f_ucd.setSpecialValueText("none")
-        self.f_ucd.setToolTip("Per-viewer cooldown in MINUTES")
+        self.f_ucd.setSpecialValueText(tr("none"))
+        self.f_ucd.setToolTip(tr("Per-viewer cooldown in MINUTES"))
         self.f_ucd.valueChanged.connect(lambda val: self._edit("UserCooldown", val))
-        pairs += [("Cooldown", self.f_cd), ("User cooldown", self.f_ucd)]
+        pairs += [(N_("Cooldown"), self.f_cd), (N_("User cooldown"), self.f_ucd)]
 
         self.f_cost = QSpinBox()
         self.f_cost.setRange(0, 10000000)
-        self.f_cost.setSpecialValueText("free")
+        self.f_cost.setSpecialValueText(tr("free"))
         self.f_cost.valueChanged.connect(lambda val: self._edit("Cost", val))
         self.f_count = QSpinBox()
         self.f_count.setRange(0, 100000000)
-        self.f_count.setToolTip("How many times the command was used")
+        self.f_count.setToolTip(tr("How many times the command was used"))
         self.f_count.valueChanged.connect(lambda val: self._edit("Count", val))
-        pairs += [("Cost (points)", self.f_cost), ("Used", self.f_count)]
+        pairs += [(N_("Cost (points)"), self.f_cost), (N_("Used"), self.f_count)]
 
         for i, (text, widget) in enumerate(pairs):
             r, c = (i // cols) * 2, i % cols
@@ -161,15 +162,15 @@ class CommandDetailEditor(QScrollArea):
         last = ((len(pairs) + cols - 1) // cols) * 2
 
         self.f_info = QLineEdit()
-        self.f_info.setPlaceholderText("Description for yourself / moderators")
+        self.f_info.setPlaceholderText(tr("Description for yourself / moderators"))
         self.f_info.textChanged.connect(lambda t: self._edit("Info", t))
-        g.addWidget(self._label("Info"), last, 0, 1, cols)
+        g.addWidget(self._label(tr("Info")), last, 0, 1, cols)
         g.addWidget(self.f_info, last + 1, 0, 1, cols)
         self.f_aliases = QLineEdit()
-        self.f_aliases.setPlaceholderText("!music, !tune")
-        self.f_aliases.setToolTip("Other names for this command, e.g. '!music, !tune'. They share its cooldown, cost and count. Responses may use {user} {target} {args} {1}..{9} {count} {points} {currency} {random:1-100}")
+        self.f_aliases.setPlaceholderText(tr("!music, !tune"))
+        self.f_aliases.setToolTip(tr("Other names for this command, e.g. '!music, !tune'. They share its cooldown, cost and count. Responses may use {user} {target} {args} {1}..{9} {count} {points} {currency} {random:1-100}"))
         self.f_aliases.textChanged.connect(lambda t: self._edit("Aliases", t))
-        g.addWidget(self._label("Aliases"), last + 2, 0, 1, cols)
+        g.addWidget(self._label(tr("Aliases")), last + 2, 0, 1, cols)
         g.addWidget(self.f_aliases, last + 3, 0, 1, cols)
 
         # Narrow (side panel): everything in one column. Wide (bottom
@@ -190,35 +191,35 @@ class CommandDetailEditor(QScrollArea):
             v.addLayout(g)
 
         # Sound
-        v.addWidget(self._label("Sound file"))
+        v.addWidget(self._label(tr("Sound file")))
         srow = QHBoxLayout()
         srow.setSpacing(8)
         self.f_sound = QLineEdit()
-        self.f_sound.setPlaceholderText("No sound")
+        self.f_sound.setPlaceholderText(tr("No sound"))
         self.f_sound.textChanged.connect(lambda t: self._edit("SoundFile", t))
         self.f_sound.textChanged.connect(self._mark_missing)
         srow.addWidget(self.f_sound, 1)
         b = QPushButton()
         b.setIcon(make_icon("folder", self.pal["text2"]))
-        b.setToolTip("Browse…")
+        b.setToolTip(tr("Browse…"))
         b.clicked.connect(lambda: self.editor.browse_file(self.f_sound))
         srow.addWidget(b)
         self.browse_btn = b
-        self.folder_btn = QPushButton("Folder…")
-        self.folder_btn.setToolTip("A folder: a random sound from it plays each time")
+        self.folder_btn = QPushButton(tr("Folder…"))
+        self.folder_btn.setToolTip(tr("A folder: a random sound from it plays each time"))
         self.folder_btn.clicked.connect(lambda: self.editor.browse_folder(self.f_sound))
         srow.addWidget(self.folder_btn)
         self.play_btn = QPushButton()
         self.play_btn.setIcon(make_icon("play", self.pal["accent"]))
-        self.play_btn.setToolTip("Preview sound (click again to stop)")
+        self.play_btn.setToolTip(tr("Preview sound (click again to stop)"))
         self.play_btn.clicked.connect(self._preview)
         srow.addWidget(self.play_btn)
-        self.test_btn = QPushButton("Test…")
-        self.test_btn.setToolTip("What happens if a viewer writes it - without Twitch")
+        self.test_btn = QPushButton(tr("Test…"))
+        self.test_btn.setToolTip(tr("What happens if a viewer writes it - without Twitch"))
         self.test_btn.clicked.connect(self._test)
         srow.addWidget(self.test_btn)
         v.addLayout(srow)
-        self.missing_lab = QLabel("File not found (moved?). Use “Fix sound paths” in the file menu.")
+        self.missing_lab = QLabel(tr("File not found (moved?). Use “Fix sound paths” in the file menu."))
         self.missing_lab.setStyleSheet("color: %s; font-size: 11px;" % self.pal["red"])
         self.missing_lab.setWordWrap(True)
         self.missing_lab.hide()
@@ -226,7 +227,7 @@ class CommandDetailEditor(QScrollArea):
 
         vrow = QHBoxLayout()
         vrow.setSpacing(10)
-        vrow.addWidget(self._label("Volume"))
+        vrow.addWidget(self._label(tr("Volume")))
         self.f_volume = QSlider(Qt.Horizontal)
         self.f_volume.setRange(0, 100)
         self.f_volume.valueChanged.connect(self._on_volume)
@@ -236,7 +237,7 @@ class CommandDetailEditor(QScrollArea):
         vrow.addWidget(self.f_volume_lab)
         v.addLayout(vrow)
 
-        v.addWidget(self._label("FK sound file (fallback)"))
+        v.addWidget(self._label(tr("FK sound file (fallback)")))
         frow = QHBoxLayout()
         frow.setSpacing(8)
         self.f_fk = QLineEdit()
@@ -244,15 +245,15 @@ class CommandDetailEditor(QScrollArea):
         frow.addWidget(self.f_fk, 1)
         b2 = QPushButton()
         b2.setIcon(make_icon("folder", self.pal["text2"]))
-        b2.setToolTip("Browse…")
+        b2.setToolTip(tr("Browse…"))
         b2.clicked.connect(lambda: self.editor.browse_file(self.f_fk))
         frow.addWidget(b2)
         v.addLayout(frow)
 
         rl = QHBoxLayout()
-        rl.addWidget(self._label("Response"))
+        rl.addWidget(self._label(tr("Response")))
         rl.addStretch(1)
-        rh = QLabel("{user} = viewer · empty line = pause · each line = message")
+        rh = QLabel(tr("{user} = viewer · empty line = pause · each line = message"))
         rh.setObjectName("switchDesc")
         rl.addWidget(rh)
         v.addLayout(rl)
@@ -298,7 +299,7 @@ class CommandDetailEditor(QScrollArea):
             self.on_changed(self.row)
 
     def _on_volume(self, val):
-        self.f_volume_lab.setText("%d%%" % val)
+        self.f_volume_lab.setText(tr("%d%%") % val)
         self._edit("Volume", int(val))
 
     def _mark_missing(self, text):
@@ -347,8 +348,8 @@ class CommandDetailEditor(QScrollArea):
             w.setEnabled(ok)
         self.row = row if ok else -1
         if not ok:
-            self.d_title.setText("No command selected")
-            self.d_sub.setText("Select a row or create one with + New")
+            self.d_title.setText(tr("No command selected"))
+            self.d_sub.setText(tr("Select a row or create one with + New"))
             self.missing_lab.hide()
             return
         cmd = self.commands[row]
@@ -374,7 +375,7 @@ class CommandDetailEditor(QScrollArea):
             self.f_fk.setText(str(cmd.get("FKSoundFile", "") or ""))
             vol = cmd_volume(cmd)
             self.f_volume.setValue(vol)
-            self.f_volume_lab.setText("%d%%" % vol)
+            self.f_volume_lab.setText(tr("%d%%") % vol)
             self.f_response.setPlainText(cmd.get("Response", ""))
             self.d_enabled.setChecked(bool(cmd.get("Enabled", True)))
         finally:
@@ -430,7 +431,7 @@ class SidebarCommandsView(QWidget):
         h = QHBoxLayout(bar)
         h.setContentsMargins(18, 0, 18, 0)
         h.setSpacing(10)
-        title = QLabel("Commands")
+        title = QLabel(tr("Commands"))
         title.setObjectName("topTitle")
         h.addWidget(title)
         self.crumb = QLabel("")
@@ -439,21 +440,21 @@ class SidebarCommandsView(QWidget):
         h.addStretch(1)
         self.search_edit = QLineEdit()
         self.search_edit.setObjectName("searchBox")
-        self.search_edit.setPlaceholderText("Search name, group, response…")
+        self.search_edit.setPlaceholderText(tr("Search name, group, response…"))
         self.search_edit.setClearButtonEnabled(True)
         _shrinkable(self.search_edit, 240)
         self.search_edit.textChanged.connect(self._on_search)
         h.addWidget(self.search_edit, 3)
         more = QPushButton()
         more.setIcon(make_icon("dots", self.pal["text2"]))
-        more.setToolTip("Load / save / legacy export / auto-assign / fix sound paths")
+        more.setToolTip(tr("Load / save / legacy export / auto-assign / fix sound paths"))
         more.setMenu(_more_menu(more, self.editor))
         h.addWidget(more)
-        save = QPushButton("Save")
-        save.setToolTip("Save commands to file")
+        save = QPushButton(tr("Save"))
+        save.setToolTip(tr("Save commands to file"))
         save.clicked.connect(self.on_save)
         h.addWidget(save)
-        new = QPushButton("+ New")
+        new = QPushButton(tr("+ New"))
         new.setObjectName("primaryBtn")
         new.clicked.connect(self._add)
         h.addWidget(new)
@@ -469,7 +470,7 @@ class SidebarCommandsView(QWidget):
         v.setSpacing(0)
         head = QHBoxLayout()
         head.setContentsMargins(14, 12, 14, 12)
-        t = QLabel("All commands")
+        t = QLabel(tr("All commands"))
         t.setObjectName("mheadTitle")
         self.hint = QLabel("")
         self.hint.setObjectName("mheadHint")
@@ -488,7 +489,7 @@ class SidebarCommandsView(QWidget):
         self.master_list.setItemDelegate(MasterDelegate(self.pal, self.master_list))
         self.master_list.itemSelectionChanged.connect(self._on_master_selected)
         v.addWidget(self.master_list, 1)
-        self.empty_hint = QLabel("No commands match the search.")
+        self.empty_hint = QLabel(tr("No commands match the search."))
         self.empty_hint.setAlignment(Qt.AlignCenter)
         self.empty_hint.setObjectName("statusLabel")
         self.empty_hint.hide()
@@ -559,7 +560,7 @@ class SidebarCommandsView(QWidget):
             self.master_list.addItem(item)
             shown += 1
         total = len(self.commands)
-        self.hint.setText("%d total" % total if shown == total else "%d of %d" % (shown, total))
+        self.hint.setText(tr("%d total") % total if shown == total else tr("%d of %d") % (shown, total))
         self.empty_hint.setVisible(shown == 0 and total > 0)
         self.master_list.blockSignals(False)
 
@@ -610,7 +611,7 @@ class SidebarCommandsView(QWidget):
         if self._row < 0:
             self.crumb.setText("")
             return
-        self.crumb.setText("/ %s" % (self.commands[self._row].get("Group", "") or "GENERAL"))
+        self.crumb.setText(tr("/ %s") % (self.commands[self._row].get("Group", "") or "GENERAL"))
 
     def _populate_detail(self, row):
         self.detail.populate(row)
@@ -627,19 +628,19 @@ class SpreadsheetCommandsView(QWidget):
     # (header, command key, width)
     COLS = [
         ("#", None, 44),
-        ("Command", "Command", 150),
-        ("Group", "Group", 100),
-        ("Permission", "Permission", 96),
-        ("Usage", "Usage", 64),
-        ("CD", "Cooldown", 64),
-        ("User CD", "UserCooldown", 70),
-        ("Cost", "Cost", 64),
-        ("Vol", "Volume", 60),
-        ("Sound", "SoundFile", 170),
-        ("Response", "Response", 220),
-        ("Info", "Info", 140),
-        ("Used", "Count", 56),
-        ("On", "Enabled", 48),
+        (N_("Command"), "Command", 150),
+        (N_("Group"), "Group", 100),
+        (N_("Permission"), "Permission", 96),
+        (N_("Usage"), "Usage", 64),
+        (N_("CD"), "Cooldown", 64),
+        (N_("User CD"), "UserCooldown", 70),
+        (N_("Cost"), "Cost", 64),
+        (N_("Vol"), "Volume", 60),
+        (N_("Sound"), "SoundFile", 170),
+        (N_("Response"), "Response", 220),
+        (N_("Info"), "Info", 140),
+        (N_("Used"), "Count", 56),
+        (N_("On"), "Enabled", 48),
     ]
     INT_KEYS = ("Cooldown", "UserCooldown", "Cost", "Count")
 
@@ -705,20 +706,20 @@ class SpreadsheetCommandsView(QWidget):
         h.setContentsMargins(18, 0, 18, 0)
         h.setSpacing(12)
         h.addWidget(LogoBadge(self.pal))
-        name = QLabel("Command Editor")
+        name = QLabel(tr("Command Editor"))
         name.setObjectName("brandName")
         h.addWidget(name)
         h.addStretch(1)
         self.search_edit = QLineEdit()
         self.search_edit.setObjectName("searchBox")
-        self.search_edit.setPlaceholderText("Filter rows…")
+        self.search_edit.setPlaceholderText(tr("Filter rows…"))
         self.search_edit.setClearButtonEnabled(True)
         _shrinkable(self.search_edit, 220)
         self.search_edit.textChanged.connect(lambda _t: self.refresh())
         h.addWidget(self.search_edit, 3)
-        save = QPushButton("Save File")
+        save = QPushButton(tr("Save File"))
         save.clicked.connect(self.on_save)
-        new = QPushButton("+ Row")
+        new = QPushButton(tr("+ Row"))
         new.setObjectName("primaryBtn")
         new.clicked.connect(self._add)
         h.addWidget(save)
@@ -736,12 +737,12 @@ class SpreadsheetCommandsView(QWidget):
     def _build_toolbar(self):
         bar = _overflow_toolbar(44)
         h = bar  # QToolBar.addWidget, same calls as the old QHBoxLayout
-        h.addWidget(self._tool("+ Insert", self._add))
-        self.del_btn = self._tool("Delete", self._remove, "Delete selected row")
+        h.addWidget(self._tool(tr("+ Insert"), self._add))
+        self.del_btn = self._tool(tr("Delete"), self._remove, tr("Delete selected row"))
         h.addWidget(self.del_btn)
-        h.addWidget(self._tool("Load", self.on_load))
-        h.addWidget(self._tool("Save", self.on_save))
-        more = QPushButton("More ▾")
+        h.addWidget(self._tool(tr("Load"), self.on_load))
+        h.addWidget(self._tool(tr("Save"), self.on_save))
+        more = QPushButton(tr("More ▾"))
         more.setObjectName("toolBtn")
         more.setMenu(_more_menu(more, self.editor))
         h.addWidget(more)
@@ -749,21 +750,21 @@ class SpreadsheetCommandsView(QWidget):
         sep.setFixedSize(1, 22)
         sep.setStyleSheet("background:%s;" % self.pal["border"])
         h.addWidget(sep)
-        self.browse_btn = self._tool("Sound…", self._browse, "Choose a sound file for the selected row")
-        self.play_btn = self._tool("▶ Play", self._preview, "Preview the selected row's sound")
-        self.test_btn = self._tool("Test…", self._test, "What happens if a viewer writes it - without Twitch")
-        self.resp_btn = self._tool("Edit response…", self._edit_response,
-                                   "Multi-line response editor (or double-click the Response cell)")
+        self.browse_btn = self._tool(tr("Sound…"), self._browse, tr("Choose a sound file for the selected row"))
+        self.play_btn = self._tool(tr("▶ Play"), self._preview, tr("Preview the selected row's sound"))
+        self.test_btn = self._tool(tr("Test…"), self._test, tr("What happens if a viewer writes it - without Twitch"))
+        self.resp_btn = self._tool(tr("Edit response…"), self._edit_response,
+                                   tr("Multi-line response editor (or double-click the Response cell)"))
         h.addWidget(self.browse_btn)
         h.addWidget(self.play_btn)
         h.addWidget(self.test_btn)
         h.addWidget(self.resp_btn)
         _toolbar_stretch(bar)
-        self.details_btn = self._tool("Details ▾", self._toggle_details,
-                                      "Show / hide the editor with all fields of the selected row")
+        self.details_btn = self._tool(tr("Details ▾"), self._toggle_details,
+                                      tr("Show / hide the editor with all fields of the selected row"))
         self.details_btn.setCheckable(True)
         h.addWidget(self.details_btn)
-        self.count_label = QLabel("0 rows")
+        self.count_label = QLabel(tr("0 rows"))
         self.count_label.setObjectName("countLabel")
         h.addWidget(self.count_label)
         return bar
@@ -772,7 +773,7 @@ class SpreadsheetCommandsView(QWidget):
         self.dense = QTableWidget()
         self.dense.setObjectName("denseTable")
         self.dense.setColumnCount(len(self.COLS))
-        self.dense.setHorizontalHeaderLabels([c[0] for c in self.COLS])
+        self.dense.setHorizontalHeaderLabels([tr(c[0]) for c in self.COLS])
         tips = {"CD": "Global cooldown, minutes", "User CD": "Per-viewer cooldown, minutes",
                 "Vol": "Volume 0-100%", "Used": "Times used", "On": "Enabled",
                 "Response": "Double-click to edit (multi-line)"}
@@ -812,11 +813,11 @@ class SpreadsheetCommandsView(QWidget):
         self.file_label = QLabel("")
         self.file_label.setObjectName("statusLabel")
         h.addWidget(self.file_label)
-        self.status_label = QLabel("ready")
+        self.status_label = QLabel(tr("ready"))
         self.status_label.setObjectName("statusLabel")
         h.addWidget(self.status_label)
         h.addStretch(1)
-        hint = QLabel("Double-click a cell to edit · Del deletes row")
+        hint = QLabel(tr("Double-click a cell to edit · Del deletes row"))
         hint.setObjectName("statusLabel")
         h.addWidget(hint)
         self._update_conn()
@@ -852,7 +853,7 @@ class SpreadsheetCommandsView(QWidget):
         self.conn_label.setText("●  " + text)
         self.conn_label.setStyleSheet("color: %s; font-size: 11px;" % self.pal[key])
         cur = getattr(self.editor, "current_file", None)
-        self.file_label.setText(os.path.basename(cur) if cur else "commands.json")
+        self.file_label.setText(os.path.basename(cur) if cur else tr("commands.json"))
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete and self.dense.hasFocus() and self.dense.state() != QAbstractItemView.EditingState:
@@ -879,7 +880,7 @@ class SpreadsheetCommandsView(QWidget):
             shown += 1
         self._guard = False
         total = len(self.commands)
-        self.count_label.setText("%d rows" % total if shown == total else "%d of %d rows" % (shown, total))
+        self.count_label.setText(tr("%d rows") % total if shown == total else tr("%d of %d rows") % (shown, total))
         if keep is not None:
             self.select_from_table(keep)
         self._update_actions()
@@ -1009,9 +1010,9 @@ class SpreadsheetCommandsView(QWidget):
             return
         cmd = self.commands[idx]
         text, ok = QInputDialog.getMultiLineText(
-            self, "Response for %s" % cmd.get("Command", ""),
-            "Each line is sent as a separate message. {user} = viewer name.\n"
-            "An empty line adds a short pause.", cmd.get("Response", ""))
+            self, tr("Response for %s") % cmd.get("Command", ""),
+            tr("Each line is sent as a separate message. {user} = viewer name.\n"
+            "An empty line adds a short pause."), cmd.get("Response", ""))
         if ok:
             self._apply(idx, {"Response": text})
             self.refresh()
@@ -1071,7 +1072,7 @@ class SpreadsheetCommandsView(QWidget):
         self._guard = True
         self.table.selectRow(idx)
         self._guard = False
-        self.status_label.setText("row %d · %s" % (idx + 1, self.commands[idx].get("Command", "")))
+        self.status_label.setText(tr("row %d · %s") % (idx + 1, self.commands[idx].get("Command", "")))
 
     def highlight_tab(self, idx):
         pass
@@ -1088,4 +1089,4 @@ class SpreadsheetCommandsView(QWidget):
         self._update_actions()
         self._sync_detail()
         if 0 <= row < len(self.commands):
-            self.status_label.setText("row %d · %s" % (row + 1, self.commands[row].get("Command", "")))
+            self.status_label.setText(tr("row %d · %s") % (row + 1, self.commands[row].get("Command", "")))

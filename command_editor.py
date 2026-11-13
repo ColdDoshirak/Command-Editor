@@ -25,6 +25,7 @@ from core import paths
 from core.commands import CommandRepository
 from ui.backups_tab import HistoryTab, FullBackupsTab
 from ui.timers_tab import TimersTab
+from ui import i18n
 from ui.stats_tab import StatsTab
 from core.trash import CommandTrash
 from bot.audio import SoundCache, SoundPreview, ensure_channels, PREVIEW_CHANNEL
@@ -34,6 +35,7 @@ from ui.classic_commands import ClassicCommandsMixin
 from ui.hotkeys import GlobalHotkeys, ACTIONS as HOTKEY_ACTIONS, DEFAULTS as HOTKEY_DEFAULTS
 from core.overlay import OverlayServer, snapshot_from_bot, RECENT_MAX as OVERLAY_RECENT
 from core.overlay_page import PAGE as OVERLAY_PAGE
+from ui.i18n import tr, N_
 
 # регистрируем QTextCursor для передачи в сигналах
 QMetaType.type("QTextCursor")
@@ -46,7 +48,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         pygame.mixer.init()
 
         super().__init__()
-        self.setWindowTitle("Command Editor")
+        self.setWindowTitle(tr("Command Editor"))
         self.setGeometry(100, 100, 1200, 800)
         
         # Старые версии писали часть данных в текущую рабочую папку.
@@ -60,6 +62,8 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
 
         # Initialize config manager
         self.config_manager = ConfigManager()
+        # язык интерфейса (ui/i18n.py) - до создания виджетов
+        i18n.set_language(i18n.resolve(self.config_manager.get_language()))
 
         # Лог работы программы: command_editor.log рядом с config.json.
         # Перезаписывается при каждом запуске, ограничен по размеру,
@@ -125,14 +129,14 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         self.history_manager = HistoryManager(max_backups=self.config_manager.get_max_backups())
         
         # Add tabs to tab widget
-        self.tab_widget.addTab(main_tab, "Commands")
+        self.tab_widget.addTab(main_tab, tr("Commands"))
 
         # Add system commands tab right after Commands
         self.sys_commands_tab = SysCommandsTab(parent=self)
-        self.tab_widget.addTab(self.sys_commands_tab, "Sys.Commands")
+        self.tab_widget.addTab(self.sys_commands_tab, tr("Sys.Commands"))
 
         self.twitch_tab = TwitchTab(parent=self, commands_data=self.commands, config_manager=self.config_manager)
-        self.tab_widget.addTab(self.twitch_tab, "Twitch")
+        self.tab_widget.addTab(self.twitch_tab, tr("Twitch"))
 
 
         # Add tabs for currency management
@@ -142,40 +146,40 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
             print("Currency settings loaded in CommandEditor")
 
         self.currency_tab = CurrencyTab(parent=self)
-        self.tab_widget.addTab(self.currency_tab, "Currency Settings")
+        self.tab_widget.addTab(self.currency_tab, tr("Currency Settings"))
         self.user_currency_tab = UserCurrencyTab(parent=self)
-        self.tab_widget.addTab(self.user_currency_tab, "Currency Users")
+        self.tab_widget.addTab(self.user_currency_tab, tr("Currency Users"))
         self.ranks_tab = RanksTab(parent=self)
-        self.tab_widget.addTab(self.ranks_tab, "Ranks")
+        self.tab_widget.addTab(self.ranks_tab, tr("Ranks"))
         self.ranks_tab.load_ranks()
 
         # Add Group Settings tab
         self.group_settings_tab = GroupSettingsTab(parent=self)
-        self.tab_widget.addTab(self.group_settings_tab, "Group Settings")
+        self.tab_widget.addTab(self.group_settings_tab, tr("Group Settings"))
 
         # Add Queue Control tab (live queue management)
         self.queue_control_tab = QueueControlTab(parent=self)
-        self.tab_widget.addTab(self.queue_control_tab, "Queue Control")
+        self.tab_widget.addTab(self.queue_control_tab, tr("Queue Control"))
 
         self.about_tab = AboutTab(parent=self)
-        self.tab_widget.addTab(self.about_tab, "About")
+        self.tab_widget.addTab(self.about_tab, tr("About"))
         self.history_tab = HistoryTab(self)
-        self.tab_widget.addTab(self.history_tab, "History")
+        self.tab_widget.addTab(self.history_tab, tr("History"))
         
         # Connect tab change signal
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
 
         # Create comprehensive backup tab
         self.backup_tab = FullBackupsTab(self)
-        self.tab_widget.addTab(self.backup_tab, "Backups")
+        self.tab_widget.addTab(self.backup_tab, tr("Backups"))
 
         # таймеры (2.0): сообщения бота в чат по расписанию
         self.timers_tab = TimersTab(self)
-        self.tab_widget.addTab(self.timers_tab, "Timers")
+        self.tab_widget.addTab(self.timers_tab, tr("Timers"))
 
         # статистика (2.0): команды, оборот очков, зрители
         self.stats_tab = StatsTab(self)
-        self.tab_widget.addTab(self.stats_tab, "Stats")
+        self.tab_widget.addTab(self.stats_tab, tr("Stats"))
         
         # Load saved commands and configuration
         self.load_saved_data()
@@ -290,7 +294,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
     def show_auth_dialog(self):
         dialog = TwitchAuthDialog(self)
         if dialog.exec_() == QDialog.Accepted:
-            QMessageBox.information(self, "Success", "Twitch credentials saved successfully!")
+            QMessageBox.information(self, tr("Success"), tr("Twitch credentials saved successfully!"))
             
     def load_commands(self):
         """Load commands from file"""
@@ -323,7 +327,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         # Ask user to select the sounds directory
         sound_dir = QFileDialog.getExistingDirectory(
             self,
-            "Select Sounds Directory",
+            tr("Select Sounds Directory"),
             "",
             QFileDialog.ShowDirsOnly
         )
@@ -340,7 +344,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
             sound_files.extend(sound_dir.glob(ext))
             
         if not sound_files:
-            QMessageBox.warning(self, "Warning", "No sound files found in the selected directory!")
+            QMessageBox.warning(self, tr("Warning"), tr("No sound files found in the selected directory!"))
             return
 
         # Create a dictionary of command names to sound files
@@ -363,9 +367,9 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         if updated:
             self.save_commands()  # Save changes
             self.refresh_themed_commands()
-            QMessageBox.information(self, "Success", "Sound files assigned automatically!")
+            QMessageBox.information(self, tr("Success"), tr("Sound files assigned automatically!"))
         else:
-            QMessageBox.information(self, "Info", "No new sound files to assign.")
+            QMessageBox.information(self, tr("Info"), tr("No new sound files to assign."))
 
     # -- global hotkeys -----------------------------------------------------------
     _HOTKEY_BOT = {"skip": "hotkey_skip", "pause": "hotkey_toggle_pause", "stop": "hotkey_stop_all"}
@@ -389,7 +393,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         if not sent and name in ("skip", "stop"):
             self.preview.stop()
             pygame.mixer.stop()
-        self.twitch_tab.add_to_chat_safe(f"[Hotkey] {label}")
+        self.twitch_tab.add_to_chat_safe(tr('[Hotkey] {0}').format(tr(label)))
 
     # -- OBS overlay ------------------------------------------------------------------
     def overlay_settings(self):
@@ -491,7 +495,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
             event.accept()
 
     def load_file(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", "ABCOMG Files (*.abcomg)")
+        file_name, _ = QFileDialog.getOpenFileName(self, tr("Open File"), "", "ABCOMG Files (*.abcomg)")
         if file_name:
             try:
                 with open(file_name, "r", encoding="utf-8") as f:
@@ -520,13 +524,13 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
 
                     self.replace_commands(converted)
 
-                    QMessageBox.information(self, "Success", "Commands loaded and converted successfully!")
+                    QMessageBox.information(self, tr("Success"), tr("Commands loaded and converted successfully!"))
             except Exception as e:
-                QMessageBox.warning(self, "Error", f"Failed to load file: {str(e)}")
+                QMessageBox.warning(self, tr("Error"), tr('Failed to load file: {0}').format(str(e)))
         
     def save_file(self):
         if not self.commands:
-            QMessageBox.warning(self, "Error", "No commands to save!")
+            QMessageBox.warning(self, tr("Error"), tr("No commands to save!"))
             return
             
         # Save to the commands file
@@ -534,11 +538,11 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
             # Always create a backup when manually saving
             if self.history_manager.save_backup(self.commands):
                 self.history_tab.refresh()
-                QMessageBox.information(self, "Success", "Commands saved and backup created successfully!")
+                QMessageBox.information(self, tr("Success"), tr("Commands saved and backup created successfully!"))
             else:
-                QMessageBox.information(self, "Success", "Commands saved successfully, but backup creation failed.")
+                QMessageBox.information(self, tr("Success"), tr("Commands saved successfully, but backup creation failed."))
         else:
-            QMessageBox.warning(self, "Error", "Failed to save commands!")
+            QMessageBox.warning(self, tr("Error"), tr("Failed to save commands!"))
                 
     def update_commands(self):
         """Update commands in Twitch tab"""
@@ -549,21 +553,21 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
     def save_legacy_format(self):
         """Save commands in the original format for compatibility"""
         if not self.commands:
-            QMessageBox.warning(self, "Error", "No commands to save!")
+            QMessageBox.warning(self, tr("Error"), tr("No commands to save!"))
             return
             
         file_name, _ = QFileDialog.getSaveFileName(
             self, 
-            "Save Legacy Format", 
+            tr("Save Legacy Format"), 
             "", 
             "ABCOMG Files (*.abcomg)"
         )
         
         if file_name:
             if self.config_manager.save_legacy_format(self.commands, file_name):
-                QMessageBox.information(self, "Success", "File saved in legacy format successfully!")
+                QMessageBox.information(self, tr("Success"), tr("File saved in legacy format successfully!"))
             else:
-                QMessageBox.warning(self, "Error", "Failed to save file in legacy format!")
+                QMessageBox.warning(self, tr("Error"), tr("Failed to save file in legacy format!"))
 
     def load_saved_data(self):
         """Load saved commands and configuration"""
@@ -719,7 +723,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         still = len(sound_paths.find_missing(self.commands))
         if not quiet and (fixed or still):
             box = QMessageBox(self)
-            box.setWindowTitle("Sound files")
+            box.setWindowTitle(tr("Sound files"))
             lines = []
             if fixed:
                 lines.append("%d moved sound file(s) were found and re-linked automatically." % fixed)
@@ -728,9 +732,9 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
             box.setText("\n".join(lines))
             fix_btn = None
             if still:
-                fix_btn = box.addButton("Fix sound paths…", QMessageBox.AcceptRole)
+                fix_btn = box.addButton(tr("Fix sound paths…"), QMessageBox.AcceptRole)
             box.addButton(QMessageBox.Close)
-            mute = QCheckBox("Don't warn about missing sounds on start-up")
+            mute = QCheckBox(tr("Don't warn about missing sounds on start-up"))
             box.setCheckBox(mute)
             box.exec_()
             if mute.isChecked():
@@ -749,7 +753,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
             self.twitch_tab.push_interruption(self.allow_sound_interruption)
             self.twitch_tab.add_to_chat_safe(
-                f"Sound interruption setting changed: {'Enabled' if self.allow_sound_interruption else 'Disabled'}"
+                tr('Sound interruption setting changed: {0}').format('Enabled' if self.allow_sound_interruption else 'Disabled')
             )
 
     def on_show_message_toggle(self, state):
@@ -761,7 +765,7 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
         if hasattr(self, 'twitch_tab') and self.twitch_tab.bot:
             self.twitch_tab.push_show_interruption_message(self.show_interruption_message)
             self.twitch_tab.add_to_chat_safe(
-                f"Interruption message: {'Enabled' if self.show_interruption_message else 'Disabled'}"
+                tr('Interruption message: {0}').format('Enabled' if self.show_interruption_message else 'Disabled')
             )
 
     def on_auto_save_toggle(self, state):
@@ -889,17 +893,17 @@ class CommandEditor(ClassicCommandsMixin, ThemeSwitchMixin, QMainWindow):
     # Tabs (besides Commands and Twitch) that get the generic themed frame.
     # name -> (attribute, title, subtitle, canonical_index)
     _GENERIC_TABS = {
-        "Sys.Commands": ("sys_commands_tab", "Sys.Commands", "system commands", 1),
-        "Currency Settings": ("currency_tab", "Currency Settings", "economy", 3),
-        "Currency Users": ("user_currency_tab", "Currency Users", "economy", 4),
-        "Ranks": ("ranks_tab", "Ranks", "stream ranks", 5),
-        "Group Settings": ("group_settings_tab", "Group Settings", "audio queues", 6),
-        "Queue Control": ("queue_control_tab", "Queue Control", "live queue", 7),
-        "About": ("about_tab", "About", "info", 8),
-        "History": ("history_tab", "History", "command log", 9),
-        "Backups": ("backup_tab", "Backups", "safety", 10),
-        "Timers": ("timers_tab", "Timers", "chat messages", 11),
-        "Stats": ("stats_tab", "Stats", "commands · points · viewers", 12),
+        "Sys.Commands": ("sys_commands_tab", N_("Sys.Commands"), N_("system commands"), 1),
+        "Currency Settings": ("currency_tab", N_("Currency Settings"), N_("economy"), 3),
+        "Currency Users": ("user_currency_tab", N_("Currency Users"), N_("economy"), 4),
+        "Ranks": ("ranks_tab", N_("Ranks"), N_("stream ranks"), 5),
+        "Group Settings": ("group_settings_tab", N_("Group Settings"), N_("audio queues"), 6),
+        "Queue Control": ("queue_control_tab", N_("Queue Control"), N_("live queue"), 7),
+        "About": ("about_tab", N_("About"), N_("info"), 8),
+        "History": ("history_tab", N_("History"), N_("command log"), 9),
+        "Backups": ("backup_tab", N_("Backups"), N_("safety"), 10),
+        "Timers": ("timers_tab", N_("Timers"), N_("chat messages"), 11),
+        "Stats": ("stats_tab", N_("Stats"), N_("commands · points · viewers"), 12),
     }
 
 if __name__ == "__main__":
@@ -921,9 +925,9 @@ if __name__ == "__main__":
     _instance_lock = acquire(paths.app_dir())
     if _instance_lock is None:
         QMessageBox.warning(
-            None, "Command Editor is already running",
-            "Command Editor is already running with this data folder:\n%s\n\n"
-            "Use the window that is already open." % paths.app_dir())
+            None, tr("Command Editor is already running"),
+            tr("Command Editor is already running with this data folder:\n%s\n\n"
+            "Use the window that is already open.") % paths.app_dir())
         sys.exit(1)
 
     # Create and show the main window

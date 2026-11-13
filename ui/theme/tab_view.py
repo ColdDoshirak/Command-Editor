@@ -5,6 +5,7 @@ Python 3.8 / PyQt5.
 """
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel
+from ui.i18n import tr
 from ui.theme.style import (palette_for)
 from ui.theme.widgets import (_scroll_wrap)
 
@@ -35,11 +36,11 @@ class ThemedTabView(QWidget):
         th = QHBoxLayout(top)
         th.setContentsMargins(18, 0, 18, 0)
         th.setSpacing(12)
-        t = QLabel(title)
+        t = QLabel(tr(title))
         t.setObjectName("topTitle")
         th.addWidget(t)
         if subtitle:
-            c = QLabel(subtitle)
+            c = QLabel(tr(subtitle))
             c.setObjectName("crumb")
             th.addWidget(c)
         th.addStretch(1)

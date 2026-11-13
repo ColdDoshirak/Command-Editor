@@ -6,6 +6,7 @@ Python 3.8 / PyQt5.
 from PyQt5.QtWidgets import QLabel
 from PyQt5.QtCore import Qt, QTimer
 import webbrowser
+from ui.i18n import tr
 
 
 class UpdateNotificationWidget(QLabel):
@@ -43,7 +44,7 @@ class UpdateNotificationWidget(QLabel):
             }
         """)
           # Set initial text
-        self.setText("🔄 Update available")  # Более короткий начальный текст
+        self.setText(tr("🔄 Update available"))  # Более короткий начальный текст
           # Enable word wrap
         self.setWordWrap(True)
         
@@ -51,7 +52,7 @@ class UpdateNotificationWidget(QLabel):
         """Show the notification with version info"""
         self.new_version = new_version
         self.download_url = download_url
-        self.setText(f"🔄 v{new_version} available")  # Более короткий текст
+        self.setText(tr('🔄 v{0} available').format(new_version))  # Более короткий текст
         
         # Position in top-right corner
         self.update_position()
@@ -87,5 +88,5 @@ class UpdateNotificationWidget(QLabel):
             
     def enterEvent(self, event):
         """Handle mouse enter - show tooltip"""
-        self.setToolTip(f"New version {self.new_version} is available!\nClick to open download page")
+        self.setToolTip(tr('New version {0} is available!\nClick to open download page').format(self.new_version))
         super().enterEvent(event)

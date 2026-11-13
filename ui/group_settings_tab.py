@@ -8,19 +8,20 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, QTableWidgetIte
                              QCheckBox, QSpinBox, QLabel)
 from PyQt5.QtCore import Qt
 from bot.audio import GROUP_CHANNELS
+from ui.i18n import tr, N_
 
 
 # (header, tooltip)
 _COLUMNS = [
-    ("Group", "Command group (the Group field of commands)"),
-    ("Queue", "Play this group's commands one after another instead of at once"),
-    ("Max size", "How many commands may wait (including the one playing). 0 = unlimited.\n"
-                 "When full, new commands are rejected and points refunded."),
-    ("Channel", "Audio channel. 0 = shared channel (sounds may cut each other).\n"
-                "1-32 = own channel: plays in parallel with other groups."),
-    ("Persist", "Keep waiting commands after a restart of the program"),
-    ("Announce", "Tell the viewer their position when a command is queued\n"
-                 "(only if something is already waiting)"),
+    (N_("Group"), N_("Command group (the Group field of commands)")),
+    (N_("Queue"), N_("Play this group's commands one after another instead of at once")),
+    (N_("Max size"), N_("How many commands may wait (including the one playing). 0 = unlimited.\n"
+                        "When full, new commands are rejected and points refunded.")),
+    (N_("Channel"), N_("Audio channel. 0 = shared channel (sounds may cut each other).\n"
+                       "1-32 = own channel: plays in parallel with other groups.")),
+    (N_("Persist"), N_("Keep waiting commands after a restart of the program")),
+    (N_("Announce"), N_("Tell the viewer their position when a command is queued\n"
+                        "(only if something is already waiting)")),
 ]
 
 
@@ -35,33 +36,33 @@ class GroupSettingsTab(QWidget):
         layout = QVBoxLayout()
 
         hint = QLabel(
-            "Queued groups play one command at a time. Give music its own group "
+            tr("Queued groups play one command at a time. Give music its own group "
             "(e.g. SONG) with its own channel so it never cuts other sounds. "
-            "Changes apply to the running bot immediately — a playing track is not interrupted.")
+            "Changes apply to the running bot immediately — a playing track is not interrupted."))
         hint.setWordWrap(True)
         hint.setObjectName("statusLabel")
         layout.addWidget(hint)
 
         self.table = QTableWidget()
         self.table.setColumnCount(len(_COLUMNS))
-        self.table.setHorizontalHeaderLabels([c[0] for c in _COLUMNS])
+        self.table.setHorizontalHeaderLabels([tr(c[0]) for c in _COLUMNS])
         for i, (_h, tip) in enumerate(_COLUMNS):
-            self.table.horizontalHeaderItem(i).setToolTip(tip)
+            self.table.horizontalHeaderItem(i).setToolTip(tr(tip))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionMode(QTableWidget.NoSelection)
         layout.addWidget(self.table)
 
         btn_layout = QHBoxLayout()
-        self.refresh_btn = QPushButton("Reload")
-        self.refresh_btn.setToolTip("Discard unsaved edits and reload groups")
+        self.refresh_btn = QPushButton(tr("Reload"))
+        self.refresh_btn.setToolTip(tr("Discard unsaved edits and reload groups"))
         self.refresh_btn.clicked.connect(self.refresh_groups)
         btn_layout.addWidget(self.refresh_btn)
         btn_layout.addStretch(1)
         self.status = QLabel("")
         self.status.setObjectName("statusLabel")
         btn_layout.addWidget(self.status)
-        self.save_btn = QPushButton("Save Settings")
+        self.save_btn = QPushButton(tr("Save Settings"))
         self.save_btn.setObjectName("primaryBtn")
         self.save_btn.clicked.connect(self.save_settings)
         btn_layout.addWidget(self.save_btn)
@@ -105,27 +106,30 @@ class GroupSettingsTab(QWidget):
             name_item.setFlags(Qt.ItemIsEnabled)
             n_cmds = sum(1 for c in self.parent.commands
                          if str(c.get("Group", "")).upper() == str(group).upper())
-            name_item.setToolTip("%d command(s)" % n_cmds)
+            name_item.setToolTip(tr("%d command(s)") % n_cmds)
             self.table.setItem(i, 0, name_item)
 
             queue = QCheckBox()
             queue.setChecked(bool(cat.get("queue_enabled", False)))
             size = QSpinBox()
             size.setRange(0, 1000)
-            size.setSpecialValueText("unlimited")
+            size.setSpecialValueText(tr("unlimited"))
             size.setValue(int(cat.get("max_queue_size", 0) or 0))
             channel = QSpinBox()
             channel.setRange(0, GROUP_CHANNELS - 1)
-            channel.setSpecialValueText("shared")
+            channel.setSpecialValueText(tr("shared"))
             channel.setValue(int(cat.get("audio_channel", 0) or 0))
             persist = QCheckBox()
             persist.setChecked(bool(cat.get("persist_queue", False)))
             announce = QCheckBox()
             announce.setChecked(bool(cat.get("announce_enqueue", False)))
 
+            for spin in (size, channel):          # room for the special text ("unlimited"/"shared")
+                fm = spin.fontMetrics()
+                spin.setMinimumWidth(fm.horizontalAdvance(spin.specialValueText() + "0000") + 36)
             widgets = (queue, size, channel, persist, announce)
             for col, w in enumerate(widgets, start=1):
-                w.setToolTip(_COLUMNS[col][1])
+                w.setToolTip(tr(_COLUMNS[col][1]))
                 self.table.setCellWidget(i, col, self._centered(w))
 
             # Queue-only options make no sense without a queue
@@ -165,9 +169,9 @@ class GroupSettingsTab(QWidget):
 
         if clashes:
             QMessageBox.warning(
-                self, "Shared audio channel",
+                self, tr("Shared audio channel"),
                 "Saved. Note: these groups share a dedicated channel and will cut "
                 "each other off:\n\n" + "\n".join(clashes))
-            self.status.setText("Saved (channel clash)")
+            self.status.setText(tr("Saved (channel clash)"))
         else:
-            self.status.setText("Saved ✓ — applied to the running bot")
+            self.status.setText(tr("Saved ✓ — applied to the running bot"))

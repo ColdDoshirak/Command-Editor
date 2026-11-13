@@ -46,6 +46,8 @@ class Kit(object):
         # directory = data_dir too, so the one-time migration from the cwd
         # never copies the developer's files into the fixture.
         os.environ["COMMAND_EDITOR_HOME"] = self.data_dir
+        # the checks compare English texts; this machine may be Russian
+        os.environ.setdefault("COMMAND_EDITOR_LANG", "en")
         os.chdir(self.data_dir)
         if REPO not in sys.path:
             sys.path.insert(0, REPO)

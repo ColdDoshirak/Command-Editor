@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLa
 from PyQt5.QtGui import QColor, QBrush
 
 from core import paths, storage
+from ui.i18n import tr
 
 class RanksTab(QWidget):
     def __init__(self, parent=None, currency_manager=None):
@@ -42,19 +43,19 @@ class RanksTab(QWidget):
         
         # Header and description
         header_layout = QHBoxLayout()
-        header_label = QLabel("Stream Ranks Configuration")
+        header_label = QLabel(tr("Stream Ranks Configuration"))
         header_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         header_layout.addWidget(header_label)
         layout.addLayout(header_layout)
         
-        description = QLabel("Configure ranks based on points, hours or chat messages. Users will automatically receive ranks when they reach the required amount.")
+        description = QLabel(tr("Configure ranks based on points, hours or chat messages. Users will automatically receive ranks when they reach the required amount."))
         description.setWordWrap(True)
         layout.addWidget(description)
         
         # Ranks table
         self.ranks_table = QTableWidget()
         self.ranks_table.setColumnCount(5)
-        self.ranks_table.setHorizontalHeaderLabels(["Rank Name", "Required Amount", "Color", "Group", "Actions"])
+        self.ranks_table.setHorizontalHeaderLabels([tr("Rank Name"), tr("Required Amount"), tr("Color"), tr("Group"), tr("Actions")])
         self.ranks_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.ranks_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         
@@ -63,11 +64,11 @@ class RanksTab(QWidget):
         # Buttons
         buttons_layout = QHBoxLayout()
         
-        add_rank_btn = QPushButton("Add Rank")
+        add_rank_btn = QPushButton(tr("Add Rank"))
         add_rank_btn.clicked.connect(self.add_rank)
         buttons_layout.addWidget(add_rank_btn)
         
-        reset_btn = QPushButton("Reset All")
+        reset_btn = QPushButton(tr("Reset All"))
         reset_btn.clicked.connect(self.reset_all)
         buttons_layout.addWidget(reset_btn)
         
@@ -104,10 +105,10 @@ class RanksTab(QWidget):
             actions_widget = QWidget()
             actions_layout = QHBoxLayout(actions_widget)
             
-            edit_btn = QPushButton("Edit")
+            edit_btn = QPushButton(tr("Edit"))
             edit_btn.clicked.connect(lambda checked, idx=idx: self.edit_rank(idx))
             
-            delete_btn = QPushButton("Delete")
+            delete_btn = QPushButton(tr("Delete"))
             delete_btn.clicked.connect(lambda checked, idx=idx: self.delete_rank(idx))
             
             actions_layout.addWidget(edit_btn)
@@ -118,26 +119,26 @@ class RanksTab(QWidget):
 
     def add_rank(self):
         """Add a new rank"""
-        name, ok1 = QInputDialog.getText(self, "Add Rank", "Enter rank name:")
+        name, ok1 = QInputDialog.getText(self, tr("Add Rank"), tr("Enter rank name:"))
         if ok1 and name:
-            required, ok2 = QInputDialog.getInt(self, "Required Amount", "Enter required amount:", 0, 0, 1000000)
+            required, ok2 = QInputDialog.getInt(self, tr("Required Amount"), tr("Enter required amount:"), 0, 0, 1000000)
             if ok2:
                 group_dialog = QInputDialog(self)
                 group_dialog.setComboBoxItems(["Viewer", "Regular", "Subscriber", "VIP", "Moderator", "Admin"])
                 group_dialog.setComboBoxEditable(True)
-                group_dialog.setWindowTitle("Group")
+                group_dialog.setWindowTitle(tr("Group"))
                 group_dialog.setLabelText("Select or enter group:")
                 
                 if group_dialog.exec_() == QInputDialog.Accepted:
                     group = group_dialog.textValue()
                     
                     color_dialog = QColorDialog(self)
-                    color_dialog.setWindowTitle("Select rank color")
+                    color_dialog.setWindowTitle(tr("Select rank color"))
                     
                     if color_dialog.exec_() == QColorDialog.Accepted:
                         color = color_dialog.selectedColor().name()
                         
-                        description, ok4 = QInputDialog.getText(self, "Description", "Enter rank description (optional):")
+                        description, ok4 = QInputDialog.getText(self, tr("Description"), tr("Enter rank description (optional):"))
                         
                         rank_data = {
                             'name': name,
@@ -157,16 +158,16 @@ class RanksTab(QWidget):
         
         rank_data = self.ranks[index]
         
-        name, ok1 = QInputDialog.getText(self, "Edit Rank", "Enter rank name:", 
+        name, ok1 = QInputDialog.getText(self, tr("Edit Rank"), tr("Enter rank name:"), 
                                      text=rank_data.get('name', 'New Rank'))
         if ok1:
-            required, ok2 = QInputDialog.getInt(self, "Required Amount", "Enter required amount:", 
+            required, ok2 = QInputDialog.getInt(self, tr("Required Amount"), tr("Enter required amount:"), 
                                            rank_data.get('required', 0), 0, 1000000)
             if ok2:
                 group_dialog = QInputDialog(self)
                 group_dialog.setComboBoxItems(["Viewer", "Regular", "Subscriber", "VIP", "Moderator", "Admin"])
                 group_dialog.setComboBoxEditable(True)
-                group_dialog.setWindowTitle("Group")
+                group_dialog.setWindowTitle(tr("Group"))
                 group_dialog.setLabelText("Select or enter group:")
                 group_dialog.setTextValue(rank_data.get('group', 'Viewer'))
                 
@@ -175,12 +176,12 @@ class RanksTab(QWidget):
                     
                     color_dialog = QColorDialog(self)
                     color_dialog.setCurrentColor(QColor(rank_data.get('color', '#000000')))
-                    color_dialog.setWindowTitle("Select rank color")
+                    color_dialog.setWindowTitle(tr("Select rank color"))
                     
                     if color_dialog.exec_() == QColorDialog.Accepted:
                         color = color_dialog.selectedColor().name()
                         
-                        description, ok4 = QInputDialog.getText(self, "Description", "Enter rank description (optional):", 
+                        description, ok4 = QInputDialog.getText(self, tr("Description"), tr("Enter rank description (optional):"), 
                                                          text=rank_data.get('description', ''))
                         
                         rank_data.update({
@@ -199,8 +200,8 @@ class RanksTab(QWidget):
             return
             
         rank_name = self.ranks[index].get('name', 'this rank')
-        reply = QMessageBox.question(self, 'Delete Rank',
-                                f"Are you sure you want to delete the rank '{rank_name}'?",
+        reply = QMessageBox.question(self, tr('Delete Rank'),
+                                tr("Are you sure you want to delete the rank '{0}'?").format(rank_name),
                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         
         if reply == QMessageBox.Yes:
@@ -210,12 +211,12 @@ class RanksTab(QWidget):
 
     def reset_all(self):
         """Reset all ranks"""
-        reply = QMessageBox.question(self, 'Reset Ranks',
-                                "Are you sure you want to reset ALL ranks? This action cannot be undone!",
+        reply = QMessageBox.question(self, tr('Reset Ranks'),
+                                tr("Are you sure you want to reset ALL ranks? This action cannot be undone!"),
                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         
         if reply == QMessageBox.Yes:
             del self.ranks[:]
             self.save_ranks()
             self.populate_table()
-            QMessageBox.information(self, "Success", "All ranks have been reset!")
+            QMessageBox.information(self, tr("Success"), tr("All ranks have been reset!"))

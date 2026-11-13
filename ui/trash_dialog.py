@@ -6,26 +6,27 @@ from datetime import datetime
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel,
                              QMessageBox)
+from ui.i18n import tr
 
 
 class TrashDialog(QDialog):
     def __init__(self, editor):
         super(TrashDialog, self).__init__(editor)
         self.editor = editor
-        self.setWindowTitle("Trash - deleted commands")
+        self.setWindowTitle(tr("Trash - deleted commands"))
         self.resize(460, 380)
         v = QVBoxLayout(self)
-        v.addWidget(QLabel("Deleted commands, the newest first (at most 50). "
-                           "Restore puts one back where it was."))
+        v.addWidget(QLabel(tr("Deleted commands, the newest first (at most 50). "
+                           "Restore puts one back where it was.")))
         self.list = QListWidget()
         self.list.itemDoubleClicked.connect(lambda _i: self.restore())
         v.addWidget(self.list, 1)
         h = QHBoxLayout()
-        self.restore_btn = QPushButton("Restore")
+        self.restore_btn = QPushButton(tr("Restore"))
         self.restore_btn.clicked.connect(self.restore)
-        self.empty_btn = QPushButton("Empty the trash")
+        self.empty_btn = QPushButton(tr("Empty the trash"))
         self.empty_btn.clicked.connect(self.empty)
-        close = QPushButton("Close")
+        close = QPushButton(tr("Close"))
         close.clicked.connect(self.accept)
         h.addWidget(self.restore_btn)
         h.addWidget(self.empty_btn)
@@ -55,8 +56,8 @@ class TrashDialog(QDialog):
             self.refresh()
 
     def empty(self):
-        if QMessageBox.question(self, "Empty the trash",
-                                "Delete these commands for good?",
+        if QMessageBox.question(self, tr("Empty the trash"),
+                                tr("Delete these commands for good?"),
                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
             self.editor.command_trash.clear()
             self.refresh()

@@ -352,6 +352,15 @@ class ConfigManager:
         self.config['volume'] = max(0.0, min(1.0, volume))
         self.save_config()
 
+    def get_language(self):
+        """Interface language: "system" (default), "ru" or "en"."""
+        lang = str(self.config.get('language', 'system') or 'system').lower()
+        return lang if lang in ('system', 'ru', 'en') else 'system'
+
+    def set_language(self, lang):
+        self.config['language'] = lang if lang in ('system', 'ru', 'en') else 'system'
+        self.save_config()
+
     def get_timers(self):
         """Timers (core/timers.py), normalised."""
         from core.timers import normalize

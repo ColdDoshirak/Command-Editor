@@ -15,6 +15,7 @@ from bot.twitch_bot import TwitchBot
 from ui.twitch_auth import TwitchAuthDialog
 from core.config_manager import ConfigManager
 from ui.bot_bridge import BotBridge
+from ui.i18n import tr, N_
 
 # регистрируем QTextCursor для передачи в сигналах
 QMetaType.type("QTextCursor")
@@ -51,17 +52,17 @@ class TwitchTab(QWidget):
         self._root_layout = layout
 
         # Authentication
-        auth_group = QGroupBox("Authentication")
+        auth_group = QGroupBox(tr("Authentication"))
         auth_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         auth_layout = QGridLayout()
-        self._auth_status_label = QLabel("Status:")
+        self._auth_status_label = QLabel(tr("Status:"))
         auth_layout.addWidget(self._auth_status_label, 0, 0)
-        self.auth_status = QLabel("Not authenticated")
+        self.auth_status = QLabel(tr("Not authenticated"))
         auth_layout.addWidget(self.auth_status, 0, 1)
-        self.auth_button = QPushButton("Authenticate with Twitch")
+        self.auth_button = QPushButton(tr("Authenticate with Twitch"))
         self.auth_button.clicked.connect(self.show_auth_dialog)
         auth_layout.addWidget(self.auth_button, 0, 2)
-        self.token_button = QPushButton("Get Access Token")
+        self.token_button = QPushButton(tr("Get Access Token"))
         self.token_button.clicked.connect(self.open_token_generator)
         auth_layout.addWidget(self.token_button, 0, 3)
         auth_group.setLayout(auth_layout)
@@ -71,21 +72,21 @@ class TwitchTab(QWidget):
         self._auth_group = auth_group
 
         # Connection
-        conn_group = QGroupBox("Connection Settings")
+        conn_group = QGroupBox(tr("Connection Settings"))
         conn_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         conn_layout = QHBoxLayout()
-        self._conn_channel_label = QLabel("Channel:")
+        self._conn_channel_label = QLabel(tr("Channel:"))
         conn_layout.addWidget(self._conn_channel_label)
         self.channel_input = QLineEdit()
         conn_layout.addWidget(self.channel_input)
-        self.connect_button = QPushButton("Connect")
+        self.connect_button = QPushButton(tr("Connect"))
         self.connect_button.clicked.connect(self.connect_bot)
         conn_layout.addWidget(self.connect_button)
-        self.disconnect_button = QPushButton("Disconnect")
+        self.disconnect_button = QPushButton(tr("Disconnect"))
         self.disconnect_button.setEnabled(False)
         self.disconnect_button.clicked.connect(self.disconnect)
         conn_layout.addWidget(self.disconnect_button)
-        self.check_connection_button = QPushButton("Check Connection")
+        self.check_connection_button = QPushButton(tr("Check Connection"))
         self.check_connection_button.clicked.connect(self.check_connection)
         conn_layout.addWidget(self.check_connection_button)
         conn_group.setLayout(conn_layout)
@@ -96,7 +97,7 @@ class TwitchTab(QWidget):
         splitter = QSplitter(Qt.Horizontal)
 
         # Chat
-        chat_group = QGroupBox("Chat")
+        chat_group = QGroupBox(tr("Chat"))
         chat_layout = QVBoxLayout()
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
@@ -106,7 +107,7 @@ class TwitchTab(QWidget):
         self.message_input = QLineEdit()
         self.message_input.returnPressed.connect(self.send_message)
         input_layout.addWidget(self.message_input)
-        self.send_button = QPushButton("Send")
+        self.send_button = QPushButton(tr("Send"))
         self.send_button.setEnabled(False)
         self.send_button.clicked.connect(self.send_message)
         input_layout.addWidget(self.send_button)
@@ -116,7 +117,7 @@ class TwitchTab(QWidget):
         self._chat_layout = chat_layout
 
         # Viewers
-        viewer_group = QGroupBox("Viewers")
+        viewer_group = QGroupBox(tr("Viewers"))
         viewer_layout = QVBoxLayout()
         self.viewers_tabs = QTabWidget()
         # All viewers
@@ -125,14 +126,14 @@ class TwitchTab(QWidget):
         self.all_viewers_list = QListWidget()
         all_layout.addWidget(self.all_viewers_list)
         all_tab.setLayout(all_layout)
-        self.viewers_tabs.addTab(all_tab, "All Viewers")
+        self.viewers_tabs.addTab(all_tab, tr("All Viewers"))
         # Active chatters
         active_tab = QWidget()
         active_layout = QVBoxLayout()
         self.active_viewers_list = QListWidget()
         active_layout.addWidget(self.active_viewers_list)
         active_tab.setLayout(active_layout)
-        self.viewers_tabs.addTab(active_tab, "Active Chatters")        # Moderators
+        self.viewers_tabs.addTab(active_tab, tr("Active Chatters"))        # Moderators
         moderators_tab = QWidget()
         moderators_layout = QVBoxLayout()
         
@@ -147,16 +148,16 @@ class TwitchTab(QWidget):
         
         # Поле ввода для добавления модератора
         self.add_moderator_input = QLineEdit()
-        self.add_moderator_input.setPlaceholderText("Введите имя модератора...")
+        self.add_moderator_input.setPlaceholderText(tr("Moderator's name..."))
         self.add_moderator_input.returnPressed.connect(self.add_manual_moderator)
         moderator_controls_layout.addWidget(self.add_moderator_input)
         
         # Кнопка добавления
-        self.add_moderator_button = QPushButton("Добавить")
+        self.add_moderator_button = QPushButton(tr("Add"))
         self.add_moderator_button.clicked.connect(self.add_manual_moderator)
         moderator_controls_layout.addWidget(self.add_moderator_button)
           # Кнопка удаления выбранного
-        self.remove_moderator_button = QPushButton("Удалить")
+        self.remove_moderator_button = QPushButton(tr("Remove"))
         self.remove_moderator_button.clicked.connect(self.remove_selected_moderator)
         moderator_controls_layout.addWidget(self.remove_moderator_button)
         
@@ -167,13 +168,13 @@ class TwitchTab(QWidget):
         additional_controls_layout = QHBoxLayout()
         
         # Кнопка открытия файла модераторов
-        self.open_moderators_file_button = QPushButton("Открыть файл")
+        self.open_moderators_file_button = QPushButton(tr("Open file"))
         self.open_moderators_file_button.clicked.connect(self.open_moderators_file)
-        self.open_moderators_file_button.setToolTip("Открыть moderators.json для показа на стриме")
+        self.open_moderators_file_button.setToolTip(tr("Open moderators.json (safe to show on stream)"))
         additional_controls_layout.addWidget(self.open_moderators_file_button)
         
         # Кнопка обновления
-        self.refresh_moderators_button = QPushButton("Обновить")
+        self.refresh_moderators_button = QPushButton(tr("Refresh"))
         self.refresh_moderators_button.clicked.connect(self.refresh_moderators)
         additional_controls_layout.addWidget(self.refresh_moderators_button)
         
@@ -181,17 +182,17 @@ class TwitchTab(QWidget):
         self._mod_additional_layout = additional_controls_layout
         
         # Информационная надпись
-        moderator_info = QLabel("Серые - API, зеленые - ручные, синие - оба, красные - исключены\nФайл moderators.json безопасен для показа на стриме")
+        moderator_info = QLabel(tr("Grey - from Twitch, green - manual, blue - both, red - excluded, orange - admins\nmoderators.json is safe to show on stream"))
         moderator_info.setStyleSheet("color: gray; font-size: 10px;")
         moderators_layout.addWidget(moderator_info)
         self._mod_info = moderator_info
         
         moderators_tab.setLayout(moderators_layout)
-        self.viewers_tabs.addTab(moderators_tab, "Moderators")
+        self.viewers_tabs.addTab(moderators_tab, tr("Moderators"))
         viewer_layout.addWidget(self.viewers_tabs)
         # Refresh controls
         refresh_layout = QHBoxLayout()
-        self.refresh_viewers_button = QPushButton("Refresh")
+        self.refresh_viewers_button = QPushButton(tr("Refresh"))
         self.refresh_viewers_button.clicked.connect(self.refresh_viewers)
         refresh_layout.addWidget(self.refresh_viewers_button)
         self.update_frequency = QComboBox()
@@ -199,7 +200,7 @@ class TwitchTab(QWidget):
         self.update_frequency.setCurrentIndex(1)
         self.update_frequency.currentIndexChanged.connect(self.save_update_frequency)
         refresh_layout.addWidget(self.update_frequency)
-        self.last_update_label = QLabel("Last: Never")
+        self.last_update_label = QLabel(tr("Last: Never"))
         refresh_layout.addWidget(self.last_update_label)
         viewer_layout.addLayout(refresh_layout)
         self._refresh_layout = refresh_layout
@@ -214,15 +215,15 @@ class TwitchTab(QWidget):
 
         # Status bar
         status_layout = QHBoxLayout()
-        self.connection_status = QLabel("Not connected")
+        self.connection_status = QLabel(tr("Not connected"))
         status_layout.addWidget(self.connection_status)
         status_layout.addStretch()
-        self.stream_status = QLabel("Stream: Unknown")
+        self.stream_status = QLabel(tr("Stream: Unknown"))
         status_layout.addWidget(self.stream_status)
         status_layout.addStretch()
-        self.active_viewers_count = QLabel("Active: 0")
+        self.active_viewers_count = QLabel(tr("Active: 0"))
         status_layout.addWidget(self.active_viewers_count)
-        self.all_viewers_count = QLabel("All: 0")
+        self.all_viewers_count = QLabel(tr("All: 0"))
         status_layout.addWidget(self.all_viewers_count)
         layout.addLayout(status_layout)
         self._status_layout = status_layout
@@ -300,10 +301,10 @@ class TwitchTab(QWidget):
         print(f"DEBUG load_settings: channel from config = '{channel}'")
         self.channel_input.setText(channel)
         if cfg.get('access_token'):
-            self.auth_status.setText("Authenticated")
+            self.auth_status.setText(tr("Authenticated"))
             self.auth_status.setStyleSheet("color: green;")
         else:
-            self.auth_status.setText("Not authenticated")
+            self.auth_status.setText(tr("Not authenticated"))
             self.auth_status.setStyleSheet("color: red;")
         
         # Загружаем ручной список модераторов при запуске
@@ -316,7 +317,7 @@ class TwitchTab(QWidget):
             self.config_manager.set_twitch_channel(channel)
         except Exception as e:
             print(f"DEBUG save_settings: Error - {e}")
-            QMessageBox.warning(self, "Error", str(e))
+            QMessageBox.warning(self, tr("Error"), str(e))
 
     def show_auth_dialog(self):
         dlg = TwitchAuthDialog(self)
@@ -338,11 +339,11 @@ class TwitchTab(QWidget):
     def connect_bot(self):
         channel = self.channel_input.text().strip()
         if not channel:
-            QMessageBox.warning(self, "Error","Please enter a channel.")
+            QMessageBox.warning(self, tr("Error"),tr("Please enter a channel."))
             return False
         cfg = self.config_manager.get_twitch_config()
         if not cfg.get('access_token'):
-            QMessageBox.warning(self, "Auth Required","Authenticate first.")
+            QMessageBox.warning(self, tr("Auth Required"),tr("Authenticate first."))
             self.show_auth_dialog()
             return False
 
@@ -366,11 +367,11 @@ class TwitchTab(QWidget):
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
         self.send_button.setEnabled(True)
-        self.connection_status.setText(f"Connected to: {channel}")
+        self.connection_status.setText(tr('Connected to: {0}').format(channel))
         self.connection_status.setStyleSheet("color: green;")
         self.start_viewer_updates()
         self.refresh_viewers()
-        self.add_to_chat_safe(f"Connected to {channel}")
+        self.add_to_chat_safe(tr('Connected to {0}').format(channel))
         return True
 
     def run_bot(self):
@@ -453,17 +454,17 @@ class TwitchTab(QWidget):
                 bot.stop()
             except Exception as e:
                 print(f"Error stopping bot: {e}")
-                self.add_to_chat_safe(f"Error disconnecting: {e}")
+                self.add_to_chat_safe(tr('Error disconnecting: {0}').format(e))
         self.connect_button.setEnabled(True)
         self.disconnect_button.setEnabled(False)
         self.send_button.setEnabled(False)
-        self.connection_status.setText("Disconnected")
+        self.connection_status.setText(tr("Disconnected"))
         self.connection_status.setStyleSheet("color: red;")
         self.all_viewers_list.clear()
         self.active_viewers_list.clear()
-        self.active_viewers_count.setText("Active: 0")
-        self.all_viewers_count.setText("All: 0")
-        self.add_to_chat_safe("Disconnected from Twitch chat")
+        self.active_viewers_count.setText(tr("Active: 0"))
+        self.all_viewers_count.setText(tr("All: 0"))
+        self.add_to_chat_safe(tr("Disconnected from Twitch chat"))
 
     def add_to_chat_safe(self, message):
         self.chat_display.append(message)
@@ -471,7 +472,7 @@ class TwitchTab(QWidget):
         self.chat_display.ensureCursorVisible()
 
     def _connection_lost(self):
-        self.connection_status.setText("Connection lost (reconnecting...)")
+        self.connection_status.setText(tr("Connection lost (reconnecting...)"))
         self.connection_status.setStyleSheet("color: orange;")
 
     def send_message(self):
@@ -482,14 +483,14 @@ class TwitchTab(QWidget):
 
         def done(sent, error):
             if error is not None:
-                self.add_to_chat_safe(f"Error sending message: {error}")
+                self.add_to_chat_safe(tr('Error sending message: {0}').format(error))
             elif not sent:
-                self.add_to_chat_safe("Cannot send message: not joined to the channel yet")
+                self.add_to_chat_safe(tr("Cannot send message: not joined to the channel yet"))
         if self.bridge.submit("send_chat", text, on_done=done):
             self.message_input.clear()
             self.add_to_chat_safe(f"{nick}: {text}")
         else:
-            self.add_to_chat_safe("Cannot send message: connection is being established or lost")
+            self.add_to_chat_safe(tr("Cannot send message: connection is being established or lost"))
             self.send_button.setEnabled(False)
             self._connection_lost()
 
@@ -498,17 +499,17 @@ class TwitchTab(QWidget):
 
     def check_connection(self):
         if not self.bot:
-            self.add_to_chat_safe("Not connected")
+            self.add_to_chat_safe(tr("Not connected"))
             return
 
         def done(is_live, error):
             if error is not None:
-                self.add_to_chat_safe(f"Error checking connection: {error}")
+                self.add_to_chat_safe(tr('Error checking connection: {0}').format(error))
                 return
             self.update_stream_status(bool(is_live))
-            self.add_to_chat_safe(f"Stream status: {'LIVE' if is_live else 'OFFLINE'}")
+            self.add_to_chat_safe(tr('Stream status: {0}').format('LIVE' if is_live else 'OFFLINE'))
         if not self.bridge.submit("check_if_live", on_done=done):
-            self.add_to_chat_safe("Cannot check connection: event loop is closed or disconnected")
+            self.add_to_chat_safe(tr("Cannot check connection: event loop is closed or disconnected"))
             self._connection_lost()
 
     def start_viewer_updates(self):
@@ -539,13 +540,13 @@ class TwitchTab(QWidget):
                 self.bridge.submit("get_channel_moderators")
                 self.last_mod_check = now
 
-        self.last_update_label.setText(f"Last: {time.strftime('%H:%M:%S')}")
+        self.last_update_label.setText(tr('Last: {0}').format(time.strftime('%H:%M:%S')))
 
     def refresh_viewers(self):
         if not self.bot:
             return
         if not self.bridge.submit("get_all_viewers", on_done=self._viewers_done):
-            self.add_to_chat_safe("Cannot refresh viewers: connection is being established or lost")
+            self.add_to_chat_safe(tr("Cannot refresh viewers: connection is being established or lost"))
 
     def _viewers_done(self, viewers, error):
         """UI-поток (мост): список зрителей пришёл - или запрос не удался."""
@@ -559,11 +560,11 @@ class TwitchTab(QWidget):
         self.all_viewers_list.clear()
         for v in sorted(viewers):
             self.all_viewers_list.addItem(v)
-        self.all_viewers_count.setText(f"All: {len(viewers)}")
+        self.all_viewers_count.setText(tr('All: {0}').format(len(viewers)))
 
         def show_service_message(message):
             # только в окно программы, не в Twitch
-            self.add_to_chat_safe(f"[POINTS] {message}")
+            self.add_to_chat_safe(tr('[POINTS] {0}').format(message))
 
         try:
             self.parent.currency_manager.process_currency_update(
@@ -583,7 +584,7 @@ class TwitchTab(QWidget):
         for v in sorted(viewers):
             self.active_viewers_list.addItem(v)
         self.active_viewers_list.blockSignals(False)
-        self.active_viewers_count.setText(f"Active: {self.active_viewers_list.count()}")
+        self.active_viewers_count.setText(tr('Active: {0}').format(self.active_viewers_list.count()))
 
     @pyqtSlot(list)
     def update_all_viewers(self, viewers):
@@ -592,119 +593,112 @@ class TwitchTab(QWidget):
         for v in sorted(viewers):
             self.all_viewers_list.addItem(v)
         self.all_viewers_list.blockSignals(False)
-        self.all_viewers_count.setText(f"All: {self.all_viewers_list.count()}")
+        self.all_viewers_count.setText(tr('All: {0}').format(self.all_viewers_list.count()))
 
     @pyqtSlot(bool)
     def update_stream_status(self, is_live):
         self.currently_live = is_live
         text = "LIVE" if is_live else "OFFLINE"
         color = "green" if is_live else "gray"
-        self.stream_status.setText(f"Stream: {text}")
+        self.stream_status.setText(tr('Stream: {0}').format(text))
         self.stream_status.setStyleSheet(f"color: {color};")
+
+    # Kinds of rows in the moderators list (stored in the item, not parsed
+    # from its text: the text is translated).
+    _MOD_KINDS = {
+        "admin": (N_("[Admin]"), "#B45309"),
+        "excluded": (N_("[Excluded]"), "red"),
+        "both": (N_("[Both]"), "blue"),
+        "manual": (N_("[Manual]"), "green"),
+        "api": (N_("[Twitch]"), "gray"),
+    }
+
+    def _mod_item(self, kind, name, tip=None):
+        label, color = self._MOD_KINDS[kind]
+        item = QListWidgetItem("%s %s" % (tr(label), name))
+        item.setForeground(QColor(color))
+        item.setData(Qt.UserRole, (kind, name))
+        if tip:
+            item.setToolTip(tip)
+        self.moderators_list_widget.addItem(item)
+        return item
+
+    @staticmethod
+    def _mod_of(item):
+        """(kind, name) of a moderators-list row, or (None, "")."""
+        data = item.data(Qt.UserRole) if item is not None else None
+        if isinstance(data, (tuple, list)) and len(data) == 2:
+            return data[0], data[1]
+        return None, ""
 
     @pyqtSlot(list)
     def update_moderators_list(self, moderators):
-        """Обновляет список модераторов с учетом источника"""
+        """The moderators list with where each one comes from."""
         manual_mods = self.config_manager.get_manual_moderators()
         excluded_mods = self.config_manager.get_excluded_moderators()
-        
         self.moderators_list_widget.blockSignals(True)
         self.moderators_list_widget.clear()
         self._add_admin_items()
-
-        # Объединяем списки для отображения (включая исключенных для информации)
-        all_mods = set(moderators + manual_mods + excluded_mods)
-        
-        for mod in sorted(all_mods):
-            in_api = mod in moderators
-            in_manual = mod in manual_mods
-            in_excluded = mod in excluded_mods
-            
-            if in_excluded:
-                # Исключенный модератор - красный цвет
-                item = QListWidgetItem(f"[Исключен] {mod}")
-                item.setForeground(QColor("red"))
-            elif in_api and in_manual:
-                # В обоих списках - синий цвет
-                item = QListWidgetItem(f"[Оба] {mod}")
-                item.setForeground(QColor("blue"))
-            elif in_manual:
-                # Только в ручном - зеленый цвет
-                item = QListWidgetItem(f"[Ручной] {mod}")
-                item.setForeground(QColor("green"))
+        for mod in sorted(set(moderators + manual_mods + excluded_mods)):
+            if mod in excluded_mods:
+                kind = "excluded"
+            elif mod in moderators and mod in manual_mods:
+                kind = "both"
+            elif mod in manual_mods:
+                kind = "manual"
             else:
-                # Только в API - серый цвет
-                item = QListWidgetItem(f"[API] {mod}")
-                item.setForeground(QColor("gray"))
-            
-            self.moderators_list_widget.addItem(item)
-        
+                kind = "api"
+            self._mod_item(kind, mod)
         self.moderators_list_widget.blockSignals(False)
 
     def save_update_frequency(self):
         idx = self.update_frequency.currentIndex()
         freqs = [10,30,60,120,300]
         self.viewer_update_frequency = freqs[idx]
-        self.last_update_label.setText(f"Update every: {self.viewer_update_frequency}s")
+        self.last_update_label.setText(tr('Update every: {0}s').format(self.viewer_update_frequency))
         if hasattr(self, 'viewer_update_timer'):
             self.stop_viewer_updates()
             self.start_viewer_updates()
 
     def add_manual_moderator(self):
-        """Добавляет модератора в ручной список"""
+        """Add a moderator to the manual list."""
         username = self.add_moderator_input.text().strip()
         if not username:
-            QMessageBox.warning(self, "Ошибка", "Введите имя пользователя")
+            QMessageBox.warning(self, tr("Error"), tr("Enter a user name"))
             return
-          # Добавляем в конфигурацию
+        was_excluded = username.lower() in self.config_manager.get_excluded_moderators()
         if self.config_manager.add_manual_moderator(username):
             self.add_moderator_input.clear()
-            
-            # Немедленно обновляем список модераторов в боте
             self.update_bot_moderators_status(username, True)
-            
             self.refresh_moderators()
-            
-            # Проверяем, был ли пользователь в исключенных
-            if username in self.config_manager.get_excluded_moderators():
-                QMessageBox.information(self, "Успех", f"Модератор {username} добавлен и восстановлен из исключенных")
+            if was_excluded:
+                QMessageBox.information(self, tr("Done"), tr(
+                    "Moderator {0} added and taken off the excluded list").format(username))
             else:
-                QMessageBox.information(self, "Успех", f"Модератор {username} добавлен")
+                QMessageBox.information(self, tr("Done"), tr("Moderator {0} added").format(username))
         else:
-            QMessageBox.warning(self, "Информация", f"Модератор {username} уже есть в списке или был восстановлен из исключенных")
+            QMessageBox.warning(self, tr("Information"), tr(
+                "{0} is already in the list").format(username))
 
     def remove_selected_moderator(self):
-        """Удаляет выбранного модератора из ручного списка"""
-        current_item = self.moderators_list_widget.currentItem()
-        if not current_item:
-            QMessageBox.warning(self, "Ошибка", "Выберите модератора для удаления")
+        """Remove the selected moderator from the manual list."""
+        kind, username = self._mod_of(self.moderators_list_widget.currentItem())
+        if kind is None:
+            QMessageBox.warning(self, tr("Error"), tr("Select a moderator to remove"))
             return
-        
-        # Извлекаем имя пользователя из текста элемента
-        text = current_item.text()
-        if "[Ручной]" in text:
-            username = text.replace("[Ручной]", "").strip()
-        elif "[Оба]" in text:
-            username = text.replace("[Оба]", "").strip()
-        else:
-            QMessageBox.warning(self, "Ошибка", "Можно удалять только ручных модераторов")
+        if kind not in ("manual", "both"):
+            QMessageBox.warning(self, tr("Error"), tr("Only manual moderators can be removed"))
             return
-        
-        # Подтверждение удаления
         reply = QMessageBox.question(
-            self, "Подтверждение", 
-            f"Удалить {username} из ручного списка модераторов?",
-            QMessageBox.Yes | QMessageBox.No        )
-        
+            self, tr("Confirm"), tr("Remove {0} from the manual moderators?").format(username),
+            QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             if self.config_manager.remove_manual_moderator(username):
-                # Немедленно обновляем статус модератора в боте
                 self.update_bot_moderators_status(username, False)
-                
                 self.refresh_moderators()
-                QMessageBox.information(self, "Успех", f"Модератор {username} удален")
+                QMessageBox.information(self, tr("Done"), tr("Moderator {0} removed").format(username))
             else:
-                QMessageBox.warning(self, "Ошибка", f"Не удалось удалить модератора {username}")
+                QMessageBox.warning(self, tr("Error"), tr("Could not remove moderator {0}").format(username))
 
     def update_bot_moderators_status(self, username, is_moderator):
         """Обновляет статус модератора в боте и системе валюты"""
@@ -723,84 +717,52 @@ class TwitchTab(QWidget):
         self.config_manager.moderators_config = self.config_manager.load_moderators_config()
 
     def restore_excluded_moderator(self):
-        """Восстанавливает исключенного модератора"""
-        current_item = self.moderators_list_widget.currentItem()
-        if not current_item:
+        """Take an excluded moderator off the excluded list."""
+        kind, username = self._mod_of(self.moderators_list_widget.currentItem())
+        if kind != "excluded":
             return
-        
-        # Извлекаем имя пользователя из текста элемента
-        text = current_item.text()
-        if "[Исключен]" in text:
-            username = text.replace("[Исключен]", "").strip()
-        else:
-            return
-        
-        # Подтверждение восстановления
         reply = QMessageBox.question(
-            self, "Подтверждение", 
-            f"Восстановить {username} как модератора?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
+            self, tr("Confirm"), tr("Make {0} a moderator again?").format(username),
+            QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             if self.config_manager.remove_excluded_moderator(username):
-                # Немедленно обновляем статус модератора в боте
                 self.update_bot_moderators_status(username, True)
-                
                 self.refresh_moderators()
-                QMessageBox.information(self, "Успех", f"Модератор {username} восстановлен")
+                QMessageBox.information(self, tr("Done"), tr("Moderator {0} restored").format(username))
             else:
-                QMessageBox.warning(self, "Ошибка", f"Не удалось восстановить модератора {username}")
+                QMessageBox.warning(self, tr("Error"), tr("Could not restore moderator {0}").format(username))
 
     def show_moderator_context_menu(self, position):
-        """Показывает контекстное меню для списка модераторов"""
         item = self.moderators_list_widget.itemAt(position)
         if not item:
             return
-        
+        kind, _name = self._mod_of(item)
         menu = QMenu(self)
-        
-        # Проверяем, можно ли удалить модератора
-        text = item.text()
-        if "[Ручной]" in text or "[Оба]" in text:
-            remove_action = QAction("Удалить из ручного списка", self)
+        if kind in ("manual", "both"):
+            remove_action = QAction(tr("Remove from the manual list"), self)
             remove_action.triggered.connect(self.remove_selected_moderator)
             menu.addAction(remove_action)
-        elif "[Исключен]" in text:
-            restore_action = QAction("Восстановить модератора", self)
+        elif kind == "excluded":
+            restore_action = QAction(tr("Make a moderator again"), self)
             restore_action.triggered.connect(self.restore_excluded_moderator)
             menu.addAction(restore_action)
-        
-        # Показываем информацию о модераторе
-        info_action = QAction("Информация", self)
+        info_action = QAction(tr("Information"), self)
         info_action.triggered.connect(lambda: self.show_moderator_info(item))
         menu.addAction(info_action)
-        
         menu.exec_(self.moderators_list_widget.mapToGlobal(position))
 
+    _MOD_SOURCES = {
+        "admin": N_("Admin permission"),
+        "api": N_("Twitch only"),
+        "manual": N_("The manual list only"),
+        "both": N_("Twitch and the manual list"),
+        "excluded": N_("Excluded from moderators"),
+    }
+
     def show_moderator_info(self, item):
-        """Показывает информацию о модераторе"""
-        text = item.text()
-        if "[API]" in text:
-            username = text.replace("[API]", "").strip()
-            source = "Только API"
-        elif "[Ручной]" in text:
-            username = text.replace("[Ручной]", "").strip()
-            source = "Только ручной список"
-        elif "[Оба]" in text:
-            username = text.replace("[Оба]", "").strip()
-            source = "API и ручной список"
-        elif "[Исключен]" in text:
-            username = text.replace("[Исключен]", "").strip()
-            source = "Исключен из модераторов"
-        else:
-            username = text.strip()
-            source = "Неизвестно"
-        
-        QMessageBox.information(
-            self, "Информация о модераторе",
-            f"Пользователь: {username}\nИсточник: {source}"
-        )
+        kind, username = self._mod_of(item)
+        source = tr(self._MOD_SOURCES.get(kind, N_("Unknown")))
+        QMessageBox.information(self, tr("Moderator"), tr("User: {0}\nSource: {1}").format(username, source))
 
     def refresh_moderators(self):
         """Обновляет список модераторов"""
@@ -814,39 +776,30 @@ class TwitchTab(QWidget):
         owner = str(self.channel_input.text() or "").strip().lower() if hasattr(self, "channel_input") else ""
         names = ([owner] if owner else []) + [n for n in self.config_manager.get_admins() if n != owner]
         for name in names:
-            item = QListWidgetItem(f"[Admin] {name}")
-            item.setForeground(QColor("#B45309"))
-            item.setToolTip("Admin permission: the channel owner and the \"admins\" list in moderators.json")
-            self.moderators_list_widget.addItem(item)
+            self._mod_item("admin", name, tr(
+                "Admin permission: the channel owner and the \"admins\" list in moderators.json"))
 
     def update_moderators_display_only(self):
-        """Обновляет отображение списка модераторов без запроса к API"""
-        manual_mods = self.config_manager.get_manual_moderators()
-        
+        """The list without asking Twitch: admins and the manual moderators."""
         self.moderators_list_widget.clear()
         self._add_admin_items()
-        for mod in sorted(manual_mods):
-            item = QListWidgetItem(f"[Ручной] {mod}")
-            item.setForeground(QColor("green"))
-            self.moderators_list_widget.addItem(item)
+        for mod in sorted(self.config_manager.get_manual_moderators()):
+            self._mod_item("manual", mod)
 
     def open_moderators_file(self):
-        """Открывает файл модераторов в текстовом редакторе"""
+        """Open moderators.json in the text editor (without waiting for it:
+        subprocess.run here used to freeze the window until Notepad closed)."""
         import subprocess
         import platform
-        
-        moderators_file_path = self.config_manager.moderators_file
-        
+        path = str(self.config_manager.moderators_file)
         try:
-            if platform.system() == 'Windows':
-                # Открываем в Блокноте на Windows
-                subprocess.run(['notepad.exe', str(moderators_file_path)])
-            elif platform.system() == 'Darwin':  # macOS
-                subprocess.run(['open', str(moderators_file_path)])
-            else:  # Linux
-                subprocess.run(['xdg-open', str(moderators_file_path)])
+            system = platform.system()
+            if system == 'Windows':
+                subprocess.Popen(['notepad.exe', path])
+            elif system == 'Darwin':
+                subprocess.Popen(['open', path])
+            else:
+                subprocess.Popen(['xdg-open', path])
         except Exception as e:
-            QMessageBox.warning(
-                self, "Ошибка", 
-                f"Не удалось открыть файл модераторов:\n{e}\n\nПуть к файлу: {moderators_file_path}"
-            )
+            QMessageBox.warning(self, tr("Error"), tr(
+                "Could not open the moderators file:\n{0}\n\nThe file: {1}").format(e, path))

@@ -7,6 +7,7 @@ from core import permissions
 from core.config_manager import ConfigManager
 import copy
 from core.system_commands import DEFAULT_SYSTEM_COMMANDS, merge_with_defaults
+from ui.i18n import tr
 
 
 class SysCommandsTab(QWidget):
@@ -33,8 +34,8 @@ class SysCommandsTab(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(11)
         self.table.setHorizontalHeaderLabels([
-            "Type", "Original Name", "Command", "Permission", "Info", "Group",
-            "Cooldown", "UserCooldown", "Cost", "Usage", "Enabled"
+            tr("Type"), tr("Original Name"), tr("Command"), tr("Permission"), tr("Info"), tr("Group"),
+            tr("Cooldown"), tr("UserCooldown"), tr("Cost"), tr("Usage"), tr("Enabled")
         ])
         
         # Track if table needs default_group column (for !volume command)
@@ -64,11 +65,11 @@ class SysCommandsTab(QWidget):
         # Create buttons layout
         buttons_layout = QHBoxLayout()
         
-        self.add_duplicate_btn = QPushButton("Duplicate Command")
+        self.add_duplicate_btn = QPushButton(tr("Duplicate Command"))
         self.add_duplicate_btn.clicked.connect(self.duplicate_command)
         buttons_layout.addWidget(self.add_duplicate_btn)
         
-        self.remove_btn = QPushButton("Remove Duplicate")
+        self.remove_btn = QPushButton(tr("Remove Duplicate"))
         self.remove_btn.clicked.connect(self.remove_command)
         buttons_layout.addWidget(self.remove_btn)
         
@@ -76,12 +77,12 @@ class SysCommandsTab(QWidget):
         layout.addLayout(buttons_layout)
         
         # Create command details group
-        details_group = QGroupBox("Command Details")
+        details_group = QGroupBox(tr("Command Details"))
         details_layout = QHBoxLayout()
         
         # Left column - Basic settings
         left_column = QVBoxLayout()
-        self.original_name_label = QLabel("Original Name:")
+        self.original_name_label = QLabel(tr("Original Name:"))
         self.original_name_display = QLabel("")
         self.original_name_display.setStyleSheet("color: gray; font-style: italic;")
         self.command_edit = QLineEdit()
@@ -92,13 +93,13 @@ class SysCommandsTab(QWidget):
         
         left_column.addWidget(self.original_name_label)
         left_column.addWidget(self.original_name_display)
-        left_column.addWidget(QLabel("Command:"))
+        left_column.addWidget(QLabel(tr("Command:")))
         left_column.addWidget(self.command_edit)
-        left_column.addWidget(QLabel("Permission:"))
+        left_column.addWidget(QLabel(tr("Permission:")))
         left_column.addWidget(self.permission_combo)
-        left_column.addWidget(QLabel("Info:"))
+        left_column.addWidget(QLabel(tr("Info:")))
         left_column.addWidget(self.info_edit)
-        left_column.addWidget(QLabel("Group:"))
+        left_column.addWidget(QLabel(tr("Group:")))
         left_column.addWidget(self.group_edit)
         
         # Right column - Settings
@@ -116,25 +117,25 @@ class SysCommandsTab(QWidget):
         self.cost_spin.setMaximum(1000000)
         self.usage_combo = QComboBox()
         self.usage_combo.addItems(["SC", "Chat", "Both"])
-        self.enabled_check = QCheckBox("Enabled")
+        self.enabled_check = QCheckBox(tr("Enabled"))
  
         # Random group setting (only for !random commands)
-        self.random_group_label = QLabel("Random Group:")
+        self.random_group_label = QLabel(tr("Random Group:"))
         self.random_group_edit = QLineEdit()
-        self.random_group_edit.setPlaceholderText("GENERAL")
+        self.random_group_edit.setPlaceholderText(tr("GENERAL"))
         
         # Default group setting (only for !volume commands)
-        self.default_group_label = QLabel("Default Group:")
+        self.default_group_label = QLabel(tr("Default Group:"))
         self.default_group_edit = QLineEdit()
-        self.default_group_edit.setPlaceholderText("SONG")
+        self.default_group_edit.setPlaceholderText(tr("SONG"))
 
         # Show picked command setting (only for !random commands)
-        self.show_picked_command_check = QCheckBox("Show picked command")
+        self.show_picked_command_check = QCheckBox(tr("Show picked command"))
         
         # Picked command response setting (only for !random commands)
-        self.picked_command_response_label = QLabel("Picked Command Response:")
+        self.picked_command_response_label = QLabel(tr("Picked Command Response:"))
         self.picked_command_response_edit = QLineEdit()
-        self.picked_command_response_edit.setPlaceholderText("Picked {command}.")
+        self.picked_command_response_edit.setPlaceholderText(tr("Picked {command}."))
 
         # Connect signals for detail fields
         self.command_edit.textChanged.connect(lambda: self.on_detail_field_changed("command_name", self.command_edit.text()))
@@ -151,13 +152,13 @@ class SysCommandsTab(QWidget):
         self.picked_command_response_edit.textChanged.connect(lambda: self.on_detail_field_changed("picked_command_response", self.picked_command_response_edit.text()))
         self.default_group_edit.textChanged.connect(lambda: self.on_detail_field_changed("default_group", self.default_group_edit.text()))
 
-        right_column.addWidget(QLabel("Cooldown:"))
+        right_column.addWidget(QLabel(tr("Cooldown:")))
         right_column.addWidget(self.cooldown_spin)
-        right_column.addWidget(QLabel("User Cooldown:"))
+        right_column.addWidget(QLabel(tr("User Cooldown:")))
         right_column.addWidget(self.user_cooldown_spin)
-        right_column.addWidget(QLabel("Cost:"))
+        right_column.addWidget(QLabel(tr("Cost:")))
         right_column.addWidget(self.cost_spin)
-        right_column.addWidget(QLabel("Usage:"))
+        right_column.addWidget(QLabel(tr("Usage:")))
         right_column.addWidget(self.usage_combo)
         right_column.addWidget(self.enabled_check)
 
@@ -334,7 +335,7 @@ class SysCommandsTab(QWidget):
             if col == 2:  # Command name (only for duplicates)
                 new_name = item.text().strip()
                 if not new_name:
-                    QMessageBox.warning(self, "Error", "Command name cannot be empty.")
+                    QMessageBox.warning(self, tr("Error"), tr("Command name cannot be empty."))
                     self.update_table()
                     self.table.blockSignals(False)
                     return
@@ -345,8 +346,8 @@ class SysCommandsTab(QWidget):
                         existing_name = existing_cmd.get("command_name", existing_cmd["command"])
                         if existing_name == new_name:
                             QMessageBox.warning(
-                                self, "Error",
-                                f"Command name '{new_name}' already exists. Please choose a different name."
+                                self, tr("Error"),
+                                tr("Command name '{0}' already exists. Please choose a different name.").format(new_name)
                             )
                             self.update_table()
                             self.table.blockSignals(False)
@@ -496,7 +497,7 @@ class SysCommandsTab(QWidget):
                 
                 # Only allow editing for duplicate commands (not originals)
                 if cmd.get("is_original", False) and not cmd.get("is_duplicate", False):
-                    QMessageBox.warning(self, "Error", "Cannot modify original system commands. Create a duplicate to customize.")
+                    QMessageBox.warning(self, tr("Error"), tr("Cannot modify original system commands. Create a duplicate to customize."))
                     return
                 
                 cmd[field_name] = value
@@ -575,11 +576,11 @@ class SysCommandsTab(QWidget):
             return False
         cmd = self.system_commands[row]
         if not cmd.get("is_duplicate", False):
-            QMessageBox.warning(parent_widget or self, "Error", "Cannot remove original system commands.")
+            QMessageBox.warning(parent_widget or self, tr("Error"), tr("Cannot remove original system commands."))
             return False
         reply = QMessageBox.question(
-            parent_widget or self, "Confirm Removal",
-            f"Are you sure you want to remove the duplicate command '{self.display_name(cmd)}'?",
+            parent_widget or self, tr("Confirm Removal"),
+            tr("Are you sure you want to remove the duplicate command '{0}'?").format(self.display_name(cmd)),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply != QMessageBox.Yes:
             return False
@@ -592,11 +593,11 @@ class SysCommandsTab(QWidget):
         """Create a duplicate of the selected original command"""
         selected_items = self.table.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "Error", "Please select an original command to duplicate.")
+            QMessageBox.warning(self, tr("Error"), tr("Please select an original command to duplicate."))
             return
         result = self.duplicate_at(selected_items[0].row())
         if isinstance(result, str):
-            QMessageBox.warning(self, "Error", result)
+            QMessageBox.warning(self, tr("Error"), result)
             return
         self.table.selectRow(result)
 
@@ -604,7 +605,7 @@ class SysCommandsTab(QWidget):
         """Remove the selected duplicate command"""
         selected_items = self.table.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "Error", "Please select a duplicate command to remove.")
+            QMessageBox.warning(self, tr("Error"), tr("Please select a duplicate command to remove."))
             return
         self.remove_at(selected_items[0].row())
 
@@ -612,10 +613,10 @@ class SysCommandsTab(QWidget):
         """Show context menu for the table"""
         menu = QMenu()
         
-        duplicate_action = menu.addAction("Duplicate Command")
+        duplicate_action = menu.addAction(tr("Duplicate Command"))
         duplicate_action.triggered.connect(self.duplicate_command)
         
-        remove_action = menu.addAction("Remove Duplicate")
+        remove_action = menu.addAction(tr("Remove Duplicate"))
         remove_action.triggered.connect(self.remove_command)
         
         menu.exec_(self.table.viewport().mapToGlobal(position))

@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, 
 from PyQt5.QtCore import QTimer
 from ui.theme.style import (palette_for)
 from ui.theme.widgets import (connection_state, make_icon)
+from ui.i18n import tr
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +33,7 @@ class NowPlayingBar(QFrame):
         self._h.addWidget(self._idle)
         self._slots = {}
         self._h.addStretch(1)
-        self._open = QPushButton("Queue Control")
+        self._open = QPushButton(tr("Queue Control"))
         self._open.setIcon(make_icon("queue", self.pal["text2"]))
         self._open.clicked.connect(lambda: self._go(7))
         self._h.addWidget(self._open)
@@ -73,7 +74,7 @@ class NowPlayingBar(QFrame):
         skip = QPushButton()
         skip.setIcon(make_icon("skip", self.pal["text"]))
         skip.setFixedSize(30, 28)
-        skip.setToolTip("Skip what %s is playing" % group)
+        skip.setToolTip(tr("Skip what %s is playing") % group)
         h.addWidget(pause)
         h.addWidget(skip)
         pause.clicked.connect(lambda: self._toggle_pause(group))
@@ -102,11 +103,11 @@ class NowPlayingBar(QFrame):
                 self._slots.pop(g)["w"].deleteLater()
         if bot is None:
             text, _key = connection_state(self.editor)
-            self._idle.setText("Queues appear here when the bot is connected (%s)." % text)
+            self._idle.setText(tr("Queues appear here when the bot is connected (%s).") % text)
             self._idle.show()
             return
         if not groups:
-            self._idle.setText("No queued groups — enable a queue in Group Settings.")
+            self._idle.setText(tr("No queued groups — enable a queue in Group Settings."))
             self._idle.show()
             return
         self._idle.hide()
@@ -117,14 +118,14 @@ class NowPlayingBar(QFrame):
             slot = self._slots.get(g) or self._make_slot(g)
             cur = snap["current"]
             if cur is not None:
-                slot["text"].setText("!%s" % cur["command"])
+                slot["text"].setText(tr("!%s") % cur["command"])
                 started = cur.get("started")
                 elapsed = int(time.time() - started) if started else 0
-                slot["meta"].setText("%s · %d:%02d · %d waiting" % (
+                slot["meta"].setText(tr("%s · %d:%02d · %d waiting") % (
                     cur["user"], elapsed // 60, elapsed % 60, len(snap["pending"])))
             else:
-                slot["text"].setText("paused" if snap["paused"] else "idle")
-                slot["meta"].setText("%d waiting" % len(snap["pending"]) if snap["pending"] else "")
+                slot["text"].setText(tr("paused") if snap["paused"] else tr("idle"))
+                slot["meta"].setText(tr("%d waiting") % len(snap["pending"]) if snap["pending"] else "")
             slot["skip"].setEnabled(cur is not None)
             slot["pause"].setIcon(make_icon("play" if snap["paused"] else "pause", self.pal["text"]))
-            slot["pause"].setToolTip("Resume %s" % g if snap["paused"] else "Pause %s" % g)
+            slot["pause"].setToolTip(tr("Resume %s") % g if snap["paused"] else tr("Pause %s") % g)

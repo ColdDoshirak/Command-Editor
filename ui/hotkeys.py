@@ -13,12 +13,13 @@ import sys
 from PyQt5.QtCore import QObject, Qt, QAbstractNativeEventFilter, pyqtSignal
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QApplication
+from ui.i18n import N_
 
 # name, label, default combination
 ACTIONS = (
-    ("skip", "Skip what is playing", "Ctrl+Alt+S"),
-    ("pause", "Pause / resume the queues", "Ctrl+Alt+P"),
-    ("stop", "Stop all sounds and pause the queues", "Ctrl+Alt+M"),
+    ("skip", N_("Skip what is playing"), "Ctrl+Alt+S"),
+    ("pause", N_("Pause / resume the queues"), "Ctrl+Alt+P"),
+    ("stop", N_("Stop all sounds and pause the queues"), "Ctrl+Alt+M"),
 )
 DEFAULTS = dict({"enabled": False}, **{name: combo for name, _label, combo in ACTIONS})
 

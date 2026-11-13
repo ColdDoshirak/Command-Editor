@@ -15,6 +15,7 @@ from PyQt5.QtCore import Qt
 from core import permissions
 from core.commands import FIELDS as COMMAND_FIELDS
 from ui.commands_model import CommandsTableModel, display_text
+from ui.i18n import tr
 
 
 class ClassicCommandsMixin(object):
@@ -27,9 +28,9 @@ class ClassicCommandsMixin(object):
         
         # Search functionality
         search_layout = QHBoxLayout()
-        search_label = QLabel("Search:")
+        search_label = QLabel(tr("Search:"))
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Type to search commands...")
+        self.search_input.setPlaceholderText(tr("Type to search commands..."))
         self.search_input.textChanged.connect(self.filter_commands)
         search_layout.addWidget(search_label)
         search_layout.addWidget(self.search_input)
@@ -57,45 +58,45 @@ class ClassicCommandsMixin(object):
         buttons_layout = QHBoxLayout()
         
         # Add buttons
-        self.add_btn = QPushButton("Add Command")
+        self.add_btn = QPushButton(tr("Add Command"))
         self.add_btn.clicked.connect(self.add_command)
         buttons_layout.addWidget(self.add_btn)
         
-        self.remove_btn = QPushButton("Remove Command")
+        self.remove_btn = QPushButton(tr("Remove Command"))
         self.remove_btn.clicked.connect(self.delete_command)
         buttons_layout.addWidget(self.remove_btn)
         
-        self.load_btn = QPushButton("Load File")
+        self.load_btn = QPushButton(tr("Load File"))
         self.load_btn.clicked.connect(self.load_file)
         buttons_layout.addWidget(self.load_btn)
         
-        self.save_btn = QPushButton("Save File")
+        self.save_btn = QPushButton(tr("Save File"))
         self.save_btn.clicked.connect(self.save_file)
         buttons_layout.addWidget(self.save_btn)
         
-        self.trash_btn = QPushButton("Trash…")
-        self.trash_btn.setToolTip("Deleted commands - put them back (Ctrl+Z: the last one)")
+        self.trash_btn = QPushButton(tr("Trash…"))
+        self.trash_btn.setToolTip(tr("Deleted commands - put them back (Ctrl+Z: the last one)"))
         self.trash_btn.clicked.connect(lambda: self.open_trash())
         buttons_layout.addWidget(self.trash_btn)
 
-        self.save_legacy_btn = QPushButton("Save Legacy Format")
+        self.save_legacy_btn = QPushButton(tr("Save Legacy Format"))
         self.save_legacy_btn.clicked.connect(self.save_legacy_format)
         buttons_layout.addWidget(self.save_legacy_btn)
         
         # Add Auto-Assign button
-        self.auto_assign_btn = QPushButton("Auto-Assign Sounds")
+        self.auto_assign_btn = QPushButton(tr("Auto-Assign Sounds"))
         self.auto_assign_btn.clicked.connect(self.auto_assign_sounds)
         buttons_layout.addWidget(self.auto_assign_btn)
 
-        self.fix_paths_btn = QPushButton("Fix Sound Paths")
-        self.fix_paths_btn.setToolTip("Sound folder moved? Find the files again and update all commands")
+        self.fix_paths_btn = QPushButton(tr("Fix Sound Paths"))
+        self.fix_paths_btn.setToolTip(tr("Sound folder moved? Find the files again and update all commands"))
         self.fix_paths_btn.clicked.connect(self.fix_sound_paths)
         buttons_layout.addWidget(self.fix_paths_btn)
 
         main_layout.addLayout(buttons_layout)
         
         # Create command details group
-        details_group = QGroupBox("Command Details")
+        details_group = QGroupBox(tr("Command Details"))
         details_layout = QHBoxLayout()
         
         # Left column - Basic settings
@@ -107,27 +108,27 @@ class ClassicCommandsMixin(object):
         self.group_edit = QLineEdit()
         self.response_edit = QTextEdit()
         self.response_edit.setMaximumHeight(80)  # Ограничиваем высоту для компактности
-        self.response_edit.setPlaceholderText("Введите текст ответа...\nShift+Enter - новая строка\nEnter - сохранить изменения")
+        self.response_edit.setPlaceholderText(tr("Response text...\nShift+Enter - a new line\nEnter - save"))
         self.response_edit.textChanged.connect(self.on_response_changed)
         
         # Устанавливаем обработчик клавиш для поддержки Shift+Enter
         self.response_edit.keyPressEvent = self.response_key_press_event
         
-        left_column.addWidget(QLabel("Command:"))
+        left_column.addWidget(QLabel(tr("Command:")))
         left_column.addWidget(self.command_edit)
-        left_column.addWidget(QLabel("Permission:"))
+        left_column.addWidget(QLabel(tr("Permission:")))
         left_column.addWidget(self.permission_combo)
-        left_column.addWidget(QLabel("Info:"))
+        left_column.addWidget(QLabel(tr("Info:")))
         left_column.addWidget(self.info_edit)
         # псевдонимы (2.0): "!music, !tune" - те же кулдаун, цена и счётчик
         self.aliases_edit = QLineEdit()
-        self.aliases_edit.setPlaceholderText("!music, !tune")
-        self.aliases_edit.setToolTip("Other names for this command, e.g. '!music, !tune'. They share its cooldown, cost and count. Responses may use {user} {target} {args} {1}..{9} {count} {points} {currency} {random:1-100}")
-        left_column.addWidget(QLabel("Aliases:"))
+        self.aliases_edit.setPlaceholderText(tr("!music, !tune"))
+        self.aliases_edit.setToolTip(tr("Other names for this command, e.g. '!music, !tune'. They share its cooldown, cost and count. Responses may use {user} {target} {args} {1}..{9} {count} {points} {currency} {random:1-100}"))
+        left_column.addWidget(QLabel(tr("Aliases:")))
         left_column.addWidget(self.aliases_edit)
-        left_column.addWidget(QLabel("Group:"))
+        left_column.addWidget(QLabel(tr("Group:")))
         left_column.addWidget(self.group_edit)
-        left_column.addWidget(QLabel("Response:"))
+        left_column.addWidget(QLabel(tr("Response:")))
         left_column.addWidget(self.response_edit)
         
         # Middle column - Cooldown and cost settings
@@ -138,35 +139,35 @@ class ClassicCommandsMixin(object):
         self.count_spin = QSpinBox()
         self.usage_combo = QComboBox()
         self.usage_combo.addItems(["SC", "Chat", "Both"])
-        self.enabled_check = QCheckBox("Enabled")
+        self.enabled_check = QCheckBox(tr("Enabled"))
         
-        middle_column.addWidget(QLabel("Cooldown:"))
+        middle_column.addWidget(QLabel(tr("Cooldown:")))
         middle_column.addWidget(self.cooldown_spin)
-        middle_column.addWidget(QLabel("User Cooldown:"))
+        middle_column.addWidget(QLabel(tr("User Cooldown:")))
         middle_column.addWidget(self.user_cooldown_spin)
-        middle_column.addWidget(QLabel("Cost:"))
+        middle_column.addWidget(QLabel(tr("Cost:")))
         middle_column.addWidget(self.cost_spin)
-        middle_column.addWidget(QLabel("Count:"))
+        middle_column.addWidget(QLabel(tr("Count:")))
         middle_column.addWidget(self.count_spin)
-        middle_column.addWidget(QLabel("Usage:"))
+        middle_column.addWidget(QLabel(tr("Usage:")))
         middle_column.addWidget(self.usage_combo)
         middle_column.addWidget(self.enabled_check)
         
         # Right column - Sound files and volume
         right_column = QVBoxLayout()
         self.sound_file_edit = QLineEdit()
-        self.sound_file_btn = QPushButton("Browse")
+        self.sound_file_btn = QPushButton(tr("Browse"))
         self.fk_sound_file_edit = QLineEdit()
-        self.fk_sound_file_btn = QPushButton("Browse")
+        self.fk_sound_file_btn = QPushButton(tr("Browse"))
         
         self.sound_file_btn.clicked.connect(lambda: self.browse_file(self.sound_file_edit))
         # папка вместо файла: каждый раз - случайный звук из неё (2.0)
-        self.sound_folder_btn = QPushButton("Folder…")
-        self.sound_folder_btn.setToolTip("A folder: a random sound from it plays each time")
+        self.sound_folder_btn = QPushButton(tr("Folder…"))
+        self.sound_folder_btn.setToolTip(tr("A folder: a random sound from it plays each time"))
         self.sound_folder_btn.clicked.connect(lambda: self.browse_folder(self.sound_file_edit))
         self.fk_sound_file_btn.clicked.connect(lambda: self.browse_file(self.fk_sound_file_edit))
         
-        right_column.addWidget(QLabel("Sound File:"))
+        right_column.addWidget(QLabel(tr("Sound File:")))
         sound_file_layout = QHBoxLayout()
         sound_file_layout.addWidget(self.sound_file_edit)
         sound_file_layout.addWidget(self.sound_file_btn)
@@ -174,22 +175,22 @@ class ClassicCommandsMixin(object):
         right_column.addLayout(sound_file_layout)
         
         # Add Play/Stop button for sound
-        self.play_sound_btn = QPushButton("Play Sound")
+        self.play_sound_btn = QPushButton(tr("Play Sound"))
         self.play_sound_btn.clicked.connect(self.play_or_stop_sound)
         sound_file_layout.addWidget(self.play_sound_btn)
         # проверка команды без Twitch (2.0): сухой прогон, ничего не списывается
-        self.test_cmd_btn = QPushButton("Test…")
-        self.test_cmd_btn.setToolTip("What happens if a viewer writes it - without Twitch")
+        self.test_cmd_btn = QPushButton(tr("Test…"))
+        self.test_cmd_btn.setToolTip(tr("What happens if a viewer writes it - without Twitch"))
         self.test_cmd_btn.clicked.connect(lambda: self.test_command())
         sound_file_layout.addWidget(self.test_cmd_btn)
         
-        right_column.addWidget(QLabel("FK Sound File:"))
+        right_column.addWidget(QLabel(tr("FK Sound File:")))
         right_column.addWidget(self.fk_sound_file_edit)
         right_column.addWidget(self.fk_sound_file_btn)
         
         # Add volume control layout with value display
         volume_layout = QHBoxLayout()
-        volume_label = QLabel("Volume:")
+        volume_label = QLabel(tr("Volume:"))
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
@@ -210,34 +211,34 @@ class ClassicCommandsMixin(object):
         self.volume_value_label.setText(f"{int(self.volume * 100)}%")
         
         # Add sound interruption toggle
-        self.allow_interruption_check = QCheckBox("Allow sounds to interrupt each other")
-        self.allow_interruption_check.setToolTip("When enabled, new commands will interrupt currently playing sounds")
+        self.allow_interruption_check = QCheckBox(tr("Allow sounds to interrupt each other"))
+        self.allow_interruption_check.setToolTip(tr("When enabled, new commands will interrupt currently playing sounds"))
         self.allow_interruption_check.stateChanged.connect(self.on_interruption_toggle)
         right_column.addWidget(self.allow_interruption_check)
 
         # Add show message toggle
-        self.show_interruption_message_check = QCheckBox("Show message when sound is blocked")
-        self.show_interruption_message_check.setToolTip("When enabled, a message will be sent in chat when a command's sound is blocked")
+        self.show_interruption_message_check = QCheckBox(tr("Show message when sound is blocked"))
+        self.show_interruption_message_check.setToolTip(tr("When enabled, a message will be sent in chat when a command's sound is blocked"))
         self.show_interruption_message_check.stateChanged.connect(self.on_show_message_toggle)
         right_column.addWidget(self.show_interruption_message_check)
         
         # Add auto-save controls
-        auto_save_group = QGroupBox("Auto-Save")
+        auto_save_group = QGroupBox(tr("Auto-Save"))
         auto_save_layout = QVBoxLayout()
 
         # Command auto-save
         command_save_layout = QHBoxLayout()
-        self.auto_save_checkbox = QCheckBox("Enable Auto-Save")
+        self.auto_save_checkbox = QCheckBox(tr("Enable Auto-Save"))
         self.auto_save_checkbox.stateChanged.connect(self.on_auto_save_toggle)
         self.auto_save_interval_input = QSpinBox()
         self.auto_save_interval_input.setMinimum(60)
         self.auto_save_interval_input.setMaximum(3600)
         self.auto_save_interval_input.setSingleStep(60)
-        self.auto_save_interval_input.setSuffix(" seconds")
+        self.auto_save_interval_input.setSuffix(tr(" s"))
         self.auto_save_interval_input.valueChanged.connect(self.on_auto_save_interval_changed)
 
         command_save_layout.addWidget(self.auto_save_checkbox)
-        command_save_layout.addWidget(QLabel("Interval:"))
+        command_save_layout.addWidget(QLabel(tr("Interval:")))
         command_save_layout.addWidget(self.auto_save_interval_input)
         command_save_layout.addStretch()
 
@@ -245,8 +246,8 @@ class ClassicCommandsMixin(object):
 
         # Full system backup
         system_backup_layout = QHBoxLayout()
-        self.system_auto_backup_checkbox = QCheckBox("Enable Automatic Full System Backups")
-        self.system_auto_backup_checkbox.setToolTip("Automatically create comprehensive system backups (commands + currency + settings)")
+        self.system_auto_backup_checkbox = QCheckBox(tr("Enable Automatic Full System Backups"))
+        self.system_auto_backup_checkbox.setToolTip(tr("Automatically create comprehensive system backups (commands + currency + settings)"))
         self.system_auto_backup_checkbox.setChecked(self.system_auto_backup_enabled)
         self.system_auto_backup_checkbox.stateChanged.connect(self.on_system_auto_backup_toggle)
         self.system_backup_interval_input = QSpinBox()
@@ -254,11 +255,11 @@ class ClassicCommandsMixin(object):
         self.system_backup_interval_input.setMaximum(86400)  # 24 hours maximum
         self.system_backup_interval_input.setSingleStep(300)  # 5 minute steps
         self.system_backup_interval_input.setValue(self.system_backup_interval)
-        self.system_backup_interval_input.setSuffix(" seconds")
+        self.system_backup_interval_input.setSuffix(tr(" s"))
         self.system_backup_interval_input.valueChanged.connect(self.on_system_backup_interval_changed)
 
         system_backup_layout.addWidget(self.system_auto_backup_checkbox)
-        system_backup_layout.addWidget(QLabel("Interval:"))
+        system_backup_layout.addWidget(QLabel(tr("Interval:")))
         system_backup_layout.addWidget(self.system_backup_interval_input)
         system_backup_layout.addStretch()
 
@@ -266,8 +267,8 @@ class ClassicCommandsMixin(object):
 
         # Currency auto-save
         currency_save_layout = QHBoxLayout()
-        self.currency_auto_save_checkbox = QCheckBox("Auto-Save Currency Users")
-        self.currency_auto_save_checkbox.setToolTip("Automatically save currency user data (points, hours, ranks)")
+        self.currency_auto_save_checkbox = QCheckBox(tr("Auto-Save Currency Users"))
+        self.currency_auto_save_checkbox.setToolTip(tr("Automatically save currency user data (points, hours, ranks)"))
         self.currency_auto_save_checkbox.setChecked(self.currency_auto_save_enabled)
         self.currency_auto_save_checkbox.stateChanged.connect(self.on_currency_auto_save_toggle)
         self.currency_backup_interval_input = QSpinBox()
@@ -275,11 +276,11 @@ class ClassicCommandsMixin(object):
         self.currency_backup_interval_input.setMaximum(3600)  # 1 hour maximum
         self.currency_backup_interval_input.setSingleStep(60)  # 1 minute steps
         self.currency_backup_interval_input.setValue(self.currency_backup_interval)
-        self.currency_backup_interval_input.setSuffix(" seconds")
+        self.currency_backup_interval_input.setSuffix(tr(" s"))
         self.currency_backup_interval_input.valueChanged.connect(self.on_currency_backup_interval_changed)
 
         currency_save_layout.addWidget(self.currency_auto_save_checkbox)
-        currency_save_layout.addWidget(QLabel("Interval:"))
+        currency_save_layout.addWidget(QLabel(tr("Interval:")))
         currency_save_layout.addWidget(self.currency_backup_interval_input)
         currency_save_layout.addStretch()
 
@@ -393,22 +394,22 @@ class ClassicCommandsMixin(object):
         виджет Qt из чужого потока (тот же класс багов, что C4)."""
         row = self._selected_row()
         if not self.preview.is_playing() and not (0 <= row < len(self.commands)):
-            QMessageBox.warning(self, "Warning", "No command selected.")
+            QMessageBox.warning(self, tr("Warning"), tr("No command selected."))
             return
         cmd = self.commands[row] if 0 <= row < len(self.commands) else {}
         fn = cmd.get("SoundFile", "")
         state = self.preview.toggle(fn, cmd.get("Volume", 100), self.allow_sound_interruption)
         if state == "missing":
-            QMessageBox.warning(self, "Warning", f"Sound file not found: {fn}")
+            QMessageBox.warning(self, tr("Warning"), tr('Sound file not found: {0}').format(fn))
         elif state == "blocked" and self.show_interruption_message:
-            QMessageBox.information(self, "Info", "Interruption disabled.")
+            QMessageBox.information(self, tr("Info"), tr("Interruption disabled."))
         if state == "playing":
             self._preview_timer.start()
         self._sync_preview_button()
 
     def _sync_preview_button(self):
         playing = self.preview.is_playing()
-        self.play_sound_btn.setText("Stop Sound" if playing else "Play Sound")
+        self.play_sound_btn.setText(tr("Stop Sound") if playing else tr("Play Sound"))
         if not playing:
             self._preview_timer.stop()
 
@@ -428,8 +429,8 @@ class ClassicCommandsMixin(object):
             # команда удалялась и сразу сохранялась без вопроса
             name = self.commands[current_row].get("Command", "")
             reply = QMessageBox.question(
-                self, "Delete command",
-                f"Delete the command {name}?\n\nIt goes to the Trash: Ctrl+Z puts it back.",
+                self, tr("Delete command"),
+                tr('Delete the command {0}?\n\nIt goes to the Trash: Ctrl+Z puts it back.').format(name),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply != QMessageBox.Yes:
                 return
@@ -444,7 +445,7 @@ class ClassicCommandsMixin(object):
             self.save_commands()
 
     def browse_file(self, line_edit):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Select Sound File", "", "Sound Files (*.mp3 *.wav *.ogg)")
+        file_name, _ = QFileDialog.getOpenFileName(self, tr("Select Sound File"), "", "Sound Files (*.mp3 *.wav *.ogg)")
         if file_name:
             line_edit.setText(file_name)
             # setText не даёт editingFinished: поля классической панели
@@ -460,7 +461,7 @@ class ClassicCommandsMixin(object):
     def browse_folder(self, line_edit):
         """A folder as the sound: a random file from it plays each time."""
         folder = QFileDialog.getExistingDirectory(
-            self, "Folder with sounds (a random one plays each time)", line_edit.text() or "")
+            self, tr("Folder with sounds (a random one plays each time)"), line_edit.text() or "")
         if folder:
             line_edit.setText(folder)
             if line_edit is self.sound_file_edit:
@@ -572,7 +573,7 @@ class ClassicCommandsMixin(object):
         from ui.command_test_dialog import CommandTestDialog
         row = self._selected_row() if row is None else row
         if not (0 <= row < len(self.commands)):
-            QMessageBox.warning(self, "Warning", "No command selected.")
+            QMessageBox.warning(self, tr("Warning"), tr("No command selected."))
             return None
         dlg = CommandTestDialog(self, row)
         self._last_test_dialog = dlg

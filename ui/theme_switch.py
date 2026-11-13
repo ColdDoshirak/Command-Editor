@@ -10,6 +10,7 @@ Python 3.8 / PyQt5.
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PyQt5.QtCore import Qt
 from ui import theme as _theme
+from ui.i18n import tr, N_
 
 
 class ThemeSwitchMixin(object):
@@ -141,8 +142,8 @@ class ThemeSwitchMixin(object):
             else:
                 self.settings_tab = _theme.ThemedTabView(
                     self, self.tab_widget, panel,
-                    "Settings", "sound · auto-save · appearance")
-            self.tab_widget.addTab(self.settings_tab, "Settings")
+                    N_("Settings"), N_("sound · auto-save · appearance"))
+            self.tab_widget.addTab(self.settings_tab, tr("Settings"))
 
     def set_theme(self, theme_name):
         """Public entry point for the theme switcher (About tab)."""
@@ -183,7 +184,7 @@ class ThemeSwitchMixin(object):
                 self.themed_commands_view = None
             # main_tab was unparented when a theme was applied; restore it
             if tab_widget.indexOf(self.main_tab) < 0:
-                tab_widget.insertTab(0, self.main_tab, "Commands")
+                tab_widget.insertTab(0, self.main_tab, tr("Commands"))
             return
 
         # (Re)create the themed view, destroying any previous one
@@ -200,10 +201,10 @@ class ThemeSwitchMixin(object):
         if first_apply:
             # Classic tab still occupies index 0: remove it, insert themed view
             tab_widget.removeTab(cmd_idx)
-            tab_widget.insertTab(cmd_idx, self.themed_commands_view, "Commands")
+            tab_widget.insertTab(cmd_idx, self.themed_commands_view, tr("Commands"))
         else:
             # A themed view already occupied index 0 (now shifted): insert at 0
-            tab_widget.insertTab(cmd_idx, self.themed_commands_view, "Commands")
+            tab_widget.insertTab(cmd_idx, self.themed_commands_view, tr("Commands"))
         tab_widget.setCurrentIndex(cmd_idx)
         self.themed_commands_view.highlight_tab(cmd_idx)
 
@@ -242,7 +243,7 @@ class ThemeSwitchMixin(object):
                 self.themed_twitch_view = None
             if tab_widget.indexOf(self.twitch_tab) < 0:
                 self.twitch_tab.restore_classic_layout()
-                tab_widget.insertTab(tw_idx, self.twitch_tab, "Twitch")
+                tab_widget.insertTab(tw_idx, self.twitch_tab, tr("Twitch"))
             return
 
         # (Re)create the themed view, destroying any previous one
@@ -257,9 +258,9 @@ class ThemeSwitchMixin(object):
         self.themed_twitch_view = self._make_twitch_view()
         if first_apply:
             tab_widget.removeTab(tw_idx)
-            tab_widget.insertTab(tw_idx, self.themed_twitch_view, "Twitch")
+            tab_widget.insertTab(tw_idx, self.themed_twitch_view, tr("Twitch"))
         else:
-            tab_widget.insertTab(tw_idx, self.themed_twitch_view, "Twitch")
+            tab_widget.insertTab(tw_idx, self.themed_twitch_view, tr("Twitch"))
         tab_widget.setCurrentIndex(tw_idx)
         self.themed_twitch_view.highlight_tab(tw_idx)
 
@@ -286,7 +287,7 @@ class ThemeSwitchMixin(object):
                 if tab_widget.indexOf(orig) < 0:
                     # drop the themed background the wrapper put on it
                     orig.setStyleSheet("")
-                    tab_widget.insertTab(min(cidx, tab_widget.count()), orig, name)
+                    tab_widget.insertTab(min(cidx, tab_widget.count()), orig, tr(name))
             return
 
         for name, (attr, title, subtitle, _cidx) in self._GENERIC_TABS.items():
@@ -312,5 +313,5 @@ class ThemeSwitchMixin(object):
                 # same master/detail editor as the themed Commands view
                 content = _theme.SysCommandsView(self, orig)
             view = _theme.ThemedTabView(self, tab_widget, orig, title, subtitle, content=content)
-            tab_widget.insertTab(idx, view, name)
+            tab_widget.insertTab(idx, view, tr(name))
             self.themed_tab_views[name] = view

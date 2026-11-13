@@ -9,14 +9,15 @@ from core.permissions import LEVELS as _PERMISSION_LEVELS
 
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
+from ui.i18n import N_
 
 
 THEMES = ("classic", "sidebar", "spreadsheet", "midnight")
 THEME_LABELS = {
-    "classic": "Classic (native)",
-    "sidebar": "Sidebar (Design 1)",
-    "spreadsheet": "Spreadsheet (Design 9)",
-    "midnight": "Midnight (dark stream desk)",
+    "classic": N_("Classic (native)"),
+    "sidebar": N_("Sidebar (Design 1)"),
+    "spreadsheet": N_("Spreadsheet (Design 9)"),
+    "midnight": N_("Midnight (dark stream desk)"),
 }
 
 # Which layout a theme uses (themes may share a layout with another palette).
