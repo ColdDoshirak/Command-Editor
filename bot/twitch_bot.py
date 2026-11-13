@@ -921,8 +921,9 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
         Лестница Everyone < Regular < Subscriber < VIP < Moderator < Admin
         (core/permissions.py): каждый уровень включает нижние. Бейджи из
         тегов IRC решают сразу; модератор без бейджа - через
-        is_user_moderator (кэш на 5 минут). Admin - владелец канала и список
-        admins в moderators.json (раньше Admin был равен модератору).
+        is_user_moderator (кэш на 5 минут). Admin - владелец канала, список
+        admins в moderators.json и, по умолчанию (как в 1.x), все
+        модераторы; это выключается (moderators_are_admins).
         Исключённые модераторы теряют только права модератора.
         """
         need = permissions.rank(required)
@@ -938,7 +939,15 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
         except Exception:
             pass
         if need >= permissions.ADMIN:
-            return False
+            # по умолчанию (как в 1.x) модератор - тоже Admin; выключается
+            # в Settings -> Permissions
+            try:
+                mods_are_admins = self.config_manager.get_moderators_are_admins()
+            except Exception:
+                mods_are_admins = True
+            if not mods_are_admins:
+                return False
+            need = permissions.MODERATOR
         try:
             excluded = username in self.config_manager.get_excluded_moderators()
         except Exception:

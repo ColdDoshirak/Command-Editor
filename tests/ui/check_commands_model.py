@@ -192,6 +192,17 @@ def body(k):
     shown = [w.twitch_tab.moderators_list_widget.item(i).text()
              for i in range(w.twitch_tab.moderators_list_widget.count())]
     check("admins listed on the Twitch tab", shown[:2] == ["[Admin] mychannel", "[Admin] boss"], shown)
+    w.apply_theme("sidebar"); pump(300)
+    panel = getattr(w.settings_tab, "original_tab", w.settings_tab)
+    check("Settings: moderators are admins by default", panel.mods_admin_switch.isChecked()
+          and w.config_manager.get_moderators_are_admins())
+    panel.mods_admin_switch.setChecked(False); pump()
+    import json as _json
+    with open(str(w.config_manager.moderators_file), encoding="utf-8") as f:
+        saved = _json.load(f).get("moderators_are_admins")
+    check("turning it off is saved", saved is False and not w.config_manager.get_moderators_are_admins(), saved)
+    panel.mods_admin_switch.setChecked(True); pump()
+    w.apply_theme("classic"); pump(200)
 
 
     # ---- aliases field (2.0) -----------------------------------------------------------

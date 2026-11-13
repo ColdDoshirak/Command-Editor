@@ -117,6 +117,33 @@ class SettingsPanel(QWidget):
                          e.currency_auto_save_checkbox, e.currency_backup_interval_input, last=True)
         v.addWidget(card)
 
+        cfg = getattr(e, "config_manager", None)
+        if cfg is not None and hasattr(cfg, "get_moderators_are_admins"):
+            card, cv = self._card(
+                "Permissions",
+                "Admin commands: the channel owner and the \"admins\" list in moderators.json "
+                "(Twitch tab -> Open moderators file).")
+            row = QFrame()
+            row.setObjectName("")
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 10, 0, 10)
+            texts = QVBoxLayout()
+            t = QLabel("Moderators have Admin rights")
+            t.setObjectName("switchTitle")
+            texts.addWidget(t)
+            d = QLabel("On (as in 1.x): every moderator may use Admin commands. "
+                       "Off: only the channel owner and the admins list.")
+            d.setObjectName("switchDesc")
+            d.setWordWrap(True)
+            texts.addWidget(d)
+            h.addLayout(texts, 1)
+            self.mods_admin_switch = ToggleSwitch(self.pal)
+            self.mods_admin_switch.setChecked(cfg.get_moderators_are_admins())
+            self.mods_admin_switch.toggled.connect(cfg.set_moderators_are_admins)
+            h.addWidget(self.mods_admin_switch)
+            cv.addWidget(row)
+            v.addWidget(card)
+
         if hasattr(e, "hotkey_settings"):
             card, cv = self._card(
                 "Global hotkeys",

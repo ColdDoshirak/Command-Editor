@@ -23,8 +23,11 @@
 Уровни идут лестницей, каждый включает предыдущие:
 **Everyone → Regular → Subscriber → VIP → Moderator → Admin**.
 Regular — статус регуляра в валюте; Subscriber и VIP — по бейджам в чате;
-Admin — владелец канала и ники из списка `admins` в `moderators.json`
-(кнопка «Open moderators file» на вкладке Twitch).
+Admin — владелец канала, ники из списка `admins` в `moderators.json`
+(кнопка «Open moderators file» на вкладке Twitch) и, по умолчанию, все
+модераторы. **Settings → Permissions → «Moderators have Admin rights»**:
+если выключить, команды с правом Admin останутся только владельцу канала и
+списку `admins`.
 
 ### Переменные в ответах (Response)
 

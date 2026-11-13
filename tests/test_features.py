@@ -98,6 +98,7 @@ async def test_permission_ladder():
     try:
         bot, cm = _perm_bot(tmp, users={"reg": {"points": 0, "hours": 0, "is_regular": True}},
                             admins=["trusted"], mods_api=("apimod",))
+        cm.set_moderators_are_admins(False)          # the separate Admin level
         people = {
             "nobody": _msg("nobody"),
             "reg": _msg("reg"),
@@ -121,12 +122,21 @@ async def test_permission_ladder():
         drop_tmpdir(tmp)
 
 
-async def test_admin_is_no_longer_any_moderator_and_excluded_mods_lose_mod():
+async def test_moderators_are_admins_by_default_and_it_can_be_turned_off():
     tmp = new_tmpdir()
     try:
         bot, cm = _perm_bot(tmp, mods_api=("apimod",))
+        assert cm.get_moderators_are_admins() is True, "as in 1.x"
+        assert await bot.has_permission(_msg("apimod"), "Admin"), "by default a moderator is an Admin"
+        assert await bot.has_permission(_msg("badgemod", is_mod=True), "Admin")
+        assert not await bot.has_permission(_msg("viewer", is_vip=True), "Admin")
+        cm.set_moderators_are_admins(False)
         assert await bot.has_permission(_msg("apimod"), "Moderator")
-        assert not await bot.has_permission(_msg("apimod"), "Admin"), "Admin = owner + admins list"
+        assert not await bot.has_permission(_msg("apimod"), "Admin"), "off: Admin = owner + admins list"
+        assert await bot.has_permission(_msg("testchan"), "Admin")
+        cm.moderators_config["admins"] = ["apimod"]
+        assert await bot.has_permission(_msg("apimod"), "Admin")
+        cm.moderators_config["admins"] = []
         cm.moderators_config["excluded_moderators"] = ["badgemod"]
         assert not await bot.has_permission(_msg("badgemod", is_mod=True), "Moderator")
         assert await bot.has_permission(_msg("badgemod", is_mod=True, is_vip=True), "VIP"), \
