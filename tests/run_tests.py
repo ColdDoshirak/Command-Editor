@@ -55,6 +55,7 @@ TEST_MODULES = [
     ("stage6", "test_active_bonus"),
     ("2.0", "test_features"),
     ("2.0", "test_i18n"),
+    ("2.0", "test_token_check"),
 ]
 
 

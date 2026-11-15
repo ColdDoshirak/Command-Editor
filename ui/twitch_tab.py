@@ -12,6 +12,7 @@ import time
 import webbrowser
 
 from bot.twitch_bot import TwitchBot
+from bot import token_check
 from ui.twitch_auth import TwitchAuthDialog
 from core.config_manager import ConfigManager
 from ui.bot_bridge import BotBridge
@@ -41,6 +42,7 @@ class TwitchTab(QWidget):
         self.bridge.stream_status_ready.connect(self.update_stream_status)
         self.bridge.moderators_ready.connect(self.update_moderators_list)
         self.bridge.command_ran.connect(self._on_command_used)
+        self.bridge.token_checked.connect(self._on_token_checked)
 
         # Use the shared config_manager from parent if provided, otherwise create own instance
         self.config_manager = config_manager if config_manager is not None else ConfigManager()
@@ -385,7 +387,16 @@ class TwitchTab(QWidget):
             print(f"asyncio crash handler not installed: {e}")
         bridge = self.bridge
         bot = None
+        token_rejected = False
         try:
+            # whose token, which scopes, the Client ID - before connecting
+            twitch_cfg = self.bot_params['config_manager'].get_twitch_config() or {}
+            info = loop.run_until_complete(token_check.check(
+                twitch_cfg.get('access_token', ''), self.bot_params['channel']))
+            bridge.token_report(info)
+            if info["state"] == "invalid":
+                token_rejected = True
+                return
             bot = TwitchBot(
                 channel=self.bot_params['channel'],
                 currency_manager=self.bot_params['currency_manager'],
@@ -394,6 +405,7 @@ class TwitchTab(QWidget):
             )
             if self.bot_params['commands_data']:
                 bot.update_commands(self.bot_params['commands_data'])
+            bot.set_client_id(info.get("client_id"))
             self.bot = bot
             loop.run_until_complete(bot.start())
         except Exception as e:
@@ -407,10 +419,60 @@ class TwitchTab(QWidget):
         finally:
             # Disconnect уже отцепил бота (is_running = False) - молчим;
             # иначе бот остановился сам, и пользователь должен это увидеть.
-            if bot is None or getattr(bot, 'is_running', False):
+            if not token_rejected and (bot is None or getattr(bot, 'is_running', False)):
                 bridge.chat("Bot disconnected, reconnect manually")
             if not loop.is_closed():
                 loop.close()
+
+    # what each scope is needed for (bot/token_check.SCOPES)
+    _SCOPE_NEEDS = {
+        "chat": N_("reading the chat"),
+        "answers": N_("the bot's answers and timers"),
+        "viewers": N_("the list of all viewers (points for watching go only to those who chat)"),
+        "moderators": N_("the moderators list from Twitch (only badges in chat are seen)"),
+    }
+
+    def _on_token_checked(self, info):
+        """UI thread: what Twitch said about the token, as chat lines."""
+        self.last_token_info = info
+        state = info.get("state")
+        if state == "invalid":
+            self.add_to_chat_safe(tr("Twitch rejected the token: it expired or was revoked. "
+                                     "Get a new one and enter it in Authenticate."))
+            if self.bridge.bot is None:
+                self.disconnect()
+            QMessageBox.warning(self, tr("Twitch token"),
+                                tr("Twitch rejected the token: it expired or was revoked. "
+                                   "Get a new one and enter it in Authenticate."))
+            return
+        if state != "ok":
+            self.add_to_chat_safe(tr("Could not check the token (no answer from Twitch)."))
+            return
+        login = info.get("login") or tr("an application, not a user")
+        expires = info.get("expires_in")
+        if not expires:
+            self.add_to_chat_safe(tr("Token of {0}, does not expire.").format(login))
+        else:
+            days, hours = expires // 86400, expires // 3600
+            left = (tr("{0} d").format(days) if days else tr("{0} h").format(max(hours, 1)))
+            self.add_to_chat_safe(tr("Token of {0}, expires in {1}.").format(login, left))
+            if info.get("expires_soon"):
+                self.add_to_chat_safe(tr("The token expires soon: get a new one in time, "
+                                         "the bot will not connect with an expired token."))
+        if info.get("is_broadcaster") is False:
+            self.add_to_chat_safe(tr(
+                "The token is not of the channel owner ({0}): Twitch gives the list of all "
+                "viewers and the moderators only with the streamer's token. Points for "
+                "watching go only to those who chat.").format(self.bot_params.get('channel', '')))
+        what = dict(token_check.SCOPES)
+        for scope in info.get("missing") or []:
+            need = self._SCOPE_NEEDS.get(what.get(scope), "")
+            self.add_to_chat_safe(tr("Missing scope {0}: no {1}.").format(scope, tr(need)))
+        # Helix needs the Client ID of the application that issued the token
+        cid = info.get("client_id")
+        if cid and cid != (self.config_manager.get_twitch_config() or {}).get("client_id"):
+            self.config_manager.save_twitch_config(client_id=cid)
+            self.add_to_chat_safe(tr("Client ID taken from the token."))
 
     def _commands_snapshot(self):
         repo = getattr(self.parent, "command_repo", None)

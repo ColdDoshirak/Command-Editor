@@ -43,6 +43,7 @@ SCRIPTS = [
     "check_sound_browse.py",
     "check_stats.py",
     "check_i18n.py",
+    "check_token_report.py",
 ]
 TIMEOUT = 180
 

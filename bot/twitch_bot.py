@@ -719,6 +719,12 @@ class TwitchBot(QueueMixin, SystemCommandsMixin, CommandDispatcher, commands.Bot
     # ------------------------------------------------------------------
     MODS_CACHE_SECONDS = 300
 
+    def set_client_id(self, client_id):
+        """The Client ID of the application that issued the token (Twitch
+        says it on validate): Helix rejects a token with another one."""
+        if client_id:
+            self._helix_headers["Client-ID"] = str(client_id)
+
     async def _ensure_broadcaster_id(self):
         if self.broadcaster_id:
             return self.broadcaster_id

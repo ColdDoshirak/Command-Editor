@@ -41,7 +41,8 @@ class TwitchAuthDialog(QDialog):
         layout.addWidget(self.refresh_token_edit)
         
         # Add help text
-        help_label = QLabel(tr("Enter your Twitch API credentials to connect the bot"))
+        help_label = QLabel(tr("Client ID may stay empty: it is taken from the token when the bot connects. "
+                               "The token is checked on Connect: whose it is, its scopes and when it expires."))
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
         
@@ -68,10 +69,6 @@ class TwitchAuthDialog(QDialog):
             refresh_token = self.refresh_token_edit.text().strip()
             
             # Validate required fields
-            if not client_id:
-                QMessageBox.warning(self, tr("Error"), tr("Client ID is required!"))
-                return
-                
             if not access_token:
                 QMessageBox.warning(self, tr("Error"), tr("Access Token is required!"))
                 return

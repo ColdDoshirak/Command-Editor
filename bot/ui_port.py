@@ -34,6 +34,10 @@ class BotUi(object):
     def command_run(self, command, user):
         """A command ran, by whom (the OBS overlay's "Recent")."""
 
+    def token_report(self, info):
+        """What Twitch said about the token before connecting
+        (bot/token_check.analyze: a plain dict)."""
+
 
 class CallbackUi(BotUi):
     """Compatibility: a bare message callback receives the chat lines."""

@@ -31,6 +31,7 @@ class BotBridge(QObject):
     moderators_ready = pyqtSignal(list)
     command_ran = pyqtSignal(object)
     command_ran_by = pyqtSignal(str, str)      # command, user
+    token_checked = pyqtSignal(object)         # bot/token_check.analyze dict
     # internal: a submitted coroutine finished -> (callback, result, error)
     _finished = pyqtSignal(object, object, object)
 
@@ -62,6 +63,9 @@ class BotBridge(QObject):
 
     def command_run(self, command, user):
         self.command_ran_by.emit(str(command), str(user))
+
+    def token_report(self, info):
+        self.token_checked.emit(dict(info or {}))
 
     # ------------------------------------------------------------------
     # the bot this window talks to
