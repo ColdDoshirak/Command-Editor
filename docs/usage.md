@@ -1,114 +1,116 @@
-# Руководство по использованию
+# User guide
 
-Полное руководство по вкладкам и настройкам Command-Editor. Короткая версия — в [README](../README.md).
+🇷🇺 [Русская версия](ru/usage.md)
 
-## Как работать с командами
+Every tab and setting of Command-Editor. The short version is in the [README](../README.md).
 
-- **Экспорт из Streamlabs.** В Streamlabs Chatbot экспортируйте команды (ПКМ по команде → *Export by group* — так удобнее). Если групп несколько — лучше одну, мульти-групповой импорт не проверялся.
-- **Load File** — загрузить команды из бэкапа. После загрузки создаётся новый файл в новом формате.
-- **Save File** — сохранить команды в файл. Также автосохраняется каждые 300 секунд и при закрытии программы.
-- **Save Legacy Format** — сохранить в старом формате. *Не рекомендуется*: вызывает несовместимость со Streamlabs Chatbot.
-- **Auto-Assign Sounds** — автоматически назначить звуковые файлы. Выберите папку со звуками; работает только при совпадении имён (`!command` → `!command.mp3`/`.wav`).
-- **Add / Remove Command** — добавить / удалить выбранную команду. Удалённая
-  команда попадает в корзину: **Ctrl+Z** возвращает последнюю на прежнее
-  место, **Trash…** (в темах — меню «…») показывает все удалённые (до 50).
-- **Play Sound** — проиграть / остановить звуковую команду. Работает даже при подключённом боте.
-- **Allow sounds to interrupt each other** — разрешить звукам перебивать друг друга (или запретить).
-- **Show message when sound blocked** — предупреждение, когда звук не проигрался, потому что другой ещё играет.
-- **Search** — поиск по названию команды.
-- **History** — история сохранений. Держите побольше бэкапов.
+## Working with commands
 
-### Функции команд
+- **Export from Streamlabs.** In Streamlabs Chatbot export your commands (right-click a command → *Export by group* is the handiest). If you have several groups, one at a time is safer: importing several groups at once has not been tested.
+- **Load File** — load commands from a backup. A new file in the new format is created after loading.
+- **Save File** — save the commands to a file. They are also saved automatically every 300 seconds and when the program closes.
+- **Save Legacy Format** — save in the old format. *Not recommended*: it causes incompatibilities with Streamlabs Chatbot.
+- **Auto-Assign Sounds** — assign sound files automatically. Pick a folder with sounds; it only works when the names match (`!command` → `!command.mp3`/`.wav`).
+- **Add / Remove Command** — add a command / delete the selected one. A deleted
+  command goes to the trash: **Ctrl+Z** puts the last one back in its place,
+  **Trash…** (in the themes — the "…" menu) shows every deleted command (up to 50).
+- **Play Sound** — play / stop a command's sound. Works even while the bot is connected.
+- **Allow sounds to interrupt each other** — let sounds cut each other off (or not).
+- **Show message when sound blocked** — a warning when a sound did not play because another one was still playing.
+- **Search** — search by command name.
+- **History** — the save history. Keep plenty of backups.
 
-Подробно, с примерами — в [features.md](features.md):
+### Command features
 
-- [Ответы](features.md#ответы-команд): каждая строка — отдельное сообщение, пустая строка — пауза.
-- [Переменные](features.md#переменные-в-ответах): `{user}`, `{target}`, `{args}`, `{1}`…`{9}`, `{count}`, `{points}`, `{currency}`, `{channel}`, `{random:1-100}`.
-- [Псевдонимы](features.md#псевдонимы-алиасы): поле **Aliases**, другие имена той же команды.
-- [Права](features.md#права-команд): Everyone → Regular → Subscriber → VIP → Moderator → Admin.
-- [Случайный звук из папки](features.md#случайный-звук-из-папки): кнопка **Folder…**.
-- [Test…](features.md#проверка-команды-без-twitch): что сделает команда, без Twitch.
-- [Корзина и Ctrl+Z](features.md#корзина-и-ctrlz): удалённые команды можно вернуть.
+In detail, with examples, in [features.md](features.md):
 
-Отдельные вкладки и настройки: [таймеры](features.md#таймеры), [статистика](features.md#статистика), [оверлей для OBS](features.md#оверлей-для-obs), [горячие клавиши](features.md#глобальные-горячие-клавиши), [проверка токена](features.md#проверка-токена-twitch), [язык и темы](features.md#язык-и-темы).
+- [Responses](features.md#command-responses): each line is a separate message, an empty line is a pause.
+- [Variables](features.md#variables-in-responses): `{user}`, `{target}`, `{args}`, `{1}`…`{9}`, `{count}`, `{points}`, `{currency}`, `{channel}`, `{random:1-100}`.
+- [Aliases](features.md#aliases): the **Aliases** field, other names of the same command.
+- [Permissions](features.md#command-permissions): Everyone → Regular → Subscriber → VIP → Moderator → Admin.
+- [A random sound from a folder](features.md#a-random-sound-from-a-folder): the **Folder…** button.
+- [Test…](features.md#testing-a-command-without-twitch): what a command would do, without Twitch.
+- [The trash and Ctrl+Z](features.md#the-trash-and-ctrlz): deleted commands can be brought back.
 
-## Вкладка Twitch (бот)
+Separate tabs and settings: [timers](features.md#timers), [statistics](features.md#statistics), [the OBS overlay](features.md#obs-overlay), [hotkeys](features.md#global-hotkeys), [the token check](features.md#twitch-token-check), [language and themes](features.md#language-and-themes).
 
-- Настройка подключения к каналу: **Channel** + **Connect**.
-- **Токен** берётся с [Twitch Token Generator](https://twitchtokengenerator.com/) и вводится в **Authenticate**. Лучше генерировать его под аккаунтом **стримера** и отметить scope'ы:
+## Twitch tab (the bot)
 
-  | Scope | Без него не будет |
+- Connecting to a channel: **Channel** + **Connect**.
+- The **token** comes from [Twitch Token Generator](https://twitchtokengenerator.com/) and goes into **Authenticate**. Generate it under the **streamer's** account and tick these scopes:
+
+  | Scope | Without it there is no |
   |---|---|
-  | `chat:read` | чтения чата |
-  | `chat:edit` | ответов бота и таймеров |
-  | `moderator:read:chatters` | списка всех зрителей — очки за просмотр получат только писавшие в чат |
-  | `moderation:read` | списка модераторов из Twitch — видны только бейджи в чате |
+  | `chat:read` | reading the chat |
+  | `chat:edit` | bot answers and timers |
+  | `moderator:read:chatters` | list of all viewers — only viewers who chat earn points for watching |
+  | `moderation:read` | moderators list from Twitch — only badges in chat are seen |
 
-  Список всех зрителей и модераторов Twitch отдаёт только по токену владельца канала: с токеном отдельного аккаунта бота они не работают, даже со всеми scope'ами.
-- **Проверка токена при Connect.** Программа спрашивает у Twitch, чей токен, какие у него scope'ы и когда он истекает, и пишет в чат вкладки, чего не хватает. Истёкший или отозванный токен останавливает подключение с понятным сообщением. **Client ID** можно не вводить: он берётся из токена.
-- **Сохраняйте и подключайтесь** — подключаться нужно при каждом запуске программы.
-- **Авто-переподключение** при разрыве соединения.
-- **Зрители / активные чаттеры / модераторы** — списки в правой панели. После обновления токена может потребоваться повторная авторизация.
-- **Статус стрима** (LIVE / OFFLINE) — тоже требует валидный токен.
+  Twitch gives the list of all viewers and the moderators only with the channel owner's token: with a token of a separate bot account they do not work, even with every scope.
+- **Token check on Connect.** The program asks Twitch whose token it is, which scopes it has and when it expires, and says in the tab's chat what is missing. An expired or revoked token stops the connect with a clear message. The **Client ID** can stay empty: it is taken from the token.
+- **Save and connect** — you have to connect on every start of the program.
+- **Automatic reconnect** after the connection drops.
+- **Viewers / active chatters / moderators** — the lists in the right-hand panel. After you renew the token you may need to authenticate again.
+- **Stream status** (LIVE / OFFLINE) — also needs a valid token.
 
-> Управление очередью (`!queue`, `!skip`, `!clear`, `!volume`) описано отдельно — [queue.md](queue.md).
+> Queue control (`!queue`, `!skip`, `!clear`, `!volume`) is described separately — [queue.md](queue.md).
 
-## Вкладка Group Settings
+## Group Settings tab
 
-Настройки по группам команд (подсказки — на заголовках колонок):
+Settings per command group (the column headers have tooltips):
 
-| Колонка | Что делает |
+| Column | What it does |
 |---|---|
-| **Queue** | Очередь для группы: длинные звуки идут по одному, не перебивая друг друга |
-| **Max size** | Лимит очереди (0 = без лимита). При переполнении команда отклоняется, очки возвращаются |
-| **Channel** | Аудио-канал группы (0 = общий, 1–32 = свой канал, играет параллельно с другими) |
-| **Persist** | Сохранять очередь группы между перезапусками |
-| **Announce** | Сообщать зрителю его место в очереди (только если перед ним уже кто-то есть) |
+| **Queue** | A queue for the group: long sounds play one by one without cutting each other off |
+| **Max size** | The queue limit (0 = no limit). When it is full, a command is rejected and its points refunded |
+| **Channel** | The group's audio channel (0 = shared, 1–32 = its own channel, plays alongside the others) |
+| **Persist** | Keep the group's queue across restarts |
+| **Announce** | Tell the viewer their place in the queue (only if someone is already waiting) |
 
-Группы подтягиваются автоматически из команд. После **Save Settings** изменения применяются к работающему боту без перезапуска; играющий трек не обрывается.
+The groups are picked up from the commands automatically. After **Save Settings** the changes apply to the running bot without a restart; a playing track is not cut off.
 
-## Вкладка Queue Control
+## Queue Control tab
 
-Очереди работающего бота в реальном времени: что играет и кто ждёт. Можно поставить группу на паузу, пропустить текущий звук, менять порядок (перетаскиванием или Up/Down), убрать команду (Del) или очистить очередь. Подробнее — [queue.md](queue.md).
+The running bot's queues live: what is playing and who is waiting. You can pause a group, skip the current sound, reorder (by dragging or with Up/Down), remove a command (Del) or empty the queue. More in [queue.md](queue.md).
 
-## Вкладка Sys.Commands
+## Sys.Commands tab
 
-Системные команды (`!points`, `!add_points`, `!remove_points`, `!random`, `!top`, `!give`, `!uptime`, `!queue`, `!skip`, `!clear`, `!volume`). Можно включать и выключать их, менять имя (например, `!points` → `!balance`), права, кулдауны и цену, делать копии под другим именем, а для `!volume` — выбрать группу по умолчанию.
+The system commands (`!points`, `!add_points`, `!remove_points`, `!random`, `!top`, `!give`, `!uptime`, `!queue`, `!skip`, `!clear`, `!volume`). You can turn them on and off, rename them (for example `!points` → `!balance`), change their permission, cooldowns and cost, make copies under another name, and pick the default group for `!volume`.
 
-## Вкладка Currency Settings (валюта)
+## Currency Settings tab
 
-- Название валюты, начисление очков за просмотр (онлайн и офлайн) и интервал.
-- Бонусы: **Regular** и **Mod** — очки сверху за тот же интервал, **Active** — тем, кто писал в чат (галочка *also offline* — и вне стрима), **Sub multiplier ×** — во сколько раз больше получают подписчики (×1 — как все).
-- Награды за рейд, подписку и подарочную подписку. Награда за follow пока не начисляется (нужен EventSub).
-- Автоматический статус **Regular** по очкам или по часам.
+- The currency name, points for watching (online and offline) and their interval.
+- Bonuses: **Regular** and **Mod** — extra points for the same interval, **Active** — for viewers who chatted (the *also offline* box — off stream too), **Sub multiplier ×** — how many times more subscribers get (×1 — the same as everyone).
+- Rewards for a raid, a sub and a gift sub. The follow reward is not paid yet (it needs EventSub).
+- Automatic **Regular** status by points or by hours.
 
-## Вкладка Currency Users
+## Currency Users tab
 
-Список зрителей с очками и часами: добавить, изменить баланс, отметить регуляра, удалить.
+The viewers with their points and hours: add, change a balance, mark as Regular, remove.
 
-## Вкладка Ranks
+## Ranks tab
 
-Ранги по порогу очков или часов (что именно — *Rank type* на вкладке валюты). Ранг выдаётся автоматически и виден в `!points`; изменение рангов сразу пересчитывает их всем зрителям.
+Ranks by a threshold of points or hours (which one — *Rank type* on the currency tab). A rank is given automatically and shown in `!points`; changing the ranks recalculates them for every viewer at once.
 
-## Вкладка Backups
+## Backups tab
 
-Бэкапы команд и полные бэкапы системы (команды, настройки, валюта, ранги — без токена Twitch): создать, посмотреть, восстановить. Автоматические полные бэкапы включаются в Settings → Auto-save & backups (в классической теме — внизу вкладки команд).
+Command backups and full system backups (commands, settings, currency, ranks — without the Twitch token): create, view, restore. Automatic full backups are turned on in Settings → Auto-save & backups (in the classic theme — at the bottom of the commands tab).
 
-## Вкладка Settings
+## Settings tab
 
-| Карточка | Что настраивает |
+| Card | What it sets |
 |---|---|
-| **Sound** | Перебивание звуков и сообщение, когда звук заблокирован |
-| **Auto-save & backups** | Автосохранение команд и зрителей, автоматические полные бэкапы |
-| **Appearance** | Тема: Classic, Sidebar, Spreadsheet, Midnight (тёмная). Применяется сразу |
-| **Language** | Язык интерфейса: системный (по умолчанию), русский или английский. Применяется после перезапуска. Ответы бота в чате и значения в файлах (`Everyone`, `SC`, имена групп) не переводятся |
-| **Permissions** | «Moderators have Admin rights» — см. [Права](features.md#права-команд) |
-| **Global hotkeys** | См. [Горячие клавиши](features.md#глобальные-горячие-клавиши) |
-| **OBS overlay** | См. [Оверлей для OBS](features.md#оверлей-для-obs) |
+| **Sound** | Sounds interrupting each other and the message when a sound is blocked |
+| **Auto-save & backups** | Auto-save of commands and viewers, automatic full backups |
+| **Appearance** | The theme: Classic, Sidebar, Spreadsheet, Midnight (dark). Applies at once |
+| **Language** | The interface language: System (default), Russian or English. Applies after a restart. Bot answers in chat and the values stored in files (`Everyone`, `SC`, group names) are not translated |
+| **Permissions** | "Moderators have Admin rights" — see [Permissions](features.md#command-permissions) |
+| **Global hotkeys** | See [Hotkeys](features.md#global-hotkeys) |
+| **OBS overlay** | See [OBS overlay](features.md#obs-overlay) |
 
-## Разное
+## Other
 
-- Команду можно править и в таблице, и в панели под ней (в классической теме) или в карточке команды (в остальных темах) — правки сохраняются сразу.
-- Обычно правят `SoundFile` и `Cooldown` (в минутах).
-- Работают и звуковые команды, и текстовые ответы (`Response`); есть встроенный чат для проверки.
-- Программа безопасно сохраняет настройки даже при подключённом боте.
+- A command can be edited in the table and in the panel under it (classic theme) or in the command card (the other themes) — the changes are saved at once.
+- The fields edited most are `SoundFile` and `Cooldown` (in minutes).
+- Both sound commands and text responses (`Response`) work; there is a built-in chat for checking.
+- The program saves its settings safely even while the bot is connected.

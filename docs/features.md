@@ -1,348 +1,350 @@
-# Возможности подробно
+# Features in detail
 
-Как устроена и настраивается каждая функция Command Editor 2.0. Здесь только подробности по функциям; обзор всех вкладок — в [usage.md](usage.md), очереди — в [queue.md](queue.md).
+🇷🇺 [Русская версия](ru/features.md)
 
-Названия кнопок даны так, как они выглядят в английском интерфейсе, а в скобках — в русском, если перевод заметно отличается.
+How each feature of Command Editor 2.0 works and how to set it up. This page covers only the features; an overview of all tabs is in [usage.md](usage.md), queues are in [queue.md](queue.md).
 
-**Содержание**
+Button names are given as they appear in the English interface.
 
-- [Ответы команд](#ответы-команд)
-- [Переменные в ответах](#переменные-в-ответах)
-- [Псевдонимы (алиасы)](#псевдонимы-алиасы)
-- [Права команд](#права-команд)
-- [Случайный звук из папки](#случайный-звук-из-папки)
-- [Проверка команды без Twitch](#проверка-команды-без-twitch)
-- [Корзина и Ctrl+Z](#корзина-и-ctrlz)
-- [Таймеры](#таймеры)
-- [Статистика](#статистика)
-- [Оверлей для OBS](#оверлей-для-obs)
-- [Глобальные горячие клавиши](#глобальные-горячие-клавиши)
-- [Проверка токена Twitch](#проверка-токена-twitch)
-- [Язык и темы](#язык-и-темы)
-- [Где что лежит](#где-что-лежит)
+**Contents**
 
----
-
-## Ответы команд
-
-Поле **Response** («Ответ») — то, что бот напишет в чат, когда сработает команда.
-
-- **Каждая строка — отдельное сообщение** в чате. Строки уходят по очереди с небольшой паузой, чтобы Twitch не посчитал это спамом.
-- **Пустая строка — пауза** около 0,2 секунды перед следующей строкой.
-- В ответе работают [переменные](#переменные-в-ответах): `{user}`, `{target}` и другие.
-- Ответ можно совместить со звуком: команда и напишет в чат, и сыграет файл.
-
-Пример ответа из трёх сообщений:
-
-```
-Привет, {user}!
-
-Сегодня играем в {args}
-```
-
-Если написать `!hello Factorio`, бот отправит «Привет, alice!», выдержит паузу и отправит «Сегодня играем в Factorio».
+- [Command responses](#command-responses)
+- [Variables in responses](#variables-in-responses)
+- [Aliases](#aliases)
+- [Command permissions](#command-permissions)
+- [A random sound from a folder](#a-random-sound-from-a-folder)
+- [Testing a command without Twitch](#testing-a-command-without-twitch)
+- [The trash and Ctrl+Z](#the-trash-and-ctrlz)
+- [Timers](#timers)
+- [Statistics](#statistics)
+- [OBS overlay](#obs-overlay)
+- [Global hotkeys](#global-hotkeys)
+- [Twitch token check](#twitch-token-check)
+- [Language and themes](#language-and-themes)
+- [Where things are stored](#where-things-are-stored)
 
 ---
 
-## Переменные в ответах
+## Command responses
 
-Переменная — слово в фигурных скобках, которое бот заменяет при отправке.
+The **Response** field is what the bot writes to chat when the command runs.
 
-| Переменная | Что подставляется | `!hug @Bob крепко` от alice |
+- **Each line is a separate message** in chat. The lines go out one after another with a short pause, so Twitch does not treat them as spam.
+- **An empty line is a pause** of about 0.2 seconds before the next line.
+- [Variables](#variables-in-responses) work in a response: `{user}`, `{target}` and others.
+- A response can be combined with a sound: the command both writes to chat and plays the file.
+
+A response of three messages:
+
+```
+Hi, {user}!
+
+Today we play {args}
+```
+
+If you write `!hello Factorio`, the bot sends "Hi, alice!", waits a moment and sends "Today we play Factorio".
+
+---
+
+## Variables in responses
+
+A variable is a word in curly braces that the bot replaces when it sends the message.
+
+| Variable | What it becomes | `!hug @Bob tightly` by alice |
 |---|---|---|
-| `{user}` | кто вызвал команду | `alice` |
-| `{target}` | первое слово после команды, без `@`; если слов нет — сам зритель | `Bob` |
-| `{args}` | всё, что написано после команды | `@Bob крепко` |
-| `{1}` … `{9}` | одно слово после команды по номеру, как написано (с `@`) | `{1}` = `@Bob`, `{2}` = `крепко` |
-| `{count}` | сколько раз команда сработала, включая этот | `5` |
-| `{points}` | очки зрителя, вызвавшего команду | `120` |
-| `{currency}` | название валюты из Currency Settings | `points` |
-| `{channel}` | канал | `hotdoshirak` |
-| `{random:1-100}` | случайное целое число в диапазоне, границы включены | `42` |
+| `{user}` | who called the command | `alice` |
+| `{target}` | the first word after the command, without `@`; with no words — the viewer themselves | `Bob` |
+| `{args}` | everything written after the command | `@Bob tightly` |
+| `{1}` … `{9}` | one word after the command by its number, as written (with `@`) | `{1}` = `@Bob`, `{2}` = `tightly` |
+| `{count}` | how many times the command has run, this time included | `5` |
+| `{points}` | the points of the viewer who called the command | `120` |
+| `{currency}` | the currency name from Currency Settings | `points` |
+| `{channel}` | the channel | `hotdoshirak` |
+| `{random:1-100}` | a random whole number in the range, both ends included | `42` |
 
-Примеры:
+Examples:
 
-- `{user} обнимает {target}! Обнимашек на канале: {count}` → «alice обнимает Bob! Обнимашек на канале: 5».
-- `{user} бросает кубик: {random:1-6}` → «alice бросает кубик: 4».
-- `У {user} сейчас {points} {currency}`.
+- `{user} hugs {target}! Hugs on this channel: {count}` → "alice hugs Bob! Hugs on this channel: 5".
+- `{user} rolls a die: {random:1-6}` → "alice rolls a die: 4".
+- `{user} has {points} {currency}`.
 
-Тонкости:
+Details:
 
-- Регистр не важен: `{User}` и `{USER}` тоже работают.
-- Если слова после команды нет, `{1}` подставит пустоту, а `{target}` — имя самого зрителя. Поэтому для «действий над кем-то» удобнее `{target}`.
-- Неизвестное в фигурных скобках (`{abc}`, `{random:x}`, кусок JSON) остаётся как написано. Старые ответы со скобками не ломаются.
-- Отрицательные числа работают: `{random:-10-10}`. Если границы перепутаны (`{random:10-1}`), бот поменяет их местами.
-- В [таймерах](#таймеры) работают только `{channel}` и `{random:…}`: там нет зрителя, который вызвал команду.
-- Как ответ будет выглядеть с подставленными значениями, видно в [Test…](#проверка-команды-без-twitch).
-
----
-
-## Псевдонимы (алиасы)
-
-Псевдоним — другое имя той же команды. `!music`, `!tune` и `!song` могут вызывать одну и ту же команду.
-
-**Где задать**
-
-- **Классическая тема:** вкладка Commands («Команды»), выберите команду, поле **Aliases** («Псевдонимы») в панели под таблицей, в левой колонке после описания. Значение сохраняется, когда вы уходите из поля: Tab, Enter или щелчок в другое место.
-- **Темы Sidebar, Spreadsheet, Midnight:** выберите команду, поле **Aliases** в карточке справа, под Info. Сохраняется по мере ввода.
-
-**Формат:** имена через запятую, пробел или `;`. Восклицательный знак и регистр не важны: `!music, tune  !Track` даст три псевдонима — `music`, `tune`, `track`.
-
-**Как работает**
-
-- Псевдоним вызывает **ту же самую** команду: общий кулдаун, та же цена, тот же счётчик `{count}`.
-- В таблице отдельной колонки нет: псевдонимы хранятся в поле `Aliases` команды в `commands.json`.
-- Проверить псевдоним можно кнопкой **Test…**: напишите в ней `!tune` вместо основного имени.
+- Case does not matter: `{User}` and `{USER}` work too.
+- If there is no word after the command, `{1}` becomes empty and `{target}` becomes the viewer's own name. So for "doing something to someone" `{target}` is the handier one.
+- Anything unknown in curly braces (`{abc}`, `{random:x}`, a piece of JSON) stays as written. Old responses with braces do not break.
+- Negative numbers work: `{random:-10-10}`. If the ends are swapped (`{random:10-1}`), the bot swaps them back.
+- In [timers](#timers) only `{channel}` and `{random:…}` work: there is no viewer who called them.
+- [Test…](#testing-a-command-without-twitch) shows how a response looks with the values filled in.
 
 ---
 
-## Права команд
+## Aliases
 
-Поле **Permission** («Права») — кто может вызвать команду. Уровни идут лестницей, и каждый включает все нижние:
+An alias is another name of the same command. `!music`, `!tune` and `!song` can all call one command.
+
+**Where to set them**
+
+- **Classic theme:** the Commands tab, select a command, the **Aliases** field in the panel under the table, in the left column after the description. It is saved when you leave the field: Tab, Enter or a click elsewhere.
+- **Sidebar, Spreadsheet, Midnight themes:** select a command, the **Aliases** field in the card on the right, under Info. It is saved as you type.
+
+**Format:** names separated by commas, spaces or `;`. The exclamation mark and case do not matter: `!music, tune  !Track` gives three aliases — `music`, `tune`, `track`.
+
+**How they work**
+
+- An alias calls **the very same** command: a shared cooldown, the same cost, the same `{count}` counter.
+- The table has no column for them: aliases are stored in the command's `Aliases` field in `commands.json`.
+- To check an alias, use **Test…**: write `!tune` in it instead of the main name.
+
+---
+
+## Command permissions
+
+The **Permission** field — who may call the command. The levels form a ladder, and each one includes all the lower ones:
 
 **Everyone → Regular → Subscriber → VIP → Moderator → Admin**
 
-Команду с правом Subscriber может вызвать подписчик, VIP, модератор и админ, но не обычный зритель и не регуляр.
+A Subscriber command can be called by a subscriber, a VIP, a moderator and an admin, but not by an ordinary viewer or a regular.
 
-| Уровень | Откуда программа это знает |
+| Level | Where the program learns it |
 |---|---|
-| **Everyone** | все |
-| **Regular** | статус Regular в валюте: выдаётся автоматически по очкам или часам (Currency Settings) или вручную на вкладке Currency Users |
-| **Subscriber** | бейдж подписчика на сообщении в чате |
-| **VIP** | бейдж VIP |
-| **Moderator** | бейдж модератора, список модераторов канала из Twitch и ручной список |
-| **Admin** | владелец канала, список `admins` в `moderators.json` и — по умолчанию — все модераторы |
+| **Everyone** | everyone |
+| **Regular** | the Regular status in the currency: given automatically by points or hours (Currency Settings) or by hand on the Currency Users tab |
+| **Subscriber** | the subscriber badge on the chat message |
+| **VIP** | the VIP badge |
+| **Moderator** | the moderator badge, the channel's moderators from Twitch and the manual list |
+| **Admin** | the channel owner, the `admins` list in `moderators.json` and — by default — all moderators |
 
-**Модераторы и Admin.** По умолчанию, как в 1.x, модератор может вызывать и команды с правом Admin. Чтобы оставить Admin-команды только себе и доверенным людям, выключите **Settings → Permissions → Moderators have Admin rights**. Тогда Admin — это владелец канала и ники из списка `admins`.
+**Moderators and Admin.** By default, as in 1.x, a moderator may call Admin commands too. To keep Admin commands to yourself and trusted people, turn off **Settings → Permissions → Moderators have Admin rights**. Then Admin is the channel owner and the names in the `admins` list.
 
-**Ручные списки** лежат в `moderators.json`. Открыть его можно кнопкой **Open moderators file** на вкладке Twitch:
+**The manual lists** are in `moderators.json`. Open it with the **Open moderators file** button on the Twitch tab:
 
-- `manual_moderators` — кого считать модератором, даже если Twitch его так не называет;
-- `excluded_moderators` — у кого отнять права модератора (на Admin, выданный через `admins`, это не влияет);
-- `admins` — кто считается Admin.
+- `manual_moderators` — who counts as a moderator even if Twitch does not say so;
+- `excluded_moderators` — who loses moderator rights (an Admin given through `admins` is not affected);
+- `admins` — who counts as Admin.
 
-В списке модераторов на вкладке Twitch видно, откуда взялся каждый: `[Twitch]`, `[Manual]`, `[Both]`, `[Excluded]`, `[Admin]`.
+The moderators list on the Twitch tab shows where each one comes from: `[Twitch]`, `[Manual]`, `[Both]`, `[Excluded]`, `[Admin]`.
 
-Тонкости:
+Details:
 
-- Владелец канала может вызвать любую команду.
-- Подписчики и VIP определяются только по бейджам в сообщении: другого источника у программы нет.
-- Названия из экспорта Streamlabs (`Regular`, `Subscriber`, `Mod`, `Caster` и т. п.) понимаются автоматически.
-
----
-
-## Случайный звук из папки
-
-Вместо одного файла команде можно дать папку: при каждом вызове играет случайный звук из неё.
-
-**Как настроить:** кнопка **Folder…** («Папка…») рядом с выбором файла (Browse или значок папки) — выберите папку со звуками. В поле звука появится путь к папке.
-
-- Подходят файлы `.wav`, `.mp3`, `.ogg` и `.flac`; остальные файлы в папке игнорируются. Вложенные папки не просматриваются.
-- Один и тот же звук не играет два раза подряд, если в папке больше одного файла.
-- Файлы можно добавлять и удалять, не перезапуская программу: папка просматривается при каждом вызове.
-- Если в папке нет ни одного звука, команда сработает без звука.
-- Громкость, очередь и канал группы работают так же, как с одним файлом.
+- The channel owner may call any command.
+- Subscribers and VIPs are recognised only by the badges on their message: the program has no other source.
+- Names from Streamlabs exports (`Regular`, `Subscriber`, `Mod`, `Caster` and so on) are understood automatically.
 
 ---
 
-## Проверка команды без Twitch
+## A random sound from a folder
 
-Кнопка **Test…** показывает, что произойдёт, если зритель напишет сообщение. Подключаться к Twitch не нужно.
+Instead of a single file you can give a command a folder: each call plays a random sound from it.
 
-**Где:** в классической теме — рядом с Play в панели команды; в темах — в карточке команды, а в Spreadsheet ещё и на панели инструментов.
+**How to set it up:** the **Folder…** button next to the file picker (Browse or the folder icon) — pick the folder with the sounds. The sound field then shows the folder path.
 
-**Что задать**
-
-- **Message in chat** — сообщение целиком, например `!hug @Bob`;
-- **Viewer** — имя зрителя (для `{user}`);
-- **Viewer is** — его уровень: Everyone, Regular, Subscriber, VIP, Moderator или Admin;
-- **Viewer's points** — сколько у него очков.
-
-**Что покажет**
-
-- вызовет ли сообщение эту команду, с учётом псевдонимов;
-- включена ли команда;
-- пустят ли зрителя с таким уровнем;
-- хватит ли очков;
-- какие сообщения уйдут в чат, с подставленными переменными;
-- есть ли звуковой файл. Кнопка **Play the sound** даёт сразу его прослушать.
-
-Это сухой прогон: очки не списываются, кулдаун не начинается, счётчик не меняется.
+- `.wav`, `.mp3`, `.ogg` and `.flac` files are used; other files in the folder are ignored. Subfolders are not searched.
+- The same sound never plays twice in a row if the folder has more than one file.
+- Files can be added and removed without restarting the program: the folder is read on every call.
+- If the folder has no sounds, the command runs without a sound.
+- Volume, queue and the group's channel work the same as with a single file.
 
 ---
 
-## Корзина и Ctrl+Z
+## Testing a command without Twitch
 
-Удалённая команда не пропадает, а попадает в корзину.
+The **Test…** button shows what would happen if a viewer wrote a message. No connection to Twitch is needed.
 
-- **Ctrl+Z** возвращает последнюю удалённую команду на прежнее место. Внутри текстового поля Ctrl+Z, как обычно, отменяет ввод.
-- **Trash…** («Корзина…») показывает все удалённые команды, новые сверху. **Restore** возвращает выбранную, **Empty the trash** очищает корзину насовсем. В темах корзина открывается из меню «…».
-- В корзине хранятся последние 50 команд, более старые выбрасываются.
-- Корзина переживает перезапуск: она лежит в `command_trash.json` рядом с `commands.json`.
+**Where:** in the classic theme — next to Play in the command panel; in the themes — in the command card, and in Spreadsheet also on the toolbar.
+
+**What to fill in**
+
+- **Message in chat** — the whole message, for example `!hug @Bob`;
+- **Viewer** — the viewer's name (for `{user}`);
+- **Viewer is** — their level: Everyone, Regular, Subscriber, VIP, Moderator or Admin;
+- **Viewer's points** — how many points they have.
+
+**What it shows**
+
+- whether the message calls this command, aliases included;
+- whether the command is enabled;
+- whether a viewer of that level is allowed;
+- whether they have enough points;
+- which messages go to chat, with the variables filled in;
+- whether the sound file exists. **Play the sound** lets you listen to it right away.
+
+It is a dry run: no points are taken, no cooldown starts, the counter does not change.
 
 ---
 
-## Таймеры
+## The trash and Ctrl+Z
 
-Сообщения, которые бот сам пишет в чат: напоминание про подписку, ссылки, правила.
+A deleted command is not lost; it goes to the trash.
 
-**Где:** вкладка **Timers** («Таймеры»). **Add timer** добавляет строку; все изменения сохраняются сразу и подхватываются работающим ботом без переподключения.
+- **Ctrl+Z** puts the last deleted command back in its place. Inside a text field Ctrl+Z undoes typing, as usual.
+- **Trash…** shows every deleted command, newest first. **Restore** brings back the selected one, **Empty the trash** clears the trash for good. In the themes the trash opens from the "…" menu.
+- The trash keeps the last 50 commands; older ones are dropped.
+- The trash survives a restart: it is in `command_trash.json` next to `commands.json`.
 
-| Колонка | Что значит |
+---
+
+## Timers
+
+Messages the bot writes to chat by itself: a follow reminder, links, rules.
+
+**Where:** the **Timers** tab. **Add timer** adds a row; every change is saved at once and picked up by the running bot without reconnecting.
+
+| Column | Meaning |
 |---|---|
-| **On** | таймер включён |
-| **Message** | текст сообщения |
-| **Every (min)** | раз во сколько минут (минимум 1) |
-| **After chat lines** | сколько сообщений в чате должно появиться с прошлого раза; 0 — не ждать |
-| **Live only** | писать только во время стрима |
+| **On** | the timer is on |
+| **Message** | the message text |
+| **Every (min)** | how often, in minutes (at least 1) |
+| **After chat lines** | how many chat messages must appear since the last time; 0 — do not wait |
+| **Live only** | write only while the stream is live |
 
-Таймер пишет, когда выполнены **все** условия: прошло N минут, в чате появилось хотя бы M сообщений (чтобы бот не болтал сам с собой в пустом чате), и — при Live only — идёт стрим.
+A timer writes when **all** conditions are met: N minutes have passed, at least M messages appeared in chat (so the bot does not talk to itself in an empty chat), and — with Live only — the stream is live.
 
-Ещё стоит знать:
+Also worth knowing:
 
-- Первое сообщение приходит через один интервал после подключения бота, а не сразу.
-- Если изменить текст таймера, его отсчёт начнётся заново.
-- **Post now** отправляет выбранное сообщение сразу, не дожидаясь интервала. Бот должен быть подключён.
-- В тексте работают `{channel}` и `{random:1-100}`.
-- Длинное сообщение обрезается до лимита Twitch (500 символов) и всегда уходит одной строкой.
-- Для Live only нужен рабочий токен (см. [проверку токена](#проверка-токена-twitch)): без него программа не знает, идёт ли стрим.
+- The first message comes one interval after the bot connects, not at once.
+- If you change a timer's text, its countdown starts over.
+- **Post now** sends the selected message at once, without waiting for the interval. The bot must be connected.
+- `{channel}` and `{random:1-100}` work in the text.
+- A long message is cut to Twitch's limit (500 characters) and always goes out as one line.
+- Live only needs a working token (see [the token check](#twitch-token-check)): without it the program does not know whether the stream is live.
 
-Новый таймер по умолчанию: раз в 15 минут, после 5 сообщений в чате, только на стриме.
-
----
-
-## Статистика
-
-**Где:** вкладка **Stats** («Статистика»). Сверху выбирается период: Today, 7, 30 или 90 дней. Данные обновляются каждые 30 секунд и по кнопке **Refresh**.
-
-**Очки за период**
-
-- **Earned by watching** — начислено за просмотр;
-- **Raid / sub rewards** — выдано за рейды и подписки;
-- **Spent on commands** — потрачено на команды (возвраты за несыгравшие звуки вычтены);
-- **Given between viewers** — передано через `!give`.
-
-**Сейчас**
-
-- **Held by viewers now** — сколько очков у всех зрителей вместе;
-- **Viewers in the system** — сколько зрителей в базе валюты;
-- **Chatting now (10 min)** — сколько человек писало в чат за последние 10 минут.
-
-**Таблицы:** популярные команды (за период и за всё время), топ зрителей по очкам и по часам.
-
-Счётчики по дням лежат в `stats.json` и хранятся 90 дней. Статистика копится с момента установки 2.0, поэтому за прошлое её нет.
+A new timer by default: every 15 minutes, after 5 chat messages, only while live.
 
 ---
 
-## Оверлей для OBS
+## Statistics
 
-Маленькая веб-страница для OBS: что сейчас играет, очереди и последние команды со зрителями. Фон у неё прозрачный.
+**Where:** the **Stats** tab. Pick the period at the top: Today, 7, 30 or 90 days. The data refreshes every 30 seconds and with the **Refresh** button.
 
-**Как включить**
+**Points for the period**
 
-1. **Settings → OBS overlay**: включите **Enable the overlay**. Порт по умолчанию — 8765.
-2. Нажмите **Copy** у адреса: `http://127.0.0.1:8765/`.
-3. В OBS: **Источники → + → Браузер**, вставьте адрес. Удобный размер — ширина 400, высота 600.
+- **Earned by watching** — given for watch time;
+- **Raid / sub rewards** — given for raids and subs;
+- **Spent on commands** — spent on commands (refunds for sounds that did not play are subtracted);
+- **Given between viewers** — moved with `!give`.
 
-**Настройки в адресе**
+**Right now**
 
-- `?show=now,queue,recent` — какие блоки показать: `now` — что играет, `queue` — очереди, `recent` — последние команды. По умолчанию показываются все три.
-- `&size=28` — размер шрифта в пикселях (по умолчанию 22).
+- **Held by viewers now** — how many points all viewers hold together;
+- **Viewers in the system** — how many viewers the currency knows;
+- **Chatting now (10 min)** — how many people wrote in chat in the last 10 minutes.
 
-Например, только «сейчас играет» крупным шрифтом: `http://127.0.0.1:8765/?show=now&size=32`.
+**Tables:** popular commands (for the period and for all time), top viewers by points and by hours.
 
-Тонкости:
-
-- Страница обновляется раз в секунду.
-- В «последних командах» хранятся 10 последних вызовов.
-- Оверлей работает и без подключённого бота, просто показывает пустые блоки.
-- Страница открывается только на этом компьютере (адрес 127.0.0.1); с другого устройства в сети её не открыть.
-- Если порт занят другой программой, карточка об этом напишет — выберите другой и обновите адрес в OBS.
+The daily counters are in `stats.json` and are kept for 90 days. Statistics start from the day 2.0 was installed, so there is none for earlier.
 
 ---
 
-## Глобальные горячие клавиши
+## OBS overlay
 
-Управление звуком, когда окно свёрнуто или в фокусе игра.
+A small web page for OBS: what is playing now, the queues and the latest commands with the viewers. Its background is transparent.
 
-**Где:** **Settings → Global hotkeys**, переключатель **Enable global hotkeys**. По умолчанию выключены: пока они включены, эти сочетания перехватываются и не доходят до других программ.
+**How to turn it on**
 
-| Действие | По умолчанию | Что делает |
+1. **Settings → OBS overlay**: turn on **Enable the overlay**. The default port is 8765.
+2. Press **Copy** next to the address: `http://127.0.0.1:8765/`.
+3. In OBS: **Sources → + → Browser**, paste the address. A handy size is 400 wide, 600 high.
+
+**Options in the address**
+
+- `?show=now,queue,recent` — which blocks to show: `now` — what is playing, `queue` — the queues, `recent` — the latest commands. All three by default.
+- `&size=28` — the font size in pixels (22 by default).
+
+For example, only "now playing" in a big font: `http://127.0.0.1:8765/?show=now&size=32`.
+
+Details:
+
+- The page refreshes once a second.
+- "Recent" holds the last 10 calls.
+- The overlay works without a connected bot too; it just shows empty blocks.
+- The page opens only on this computer (the address is 127.0.0.1); another device on the network cannot open it.
+- If the port is taken by another program, the card says so — pick another one and update the address in OBS.
+
+---
+
+## Global hotkeys
+
+Control the sound while the window is minimised or a game has the focus.
+
+**Where:** **Settings → Global hotkeys**, the **Enable global hotkeys** switch. Off by default: while they are on, these key combinations are captured and do not reach other programs.
+
+| Action | Default | What it does |
 |---|---|---|
-| Skip what is playing | Ctrl+Alt+S | пропускает то, что играет сейчас, во всех очередях; если очереди молчат — обрывает звук на общем канале |
-| Pause / resume the queues | Ctrl+Alt+P | ставит все очереди на паузу (играющий звук доигрывает) или, если все уже на паузе, снимает её |
-| Stop all sounds and pause the queues | Ctrl+Alt+M | тут же глушит все звуки и ставит очереди на паузу — «аварийная кнопка». Снять паузу — Ctrl+Alt+P |
+| Skip what is playing | Ctrl+Alt+S | skips what is playing now in every queue; if the queues are silent, stops the sound on the shared channel |
+| Pause / resume the queues | Ctrl+Alt+P | pauses every queue (the playing sound finishes) or, if all are paused already, resumes them |
+| Stop all sounds and pause the queues | Ctrl+Alt+M | silences every sound at once and pauses the queues — the "panic button". Resume with Ctrl+Alt+P |
 
-- Сочетание меняется щелчком по полю и нажатием новой комбинации.
-- Если сочетание уже занято другой программой, карточка об этом пишет — выберите другое.
-- Действия выполняет бот, поэтому очереди слушаются клавиш, только когда бот подключён. Без бота Skip и Stop просто глушат звук в самой программе.
-- Каждое нажатие отмечается в чате вкладки Twitch строкой `[Hotkey] …`.
-- Горячие клавиши работают только в Windows.
-- Команды в чате (`!skip` и другие) работают независимо от горячих клавиш.
-
----
-
-## Проверка токена Twitch
-
-При нажатии **Connect** программа сначала спрашивает у Twitch, что за токен у неё есть, и пишет результат в чат вкладки Twitch.
-
-**Что сообщает**
-
-- чей это токен и через сколько он истекает (если осталось меньше недели — отдельное предупреждение);
-- если токен **не владельца канала** — что список всех зрителей и модераторов будет неполным;
-- каких **scope'ов** (прав токена) не хватает и что без них не заработает;
-- если токен истёк или отозван — подключение останавливается, а программа показывает окно с объяснением.
-
-**Client ID** вводить не нужно: программа берёт его из ответа Twitch и сохраняет сама.
-
-**Какой токен нужен.** Генерируйте его на [Twitch Token Generator](https://twitchtokengenerator.com/) под аккаунтом **стримера** и отметьте scope'ы:
-
-| Scope | Без него не будет |
-|---|---|
-| `chat:read` | чтения чата |
-| `chat:edit` | ответов бота и таймеров |
-| `moderator:read:chatters` | списка всех зрителей — очки за просмотр получат только писавшие в чат |
-| `moderation:read` | списка модераторов из Twitch — видны только бейджи в чате |
-
-С токеном отдельного аккаунта бота список всех зрителей и модераторов не работает даже со всеми scope'ами: Twitch отдаёт их только по токену владельца канала.
-
-Токен сам не обновляется. Когда он истечёт, получите новый и введите его в **Authenticate**.
+- To change a combination, click its field and press the new keys.
+- If a combination is already taken by another program, the card says so — pick another one.
+- The bot carries out the actions, so the queues obey the keys only while the bot is connected. Without the bot, Skip and Stop just silence the sound in the program itself.
+- Every press is noted in the Twitch tab's chat as a `[Hotkey] …` line.
+- Global hotkeys work only on Windows.
+- The chat commands (`!skip` and others) work independently of the hotkeys.
 
 ---
 
-## Язык и темы
+## Twitch token check
 
-**Язык:** **Settings → Language** — System (по умолчанию), Русский или English. System означает русский на русской Windows и английский на любой другой. Язык меняется после перезапуска программы.
+When you press **Connect**, the program first asks Twitch about the token it has and writes the result to the Twitch tab's chat.
 
-Не переводятся:
+**What it reports**
 
-- ответы бота в чате — их текст задаёте вы;
-- значения, которые хранятся в файлах: права (`Everyone`, `Moderator`), места работы (`SC`, `Chat`, `Both`), имена групп;
-- служебные сообщения бота в чате вкладки Twitch («Connected to…»).
+- whose token it is and when it expires (with a separate warning if less than a week is left);
+- if the token is **not the channel owner's** — that the list of all viewers and the moderators will be incomplete;
+- which **scopes** (token permissions) are missing and what will not work without them;
+- if the token expired or was revoked — the connect stops and the program shows a window explaining why.
 
-**Темы:** **Settings → Appearance** или выпадающий список на вкладке About. Меняются сразу, без перезапуска.
+You do not need to enter the **Client ID**: the program takes it from Twitch's answer and saves it.
 
-| Тема | Какая |
+**Which token you need.** Generate it on [Twitch Token Generator](https://twitchtokengenerator.com/) under the **streamer's** account and tick these scopes:
+
+| Scope | Without it there is no |
 |---|---|
-| **Classic** | вкладки в стиле Windows, таблица команд с панелью под ней |
-| **Sidebar** | меню слева, список команд и карточка команды |
-| **Spreadsheet** | плотная таблица команд для больших списков |
-| **Midnight** | тёмная, для стрима ночью |
+| `chat:read` | reading the chat |
+| `chat:edit` | bot answers and timers |
+| `moderator:read:chatters` | list of all viewers — only viewers who chat earn points for watching |
+| `moderation:read` | moderators list from Twitch — only badges in chat are seen |
+
+With a token of a separate bot account the list of all viewers and the moderators do not work even with every scope: Twitch gives them only with the channel owner's token.
+
+The token does not refresh by itself. When it expires, get a new one and enter it in **Authenticate**.
 
 ---
 
-## Где что лежит
+## Language and themes
 
-Все файлы — рядом с программой (или в папке из переменной окружения `COMMAND_EDITOR_HOME`).
+**Language:** **Settings → Language** — System (default), Русский or English. System means Russian on a Russian Windows and English on any other. The language changes after the program restarts.
 
-| Файл | Что в нём |
+Not translated:
+
+- the bot's answers in chat — you write their text;
+- the values stored in files: permissions (`Everyone`, `Moderator`), where a command works (`SC`, `Chat`, `Both`), group names;
+- the bot's service lines in the Twitch tab's chat ("Connected to…").
+
+**Themes:** **Settings → Appearance** or the drop-down on the About tab. They change at once, without a restart.
+
+| Theme | What it is |
 |---|---|
-| `commands.json` | команды, включая псевдонимы (`Aliases`) |
-| `command_trash.json` | корзина удалённых команд |
-| `config.json` | настройки: группы, таймеры, горячие клавиши, оверлей, язык, тема |
-| `twitch_config.json` | токен, Client ID, refresh token — не передавайте этот файл никому |
-| `moderators.json` | ручные модераторы, исключённые, `admins`, «Moderators have Admin rights» |
-| `users_currency.json` | очки и часы зрителей |
-| `stats.json` | статистика по дням (90 дней) |
-| `backups/` | бэкапы команд, валюты и полные бэкапы (без токена) |
-| `command_editor.log`, `command_editor_crash.log` | журнал работы и падений — приложите их к сообщению о баге |
+| **Classic** | Windows-style tabs, the commands table with a panel under it |
+| **Sidebar** | a menu on the left, the commands list and a command card |
+| **Spreadsheet** | a dense commands table for long lists |
+| **Midnight** | dark, for streaming at night |
+
+---
+
+## Where things are stored
+
+All files are next to the program (or in the folder from the `COMMAND_EDITOR_HOME` environment variable).
+
+| File | What it holds |
+|---|---|
+| `commands.json` | the commands, aliases (`Aliases`) included |
+| `command_trash.json` | the trash of deleted commands |
+| `config.json` | settings: groups, timers, hotkeys, the overlay, language, theme |
+| `twitch_config.json` | the token, Client ID, refresh token — never share this file |
+| `moderators.json` | manual moderators, excluded ones, `admins`, "Moderators have Admin rights" |
+| `users_currency.json` | the viewers' points and hours |
+| `stats.json` | statistics by day (90 days) |
+| `backups/` | backups of commands and currency, and full backups (without the token) |
+| `command_editor.log`, `command_editor_crash.log` | the work and crash logs — attach them to a bug report |
