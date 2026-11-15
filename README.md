@@ -119,6 +119,7 @@ python tests/ui/run_ui.py      # настоящее окно, данные во 
 ## Документация
 
 - [docs/usage.md](docs/usage.md) — полное руководство по вкладкам и настройкам
+- [docs/features.md](docs/features.md) — каждая функция подробно: переменные, псевдонимы, права, таймеры, оверлей, горячие клавиши, токен
 - [docs/queue.md](docs/queue.md) — система очереди: группы, каналы, команды, сохранение
 - [docs/release-notes.md](docs/release-notes.md) — что изменилось в 2.0
 
