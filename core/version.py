@@ -9,7 +9,7 @@ Python 3.8 compatible. No Qt.
 """
 import re
 
-APP_VERSION = "V2.0.0-dev"
+APP_VERSION = "V2.0.0-Beta1"
 
 # pre-release words, lowest first; a final release is above all of them
 _PRE = {"dev": 0, "a": 1, "alpha": 1, "b": 2, "beta": 2, "rc": 3, "pre": 3}
