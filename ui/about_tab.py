@@ -10,7 +10,50 @@ import json
 import webbrowser
 
 from core.version import APP_VERSION, is_newer
-from ui.i18n import tr
+from ui.i18n import tr, N_
+
+# the texts of the About tab (translated in ui/i18n_ru.py)
+ABOUT_HTML = N_(
+    '<h2 style="text-align: center;">govnocoded by HotDoshirak</h2>'
+    "<p>I made this app to replace Streamlabs Chatbot command functionality on Windows 7. It's trash code, but it works.</p>")
+
+GUIDE_HTML = N_(
+    '<h2>User guide</h2>'
+    '<p>The full guide is in the repository docs:</p>'
+    '<ul>'
+    '<li><b>README.md</b> — features, installation, quick start, system commands.</li>'
+    '<li><b>docs/usage.md</b> — every tab and setting.</li>'
+    '<li><b>docs/queue.md</b> — queues: groups, channels, commands, persistence.</li>'
+    '<li><b>docs/release-notes.md</b> — what changed in 2.0.</li></ul>'
+    '<h3>Quick start</h3>'
+    '<ul>'
+    '<li>Export the commands from Streamlabs (right click → <i>Export by group</i>), then <b>Load File</b>.</li>'
+    '<li><b>Twitch</b> tab: token (Twitch Token Generator) + channel + <b>Connect</b> (on every start).</li>'
+    '<li><b>Group Settings</b>: queues, audio channels and queue persistence per group.</li>'
+    '<li><b>Test…</b> shows what a command does without Twitch: access, points, the answer, the sound.</li></ul>')
+
+NEWS_HTML = N_(
+    "<h3>What's new in 2.0</h3>"
+    '<ul>'
+    '<li><b>Russian and English interface</b>, the system language by default (Settings → Language).</li>'
+    '<li><b>Timers</b>: bot messages in chat every N minutes, only when the chat is alive.</li>'
+    '<li><b>Stats</b>: popular commands, the points economy, top viewers.</li>'
+    '<li><b>OBS overlay</b>: now playing, queues and recent commands as a Browser Source.</li>'
+    '<li><b>Global hotkeys</b>: skip, pause the queues, stop everything — even in a game.</li>'
+    '<li><b>Variables</b> in answers: {target}, {args}, {1}…{9}, {count}, {points}, {currency}, {channel}, {random:1-100}.</li>'
+    '<li><b>Aliases</b>: several names for one command.</li>'
+    '<li><b>Permissions</b> Regular, Subscriber and VIP; moderators may lose Admin rights (Settings → Permissions).</li>'
+    '<li><b>Random sound from a folder</b>, the <b>trash</b> for deleted commands (Ctrl+Z) and <b>Test…</b>.</li>'
+    '<li>Raid and sub rewards, ranks, the Active bonus and the reconnect work; dozens of fixes.</li></ul>')
+
+VERSION_HTML = N_(
+    '<h3 style="text-align: center;">Command Editor</h3>'
+    '<p><b>Application:</b> Twitch Bot Command Editor</p>'
+    '<p><b>Version:</b> {0}</p>'
+    '<p><b>Framework:</b> PyQt5</p>'
+    '<p><b>Python Version:</b> 3.8+</p>'
+    "<p>Last updated: {1}. Joke: the date is today's, to keep it fresh</p>")
+
 
 class UpdateCheckerThread(QThread):
     """Thread for checking updates without blocking the UI"""
@@ -282,19 +325,13 @@ class AboutTab(QWidget):
         text_browser = QTextBrowser()
         text_browser.setOpenExternalLinks(True)
         
-        about_text = """
-        <h2 style="text-align: center;">govnocoded by HotDoshirak</h2>
-        
-        <p>I made this app to replace Streamlabs Chatbot command functionality on Windows 7. It's trash code, most of functionality is not working.</p>
-        
+        about_text = tr(ABOUT_HTML) + """
         <ul>
             <li>Twitch: <a href="https://twitch.tv/HotDoshirak">https://twitch.tv/HotDoshirak</a></li>
-            <li>GitHub: <a href="https://github.com/ColdDoshirak/Command-Editor/tree/QueueTest">https://github.com/ColdDoshirak/Command-Editor/tree/QueueTest</a></li>
+            <li>GitHub: <a href="https://github.com/ColdDoshirak/Command-Editor">https://github.com/ColdDoshirak/Command-Editor</a></li>
             <li>Donate: <a href="https://www.donationalerts.com/r/hotdoshirak1">https://www.donationalerts.com/r/hotdoshirak1</a></li>
         </ul>
-        
-        <p>Made in 2026 with ai lol</p>
-        """
+        """ + tr('<p>Made in 2025–2026 with ai lol</p>')
         
         text_browser.setHtml(about_text)
         layout.addWidget(text_browser)
@@ -444,32 +481,7 @@ class AboutTab(QWidget):
         instructions_text = QTextBrowser()
         instructions_text.setOpenExternalLinks(True)
         
-        instructions_html = """
-        <h2>Руководство по использованию</h2>
-
-        <p>Полное руководство вынесено в документацию репозитория:</p>
-        <ul>
-            <li><b>README.md</b> — возможности, установка, быстрый старт, системные команды.</li>
-            <li><b>docs/usage.md</b> — руководство по вкладкам и настройкам.</li>
-            <li><b>docs/queue.md</b> — система очереди: группы, каналы, команды, сохранение.</li>
-        </ul>
-
-        <h3>Коротко</h3>
-        <ul>
-            <li>Экспортируйте команды из Streamlabs (ПКМ → <i>Export by group</i>), затем <b>Load File</b>.</li>
-            <li>Вкладка <b>Twitch</b>: токен (Twitch Token Generator) + канал + <b>Connect</b> (при каждом запуске).</li>
-            <li>Вкладка <b>Group Settings</b>: очередь, аудио-каналы, громкость и сохранение очереди по группам.</li>
-            <li>Значения команд правятся вручную в таблице; обычно — <i>SoundFile</i> и <i>Cooldown</i> (в минутах).</li>
-        </ul>
-
-        <h3>Что нового в бете (очередь)</h3>
-        <ul>
-            <li>Последовательное воспроизведение длинных звуков (музыка) внутри группы.</li>
-            <li>32 аудио-канала — разные группы играют параллельно.</li>
-            <li>Команды: <b>!queue</b>, <b>!skip</b>, <b>!clear</b>, <b>!volume</b> (подробнее — docs/queue.md).</li>
-            <li>Опциональное сохранение очереди между перезапусками (Persist Queue).</li>
-        </ul>
-        """
+        instructions_html = tr(GUIDE_HTML) + tr(NEWS_HTML)
         
         instructions_text.setHtml(instructions_html)
         layout.addWidget(instructions_text)
@@ -496,17 +508,7 @@ class AboutTab(QWidget):
         
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")
         
-        version_text = f"""
-        <h3 style="text-align: center;">Command Editor</h3>
-        
-        <p><b>Application:</b> Twitch Bot Command Editor</p>
-        <p><b>Version:</b> {self.current_version}</p>
-        <p><b>Release Date:</b> 2026-11-08</p>
-        <p><b>Framework:</b> PyQt5</p>
-        <p><b>Python Version:</b> 3.8+</p>
-        
-        <p>Дата последнего обновления: {current_date}. Прикол, тут дата сегодняшняя, чтоб свежо было</p>
-        """
+        version_text = tr(VERSION_HTML).format(self.current_version, current_date)
         
         version_info.setHtml(version_text)
         layout.addWidget(version_info)
